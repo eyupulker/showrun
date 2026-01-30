@@ -1,0 +1,24 @@
+{
+  "name": "mcpify-anything",
+  "version": "0.1.0",
+  "description": "Task Pack framework for deterministic browser automations",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm build && pnpm test:example",
+    "test:example": "node packages/harness/dist/cli.js run --pack ./taskpacks/example --inputs '{}'",
+    "test:example-json": "node packages/harness/dist/cli.js run --pack ./taskpacks/example-json --inputs '{}'"
+  },
+  "workspaces": [
+    "packages/*",
+    "taskpacks/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

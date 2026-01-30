@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+**/src/**/*.js
+**/src/**/*.d.ts
+**/src/**/*.d.ts.map
+**/src/**/*.js.map
+*.tsbuildinfo
+
+# Run artifacts
+runs/
+runs-dashboard/
+
+# Env and secrets
+.env
+.env.local
+.env.*.local
+
+# Logs and debug
+*.log
+pnpm-debug.log*
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright / browser MCP artifacts
+.playwright-mcp/
+
+# Persisted once-cache (optional; usually under system tmp)
+mcpify-once-cache/
+
+# Turbo (if used later)
+.turbo
+
+# Coverage
+coverage/

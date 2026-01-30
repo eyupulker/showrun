@@ -1,0 +1,21 @@
+{
+  "name": "@mcpify/harness",
+  "version": "0.1.0",
+  "description": "CLI harness for executing Task Packs",
+  "type": "module",
+  "bin": {
+    "tp": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@mcpify/core": "workspace:*",
+    "playwright": "^1.58.0",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}

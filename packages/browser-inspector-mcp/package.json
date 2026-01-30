@@ -1,0 +1,22 @@
+{
+  "name": "@mcpify/browser-inspector-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for browser inspection and element picking",
+  "type": "module",
+  "bin": {
+    "browser-inspector-mcp": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.3",
+    "@mcpify/core": "workspace:*",
+    "playwright": "^1.58.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3"
+  }
+}
