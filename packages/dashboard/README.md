@@ -108,6 +108,59 @@ The dashboard implements several security measures:
 - **Logger**: Custom `SocketLogger` that writes JSONL and emits socket events
 - **Queue**: Concurrency-limited run queue (default: 1 concurrent run)
 
+## Teach Mode Agent Tools
+
+The dashboard includes an AI agent for assisted flow creation. The agent has access to the following tools:
+
+### Editor Tools
+| Tool | Description |
+|------|-------------|
+| `editor_list_packs` | List all JSON Task Packs (id, name, version, description) |
+| `editor_read_pack(packId)` | Read pack contents (taskpack.json + flow.json) |
+| `editor_validate_flow(flowJsonText)` | Validate flow JSON syntax and schema |
+| `editor_apply_flow_patch(packId, op, ...)` | Apply patch to flow (append, insert, replace, delete) |
+| `editor_run_pack(packId, inputs)` | Run pack in harness (not in browser session) |
+
+### Browser Tools
+| Tool | Description |
+|------|-------------|
+| `browser_start_session(headful)` | Start browser session |
+| `browser_goto(sessionId, url)` | Navigate to URL |
+| `browser_go_back(sessionId)` | Go back in history |
+| `browser_click(sessionId, linkText, role, selector)` | Click element |
+| `browser_type(sessionId, text, label, selector)` | Type into input |
+| `browser_screenshot(sessionId)` | Take screenshot (vision analysis) |
+| `browser_get_links(sessionId)` | Get all page links |
+| `browser_get_dom_snapshot(sessionId)` | Get structured DOM snapshot with interactive elements, forms, headings, navigation |
+
+### Network Tools
+| Tool | Description |
+|------|-------------|
+| `browser_network_list(sessionId, filter)` | List captured requests (filter: all, api, xhr) |
+| `browser_network_search(sessionId, query)` | Search requests by content |
+| `browser_network_get(sessionId, requestId)` | Get request metadata |
+| `browser_network_get_response(sessionId, requestId, full)` | Get response body |
+| `browser_network_replay(sessionId, requestId, overrides)` | Replay request with overrides |
+| `browser_network_clear(sessionId)` | Clear network buffer |
+
+### System Prompts
+
+The agent behavior is controlled by system prompts. Priority order:
+
+1. **`AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md`** - Full autonomous exploration & roadmap system. Enables the AI to:
+   - Understand complex goals from natural language
+   - Explore websites autonomously
+   - Create roadmaps before implementing
+   - Consult users at decision points
+   - Implement DSL steps incrementally
+
+2. **`TEACH_MODE_SYSTEM_PROMPT.md`** - Original reactive step proposal system
+
+Set custom prompt via environment variable:
+```bash
+AUTONOMOUS_EXPLORATION_PROMPT_PATH=/path/to/custom-prompt.md mcpify-dashboard
+```
+
 ## Development
 
 ```bash

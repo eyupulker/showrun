@@ -41,7 +41,14 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
   type ToolTraceEntry = { tool: string; args: unknown; result: unknown; success: boolean };
   const [toolTrace, setToolTrace] = useState<ToolTraceEntry[]>([]);
   const [toolHistoryExpanded, setToolHistoryExpanded] = useState<Set<number>>(new Set());
+  // Track currently executing tool for real-time visibility
+  const [activeToolExecution, setActiveToolExecution] = useState<{ tool: string; args: unknown; startedAt: number } | null>(null);
   const [currentFlow, setCurrentFlow] = useState<unknown>(null);
+  // Streaming thinking and content
+  const [streamingThinking, setStreamingThinking] = useState<string>('');
+  const [streamingContent, setStreamingContent] = useState<string>('');
+  const [isThinking, setIsThinking] = useState(false);
+  const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [lastValidation, setLastValidation] = useState<{ ok: boolean; errors: string[]; warnings: string[] } | null>(null);
   const chatEndRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -161,6 +168,13 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
     setChatInput('');
     setChatLoading(true);
     setError(null);
+    // Clear tool trace and active tool for new request
+    setToolTrace([]);
+    setActiveToolExecution(null);
+    // Clear streaming state
+    setStreamingThinking('');
+    setStreamingContent('');
+    setIsThinking(false);
 
     const useStream = !!(effectivePackId && onFlowUpdated);
     try {
@@ -204,14 +218,59 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
           const trimmed = line.trim();
           if (!trimmed) return;
           try {
-            const obj = JSON.parse(trimmed) as { type: string; flow?: unknown; validation?: unknown; error?: string; assistantMessage?: { content?: string }; toolTrace?: unknown[]; updatedFlow?: unknown; browser?: { screenshotBase64?: string; mimeType?: string }; browserSessionId?: string };
-            if (obj.type === 'flow_updated') {
+            const obj = JSON.parse(trimmed) as {
+              type: string;
+              flow?: unknown;
+              validation?: unknown;
+              error?: string;
+              assistantMessage?: { content?: string };
+              toolTrace?: unknown[];
+              updatedFlow?: unknown;
+              browser?: { screenshotBase64?: string; mimeType?: string };
+              browserSessionId?: string;
+              // New fields for real-time tool events
+              tool?: string;
+              args?: unknown;
+              result?: unknown;
+              success?: boolean;
+              // Streaming thinking/content
+              text?: string;
+            };
+            // Handle thinking stream events
+            if (obj.type === 'thinking_start') {
+              setIsThinking(true);
+              setStreamingThinking('');
+            } else if (obj.type === 'thinking_delta' && obj.text) {
+              setStreamingThinking(prev => prev + obj.text);
+            } else if (obj.type === 'thinking_stop') {
+              setIsThinking(false);
+            } else if (obj.type === 'content_start') {
+              setStreamingContent('');
+            } else if (obj.type === 'content_delta' && obj.text) {
+              setStreamingContent(prev => prev + obj.text);
+            } else if (obj.type === 'content_stop') {
+              // Content finished streaming
+            } else if (obj.type === 'tool_start') {
+              // A tool is about to execute - show it to the user
+              setActiveToolExecution({ tool: obj.tool!, args: obj.args, startedAt: Date.now() });
+            } else if (obj.type === 'tool_result') {
+              // Tool finished - clear active state and add to trace
+              setActiveToolExecution(null);
+              setToolTrace(prev => [...prev, {
+                tool: obj.tool!,
+                args: obj.args as Record<string, unknown>,
+                result: obj.result,
+                success: obj.success ?? true
+              }]);
+            } else if (obj.type === 'flow_updated') {
               if (obj.flow !== undefined) {
                 setCurrentFlow(obj.flow);
                 onFlowUpdated?.(obj.flow);
               }
               if (obj.validation !== undefined) setLastValidation(obj.validation as { ok: boolean; errors: string[]; warnings: string[] });
             } else if (obj.type === 'done') {
+              // Clear active tool on completion (safety)
+              setActiveToolExecution(null);
               result = obj;
             }
           } catch {
@@ -265,8 +324,14 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setChatMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : String(err)}` }]);
+      setActiveToolExecution(null); // Clear on error
     } finally {
       setChatLoading(false);
+      setActiveToolExecution(null); // Safety clear
+      // Clear streaming state
+      setStreamingThinking('');
+      setStreamingContent('');
+      setIsThinking(false);
     }
   };
 
@@ -321,6 +386,12 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
 
   return (
     <div style={{ padding: embedInEditor ? '0' : '20px', display: 'flex', flexDirection: 'column', height: embedInEditor ? 'auto' : '100%', minHeight: 0 }}>
+      {/* CSS keyframes for spinner animation */}
+      <style>{`
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
       {!embedInEditor && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
           <h2>Teach Mode</h2>
@@ -431,10 +502,24 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
       )}
 
       {/* Tool call history – inputs and responses from the last agent turn */}
-      {toolTrace.length > 0 && (
+      {(toolTrace.length > 0 || activeToolExecution) && (
         <div style={{ marginBottom: '20px', border: '1px solid #ccc', borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ padding: '10px 12px', backgroundColor: '#f8f9fa', fontWeight: 600 }}>
-            Tool call history
+          <div style={{ padding: '10px 12px', backgroundColor: '#f8f9fa', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Tool call history</span>
+            {activeToolExecution && (
+              <span style={{ fontSize: '12px', color: '#666', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <span style={{
+                  display: 'inline-block',
+                  width: '10px',
+                  height: '10px',
+                  border: '2px solid #ccc',
+                  borderTopColor: '#666',
+                  borderRadius: '50%',
+                  animation: 'spin 1s linear infinite'
+                }} />
+                Running...
+              </span>
+            )}
           </div>
           <div style={{ maxHeight: '360px', overflow: 'auto' }}>
             {toolTrace.map((t, i) => (
@@ -503,6 +588,55 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
                 )}
               </div>
             ))}
+            {/* Show currently executing tool at the end of the list */}
+            {activeToolExecution && (
+              <div
+                style={{
+                  borderTop: toolTrace.length > 0 ? '1px solid #eee' : 'none',
+                  padding: '10px 12px',
+                  backgroundColor: '#fffbeb',
+                }}
+              >
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  fontSize: '14px',
+                }}>
+                  <span style={{
+                    display: 'inline-block',
+                    width: '14px',
+                    height: '14px',
+                    border: '2px solid #d4a574',
+                    borderTopColor: '#b8860b',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    flexShrink: 0
+                  }} />
+                  <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{activeToolExecution.tool}</span>
+                  <span style={{ color: '#b8860b', fontSize: '12px' }}>executing...</span>
+                </div>
+                {/* Show arguments while executing */}
+                <div style={{ marginTop: '10px', paddingLeft: '8px', borderLeft: '3px solid #f0d080' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: '#555' }}>Inputs</div>
+                  <pre
+                    style={{
+                      margin: 0,
+                      padding: '10px',
+                      backgroundColor: '#fef9e7',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      overflow: 'auto',
+                      maxHeight: '120px',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                    }}
+                  >
+                    {formatToolPayload(activeToolExecution.args)}
+                  </pre>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -559,8 +693,92 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
             </div>
           ))}
           {chatLoading && (
-            <div style={{ alignSelf: 'flex-start', padding: '10px 14px', backgroundColor: '#f5f5f5', borderRadius: '8px', color: '#666' }}>
-              …
+            <div style={{ alignSelf: 'flex-start', maxWidth: '85%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Streaming thinking output */}
+              {(streamingThinking || isThinking) && (
+                <div style={{
+                  padding: '10px 14px',
+                  backgroundColor: '#f0f0ff',
+                  borderRadius: '8px',
+                  border: '1px solid #d0d0ff',
+                }}>
+                  <div
+                    onClick={() => setThinkingExpanded(!thinkingExpanded)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      marginBottom: streamingThinking && thinkingExpanded ? '8px' : 0,
+                    }}
+                  >
+                    {isThinking && (
+                      <span style={{
+                        display: 'inline-block',
+                        width: '12px',
+                        height: '12px',
+                        border: '2px solid #a0a0ff',
+                        borderTopColor: '#6060ff',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite'
+                      }} />
+                    )}
+                    <span style={{ color: '#6060ff', fontWeight: 500, fontSize: '13px' }}>
+                      {isThinking ? 'Thinking...' : 'Thought'}
+                    </span>
+                    <span style={{ color: '#888', fontSize: '12px' }}>{thinkingExpanded ? '▼' : '▶'}</span>
+                  </div>
+                  {streamingThinking && thinkingExpanded && (
+                    <pre style={{
+                      margin: 0,
+                      fontSize: '12px',
+                      whiteSpace: 'pre-wrap',
+                      wordBreak: 'break-word',
+                      color: '#555',
+                      maxHeight: '200px',
+                      overflow: 'auto',
+                    }}>
+                      {streamingThinking}
+                    </pre>
+                  )}
+                </div>
+              )}
+              {/* Streaming content output */}
+              {streamingContent && (
+                <div style={{
+                  padding: '10px 14px',
+                  backgroundColor: '#f5f5f5',
+                  borderRadius: '8px',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  fontSize: '14px',
+                }}>
+                  {streamingContent}
+                </div>
+              )}
+              {/* Tool execution indicator */}
+              {activeToolExecution && (
+                <div style={{ padding: '10px 14px', backgroundColor: '#fff8e8', borderRadius: '8px', color: '#666' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      display: 'inline-block',
+                      width: '14px',
+                      height: '14px',
+                      border: '2px solid #f0c060',
+                      borderTopColor: '#d09020',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                    <span>Executing: <code style={{ backgroundColor: '#e8e8e8', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '13px' }}>{activeToolExecution.tool}</code></span>
+                  </div>
+                </div>
+              )}
+              {/* Generic loading indicator when nothing else is showing */}
+              {!streamingThinking && !isThinking && !streamingContent && !activeToolExecution && (
+                <div style={{ padding: '10px 14px', backgroundColor: '#f5f5f5', borderRadius: '8px', color: '#666' }}>
+                  …
+                </div>
+              )}
             </div>
           )}
           <div ref={chatEndRef} />

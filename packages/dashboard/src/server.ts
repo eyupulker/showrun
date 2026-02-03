@@ -29,7 +29,7 @@ import { validateJsonTaskPack } from '@mcpify/core';
 import type { TaskPackManifest, InputSchema, CollectibleDefinition } from '@mcpify/core';
 import type { DslStep } from '@mcpify/core';
 import { createLlmProvider } from './llm/index.js';
-import type { ChatMessage, ToolCall } from './llm/provider.js';
+import type { ChatMessage, ToolCall, StreamEvent, ChatWithToolsResult } from './llm/provider.js';
 import { proposeStep, type ProposeStepRequest } from './teachMode.js';
 import {
   MCP_AGENT_TOOL_DEFINITIONS,
@@ -44,6 +44,7 @@ import {
   typeInElement,
   takeScreenshot,
   getLinks,
+  getDomSnapshot,
   networkList,
   networkSearch,
   networkGet,
@@ -147,7 +148,8 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   const taskPackEditor = new TaskPackEditorWrapper(
     packDirs,
     resolvedWorkspaceDir || packDirs[0],
-    resolvedBaseRunDir
+    resolvedBaseRunDir,
+    headful
   );
 
   // REST API: Get config (includes session token)
@@ -722,19 +724,41 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   });
 
   // System prompt for Teach Mode flow-writing chat: env > TEACH_MODE_SYSTEM_PROMPT.md file > inline default
+  // Supports two modes:
+  // 1. AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md - Full autonomous exploration & roadmap system
+  // 2. TEACH_MODE_SYSTEM_PROMPT.md - Original reactive step proposal system
   let TEACH_CHAT_SYSTEM_PROMPT = process.env.TEACH_CHAT_SYSTEM_PROMPT;
   if (!TEACH_CHAT_SYSTEM_PROMPT) {
-    const promptPath =
+    // Try autonomous exploration prompt first (preferred for agent mode)
+    // __dirname is packages/dashboard/dist, so ../../../ goes to repo root
+    const explorationPromptPath =
+      process.env.AUTONOMOUS_EXPLORATION_PROMPT_PATH ||
+      resolve(process.cwd(), 'AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md');
+    const explorationAltPath = resolve(__dirname, '../../../AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md');
+
+    // Fall back to teach mode prompt
+    const teachPromptPath =
       process.env.TEACH_MODE_SYSTEM_PROMPT_PATH ||
       resolve(process.cwd(), 'TEACH_MODE_SYSTEM_PROMPT.md');
-    const altPath = resolve(__dirname, '../../TEACH_MODE_SYSTEM_PROMPT.md');
-    const pathToLoad = existsSync(promptPath) ? promptPath : existsSync(altPath) ? altPath : null;
+    const teachAltPath = resolve(__dirname, '../../../TEACH_MODE_SYSTEM_PROMPT.md');
+
+    // Priority: exploration prompt > teach mode prompt > inline default
+    const explorationPath = existsSync(explorationPromptPath) ? explorationPromptPath
+      : existsSync(explorationAltPath) ? explorationAltPath
+      : null;
+    const teachPath = existsSync(teachPromptPath) ? teachPromptPath
+      : existsSync(teachAltPath) ? teachAltPath
+      : null;
+
+    // Use exploration prompt if available, otherwise fall back to teach mode prompt
+    const pathToLoad = explorationPath ?? teachPath;
+
     if (pathToLoad) {
       try {
         TEACH_CHAT_SYSTEM_PROMPT = readFileSync(pathToLoad, 'utf-8').trim();
-        console.log(`[Dashboard] Teach Mode system prompt loaded from ${pathToLoad}`);
+        console.log(`[Dashboard] System prompt loaded from ${pathToLoad}`);
       } catch (e) {
-        console.warn('[Dashboard] Failed to load TEACH_MODE_SYSTEM_PROMPT.md:', e);
+        console.warn('[Dashboard] Failed to load system prompt:', e);
       }
     }
     if (!TEACH_CHAT_SYSTEM_PROMPT) {
@@ -800,12 +824,14 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
 - If the user asks to create a flow, add a step, or extract data: propose a DSL step and apply it via editor_apply_flow_patch. One step per patch; multiple steps = multiple patches in sequence. Supported step types include navigate, click, fill, extract_text, extract_attribute, wait_for, set_var, and network_find, network_replay, network_extract (for API-first flows: find a captured request, replay it with overrides, optionally extract from the response). Steps can include an optional "once" field ("session" or "profile") to mark them as run-once steps that are skipped on subsequent runs when auth is still valid (useful for login/setup steps).
 - When the user asks to execute/run the flow in the browser or to run the steps in the open browser: use browser_* tools (browser_goto, browser_click, browser_type, etc.) to perform the steps. Do NOT use editor_run_pack for this—editor_run_pack runs the pack in a separate run, not in the current browser session.
 - When the user asks you to CLICK a link or button (e.g. "click the Sign in link"): use browser_click with linkText and role "link" or "button". For batch names, filter options, tabs, or list items (e.g. "Winter 2026", "Spring 2026") that are not <a> or <button>, use browser_click with linkText and role "text".
+- To understand page structure: use browser_get_dom_snapshot (returns interactive elements, forms, headings, navigation with target hints). Prefer it for exploration—it's text-based, cheap, and provides element targets for step proposals.
 - To find which links are on the page: use browser_get_links (returns href and visible text for each link). Prefer it over screenshot when you need to choose or click a link; it is cheaper and accurate.
+- For visual layout context (images, complex UI): use browser_screenshot. The image will be attached for analysis. Use sparingly—only when visual layout matters.
 - You HAVE network inspection tools: browser_network_list, browser_network_search, browser_network_get, browser_network_get_response. Use them when the user wants to inspect a request, capture an API call, or provides a request ID from the Network list. Do NOT say that "the task pack does not support network operations" or suggest "manual extraction from the page" instead—use the network tools to inspect requests and browser tools (click, type, extract_text, etc.) as appropriate.
 - When the user provides a request ID (e.g. "use request req-123" or pastes an id from the Network list): call browser_network_get(sessionId, requestId) to get metadata (no response body). If you need the response body, call browser_network_get_response(sessionId, requestId, full?) next.
 - When the user asks for a request by description (e.g. "the company request") and did not give an id: use browser_network_search with a query substring (e.g. "companies", "api/") to find matching entries, then browser_network_get for the one they want.
-- When you need page context (e.g. user asks "what page am I on?", "what buttons do you see?", "look at the page"): call browser_screenshot; the image will be attached for you to analyze. Do NOT attach screenshots automatically for every message—only when explicitly needed.
-- For element context (e.g. to add a step to the flow): use browser_screenshot and analyze the image; optionally use browser_get_links or a DOM snapshot if available. Do NOT ask the user to describe the page.
+- When you need page context (e.g. user asks "what page am I on?", "what buttons do you see?", "look at the page"): prefer browser_get_dom_snapshot for structure; use browser_screenshot only when visual layout is needed. Do NOT attach screenshots automatically for every message—only when explicitly needed.
+- For element context (e.g. to add a step to the flow): use browser_get_dom_snapshot to get element targets; optionally use browser_get_links for navigation. Do NOT ask the user to describe the page.
 - Prefer action over explanation. Explanations are optional; tool usage is mandatory when relevant.
 - Never reply with generic "here is what you can do" without calling tools. Always read_pack, apply_flow_patch, or use browser tools as needed.
 - Never refuse to use network tools or suggest manual extraction instead; use browser_network_* when the user cares about a request, and use browser_click/browser_type/extract steps for page interaction.
@@ -814,8 +840,9 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
 - If a tool call returns an error: do NOT retry the same call. Reply to the user with the error message and suggest a different action or ask them to fix the issue. One retry at most; then stop and respond.`;
 
   // REST API: Teach Mode agent (MCPs ALWAYS ON – action-first)
-  const MAX_NON_EDITOR_ITERATIONS = 8; // Only browser/other tool rounds count toward this
-  const MAX_TOTAL_ITERATIONS = 50; // Safety cap (editor-only rounds are not limited by the 8)
+  // MAX_NON_EDITOR_ITERATIONS: limits consecutive browser-only rounds (set to 0 to disable)
+  const MAX_NON_EDITOR_ITERATIONS = parseInt(process.env.AGENT_MAX_BROWSER_ROUNDS || '0', 10);
+  const MAX_TOTAL_ITERATIONS = 100; // Absolute safety cap
   app.post('/api/teach/agent', async (req: Request, res: Response) => {
     if (!requireToken(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -842,7 +869,7 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
       systemPrompt = `${systemPrompt}\n\npackId for this session: ${packId}. You MUST call editor.read_pack with this packId before proposing flow changes.`;
     }
     if (browserSessionId) {
-      systemPrompt = `${systemPrompt}\n\nCurrent browser sessionId (use browser_goto, browser_go_back, browser_type, browser_screenshot, browser_get_links, browser_click, browser_network_list, browser_network_search, browser_network_get, browser_network_get_response, browser_network_replay, browser_last_actions): ${browserSessionId}`;
+      systemPrompt = `${systemPrompt}\n\nCurrent browser sessionId (use browser_goto, browser_go_back, browser_type, browser_screenshot, browser_get_links, browser_get_dom_snapshot, browser_click, browser_network_list, browser_network_search, browser_network_get, browser_network_get_response, browser_network_replay, browser_last_actions): ${browserSessionId}`;
     }
 
     type ContentPart =
@@ -874,20 +901,53 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
     const writeStreamLine = (obj: object) => {
       if (streamFlow) res.write(JSON.stringify(obj) + '\n');
     };
-    try {
-      for (let iter = 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
-        const result = await (llmProvider as any).chatWithTools({
+
+    // Check if provider supports streaming
+    const supportsStreaming = typeof (llmProvider as any).chatWithToolsStream === 'function';
+
+    // Helper to call LLM with or without streaming
+    async function callLlm(): Promise<ChatWithToolsResult> {
+      if (supportsStreaming && streamFlow) {
+        const generator = (llmProvider as any).chatWithToolsStream({
+          systemPrompt,
+          messages: agentMessages,
+          tools: MCP_AGENT_TOOL_DEFINITIONS,
+          enableThinking: true,
+        }) as AsyncGenerator<StreamEvent, ChatWithToolsResult, unknown>;
+
+        let iterResult = await generator.next();
+        while (!iterResult.done) {
+          const event = iterResult.value as StreamEvent;
+          // Forward streaming events to client
+          writeStreamLine(event);
+          iterResult = await generator.next();
+        }
+        return iterResult.value;
+      } else {
+        return await (llmProvider as any).chatWithTools({
           systemPrompt,
           messages: agentMessages,
           tools: MCP_AGENT_TOOL_DEFINITIONS,
         });
+      }
+    }
+
+    try {
+      for (let iter = 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
+        const result = await callLlm();
 
         if (result.toolCalls && result.toolCalls.length > 0) {
+          // Track consecutive browser-only rounds (only enforce if limit > 0)
           const hasNonEditorCall = result.toolCalls.some((tc: { name: string }) => tc.name.startsWith('browser_'));
           if (hasNonEditorCall) {
             nonEditorRounds++;
-            if (nonEditorRounds >= MAX_NON_EDITOR_ITERATIONS) {
-              res.status(500).json({ error: 'Agent exceeded max iterations (browser/other tools)' });
+            if (MAX_NON_EDITOR_ITERATIONS > 0 && nonEditorRounds >= MAX_NON_EDITOR_ITERATIONS) {
+              if (streamFlow) {
+                writeStreamLine({ type: 'done', error: 'Agent exceeded max browser iterations' });
+                res.end();
+              } else {
+                res.status(500).json({ error: 'Agent exceeded max browser iterations' });
+              }
               return;
             }
           }
@@ -908,6 +968,10 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
             } catch {
               // ignore
             }
+
+            // Emit tool_start event before executing the tool
+            writeStreamLine({ type: 'tool_start', tool: tc.name, args: toolArgs });
+
             const execResult = await executeAgentTool(tc.name, toolArgs, ctx);
             const resultStr = execResult.stringForLlm;
             let resultParsed: unknown;
@@ -918,6 +982,9 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
             }
             const success = !(resultParsed && typeof resultParsed === 'object' && 'error' in resultParsed);
             toolTrace.push({ tool: tc.name, args: toolArgs, result: resultParsed, success });
+
+            // Emit tool_result event after executing the tool
+            writeStreamLine({ type: 'tool_result', tool: tc.name, args: toolArgs, result: resultParsed, success });
 
             if (tc.name === 'browser_start_session') {
               try {
@@ -1159,6 +1226,33 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
     try {
       const result = await getLinks(sessionId);
       res.json(result);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // REST API: Browser Inspector - Get DOM snapshot
+  app.post('/api/teach/browser/dom-snapshot', async (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { sessionId, format, maxDepth } = req.body;
+
+    if (!sessionId) {
+      return res.status(400).json({ error: 'sessionId is required' });
+    }
+
+    try {
+      const result = await getDomSnapshot(sessionId, { format, maxDepth });
+      // For YAML format, wrap the snapshot string in an object for consistency
+      if (format === 'yaml' || (!format && 'snapshot' in result)) {
+        res.json(result);
+      } else {
+        res.json(result);
+      }
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),

@@ -893,3 +893,480 @@ export function closeSession(sessionId: string): Promise<void> {
   sessions.delete(sessionId);
   return session.browser.close();
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DOM Snapshot for Autonomous Exploration
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Target hint for step proposals - matches the Target type from @mcpify/core */
+export interface TargetHint {
+  kind: 'css' | 'text' | 'role' | 'label' | 'placeholder' | 'testId' | 'altText';
+  selector?: string;
+  text?: string;
+  role?: string;
+  name?: string;
+  id?: string;
+  exact?: boolean;
+}
+
+export interface InteractiveElement {
+  index: number;
+  tagName: string;
+  role: string;
+  text: string;
+  ariaLabel?: string;
+  placeholder?: string;
+  href?: string;
+  type?: string;
+  name?: string;
+  id?: string;
+  isVisible: boolean;
+  target: TargetHint;
+}
+
+export interface FormField {
+  name?: string;
+  type: string;
+  label?: string;
+  placeholder?: string;
+  required: boolean;
+}
+
+export interface FormInfo {
+  action?: string;
+  method: string;
+  fields: FormField[];
+}
+
+export interface HeadingInfo {
+  level: number;
+  text: string;
+}
+
+export interface NavigationInfo {
+  links: { text: string; href?: string }[];
+}
+
+export interface DomSnapshot {
+  url: string;
+  title: string;
+  interactiveElements: InteractiveElement[];
+  forms: FormInfo[];
+  headings: HeadingInfo[];
+  navigation: NavigationInfo[];
+}
+
+/** Options for getDomSnapshot */
+export interface DomSnapshotOptions {
+  /** Output format: 'yaml' (compact ARIA snapshot, default) or 'json' (verbose legacy format) */
+  format?: 'yaml' | 'json';
+  /** Maximum tree depth to return (default: unlimited). Only applies to 'yaml' format. */
+  maxDepth?: number;
+}
+
+/** Result type for YAML format DOM snapshot */
+export interface DomSnapshotYaml {
+  url: string;
+  title: string;
+  snapshot: string;
+}
+
+const MAX_INTERACTIVE_ELEMENTS = 200;
+const MAX_FORMS = 20;
+const MAX_HEADINGS = 50;
+const MAX_NAV_LINKS = 100;
+
+/**
+ * Add element refs [ref=eN] to ARIA snapshot YAML lines.
+ * Only adds refs to actual elements (roles), not to attribute lines (e.g., /placeholder, /url).
+ * Also optionally limits depth based on indentation.
+ */
+function addElementRefs(yaml: string, maxDepth?: number): string {
+  let refCounter = 1;
+  const lines = yaml.split('\n');
+  const result: string[] = [];
+
+  for (const line of lines) {
+    // Skip empty lines
+    if (!line.trim()) {
+      result.push(line);
+      continue;
+    }
+
+    // Calculate depth based on leading spaces (2 spaces = 1 level of depth)
+    const leadingSpaces = line.match(/^(\s*)/)?.[1].length ?? 0;
+    const depth = Math.floor(leadingSpaces / 2);
+
+    // If maxDepth is specified and we exceed it, skip this line
+    if (maxDepth !== undefined && depth > maxDepth) {
+      continue;
+    }
+
+    // Check if line represents an element (starts with "- " after indentation)
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith('- ')) {
+      // Skip attribute lines (start with "- /") - these are ARIA attributes, not elements
+      // e.g., "- /placeholder: Enter email" or "- /url: /home"
+      if (trimmed.startsWith('- /')) {
+        result.push(line);
+        continue;
+      }
+
+      const ref = `[ref=e${refCounter++}]`;
+      // Insert ref before colon (if present) or at the end of the element name
+      if (trimmed.includes(':')) {
+        // Element has children or inline text, insert ref before the colon
+        const colonIndex = line.indexOf(':');
+        const modified = line.slice(0, colonIndex) + ` ${ref}` + line.slice(colonIndex);
+        result.push(modified);
+      } else {
+        // Element is a leaf, append ref at the end
+        result.push(`${line} ${ref}`);
+      }
+    } else {
+      result.push(line);
+    }
+  }
+
+  return result.join('\n');
+}
+
+/**
+ * Get a DOM snapshot in compact YAML format (default) or verbose JSON format.
+ *
+ * YAML format uses Playwright's built-in ARIA snapshot - a hierarchical accessibility tree
+ * that's ~70-80% smaller than JSON and optimized for LLM consumption.
+ *
+ * Each element has a [ref=eN] that can be used to target it in subsequent actions.
+ *
+ * @param sessionId - Browser session ID
+ * @param options - Optional configuration (format, maxDepth)
+ * @returns YAML string with refs (format='yaml') or DomSnapshot object (format='json')
+ */
+export async function getDomSnapshot(
+  sessionId: string,
+  options: DomSnapshotOptions = {}
+): Promise<DomSnapshot | DomSnapshotYaml> {
+  const { format = 'yaml', maxDepth } = options;
+  const session = sessions.get(sessionId);
+  if (!session) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  const { page } = session;
+  const url = page.url();
+  const title = await page.title();
+
+  // YAML format: Use Playwright's built-in ARIA snapshot
+  if (format === 'yaml') {
+    // Get the ARIA snapshot from the body element
+    const ariaSnapshot = await page.locator('body').ariaSnapshot();
+
+    // Add element refs and optionally limit depth
+    const snapshotWithRefs = addElementRefs(ariaSnapshot, maxDepth);
+
+    session.actions.push({
+      timestamp: Date.now(),
+      action: 'get_dom_snapshot',
+      details: {
+        url,
+        format: 'yaml',
+        maxDepth,
+        snapshotLength: snapshotWithRefs.length,
+      },
+    });
+
+    return {
+      url,
+      title,
+      snapshot: snapshotWithRefs,
+    };
+  }
+
+  // JSON format: Use existing verbose implementation for backwards compatibility
+  const snapshot = await page.evaluate(
+    ({ maxElements, maxForms, maxHeadings, maxNavLinks }) => {
+      // Helper: check if element is visible
+      function isElementVisible(el: Element): boolean {
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+          return false;
+        }
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      }
+
+      // Helper: infer role from element
+      function inferRole(el: Element): string {
+        const role = el.getAttribute('role');
+        if (role) return role;
+        const tag = el.tagName.toLowerCase();
+        if (tag === 'button') return 'button';
+        if (tag === 'a') return 'link';
+        if (tag === 'input') {
+          const type = (el as HTMLInputElement).type || 'text';
+          if (type === 'submit' || type === 'button') return 'button';
+          if (type === 'checkbox') return 'checkbox';
+          if (type === 'radio') return 'radio';
+          return 'textbox';
+        }
+        if (tag === 'select') return 'combobox';
+        if (tag === 'textarea') return 'textbox';
+        if (el.hasAttribute('onclick') || el.hasAttribute('tabindex')) return 'button';
+        return 'generic';
+      }
+
+      // Helper: find label for form element
+      function findLabel(el: Element): string | undefined {
+        // Check for aria-label
+        const ariaLabel = el.getAttribute('aria-label');
+        if (ariaLabel) return ariaLabel;
+
+        // Check for associated label by id
+        const id = el.getAttribute('id');
+        if (id) {
+          const label = document.querySelector(`label[for="${id}"]`);
+          if (label) return label.textContent?.trim();
+        }
+
+        // Check for parent label
+        const parentLabel = el.closest('label');
+        if (parentLabel) {
+          return parentLabel.textContent?.trim();
+        }
+
+        // Check for aria-labelledby
+        const labelledBy = el.getAttribute('aria-labelledby');
+        if (labelledBy) {
+          const labelEl = document.getElementById(labelledBy);
+          if (labelEl) return labelEl.textContent?.trim();
+        }
+
+        return undefined;
+      }
+
+      // Helper: build target hint for an element
+      function buildTargetHint(el: Element): {
+        kind: string;
+        selector?: string;
+        text?: string;
+        role?: string;
+        name?: string;
+        id?: string;
+        exact?: boolean;
+      } {
+        const role = inferRole(el);
+        const ariaLabel = el.getAttribute('aria-label');
+        const placeholder = el.getAttribute('placeholder');
+        const visibleText = el.textContent?.trim().slice(0, 100) || '';
+        const id = el.getAttribute('id');
+        const testId = el.getAttribute('data-testid');
+
+        // Prefer role + accessible name
+        if (role && role !== 'generic' && (ariaLabel || visibleText)) {
+          return {
+            kind: 'role',
+            role,
+            name: ariaLabel || visibleText,
+            exact: true,
+          };
+        }
+
+        // Placeholder for inputs
+        if (placeholder) {
+          return { kind: 'placeholder', text: placeholder, exact: true };
+        }
+
+        // Text for short visible text
+        if (visibleText && visibleText.length < 80) {
+          return { kind: 'text', text: visibleText, exact: true };
+        }
+
+        // TestId
+        if (testId) {
+          return { kind: 'testId', id: testId };
+        }
+
+        // ID selector
+        if (id) {
+          return { kind: 'css', selector: `#${id}` };
+        }
+
+        // Fallback to tag-based CSS
+        return { kind: 'css', selector: el.tagName.toLowerCase() };
+      }
+
+      const result: {
+        title: string;
+        interactiveElements: Array<{
+          index: number;
+          tagName: string;
+          role: string;
+          text: string;
+          ariaLabel?: string;
+          placeholder?: string;
+          href?: string;
+          type?: string;
+          name?: string;
+          id?: string;
+          isVisible: boolean;
+          target: ReturnType<typeof buildTargetHint>;
+        }>;
+        forms: Array<{
+          action?: string;
+          method: string;
+          fields: Array<{
+            name?: string;
+            type: string;
+            label?: string;
+            placeholder?: string;
+            required: boolean;
+          }>;
+        }>;
+        headings: Array<{ level: number; text: string }>;
+        navigation: Array<{ links: Array<{ text: string; href?: string }> }>;
+      } = {
+        title: document.title,
+        interactiveElements: [],
+        forms: [],
+        headings: [],
+        navigation: [],
+      };
+
+      // Extract interactive elements
+      const interactiveSelector =
+        'button, a, input, select, textarea, [role="button"], [role="link"], [role="checkbox"], [role="radio"], [role="combobox"], [onclick], [tabindex]:not([tabindex="-1"])';
+      const interactives = document.querySelectorAll(interactiveSelector);
+      let index = 0;
+      for (const el of interactives) {
+        if (index >= maxElements) break;
+        if (!isElementVisible(el)) continue;
+
+        const tagName = el.tagName.toLowerCase();
+        const role = inferRole(el);
+        const text = el.textContent?.trim().slice(0, 100) || '';
+        const ariaLabel = el.getAttribute('aria-label') || undefined;
+        const placeholder = el.getAttribute('placeholder') || undefined;
+        const href = el.getAttribute('href') || undefined;
+        const type = el.getAttribute('type') || undefined;
+        const name = el.getAttribute('name') || undefined;
+        const id = el.getAttribute('id') || undefined;
+        const target = buildTargetHint(el);
+
+        result.interactiveElements.push({
+          index,
+          tagName,
+          role,
+          text,
+          ariaLabel,
+          placeholder,
+          href,
+          type,
+          name,
+          id,
+          isVisible: true,
+          target,
+        });
+        index++;
+      }
+
+      // Extract forms
+      const forms = document.querySelectorAll('form');
+      let formCount = 0;
+      for (const form of forms) {
+        if (formCount >= maxForms) break;
+
+        const action = form.getAttribute('action') || undefined;
+        const method = (form.getAttribute('method') || 'GET').toUpperCase();
+        const fields: Array<{
+          name?: string;
+          type: string;
+          label?: string;
+          placeholder?: string;
+          required: boolean;
+        }> = [];
+
+        const formFields = form.querySelectorAll('input, select, textarea');
+        for (const field of formFields) {
+          const fieldName = field.getAttribute('name') || undefined;
+          const fieldType = field.getAttribute('type') || field.tagName.toLowerCase();
+          const label = findLabel(field);
+          const placeholder = field.getAttribute('placeholder') || undefined;
+          const required = field.hasAttribute('required');
+
+          fields.push({
+            name: fieldName,
+            type: fieldType,
+            label,
+            placeholder,
+            required,
+          });
+        }
+
+        result.forms.push({ action, method, fields });
+        formCount++;
+      }
+
+      // Extract headings
+      const headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+      let headingCount = 0;
+      for (const h of headings) {
+        if (headingCount >= maxHeadings) break;
+        const level = parseInt(h.tagName[1], 10);
+        const text = h.textContent?.trim().slice(0, 200) || '';
+        if (text) {
+          result.headings.push({ level, text });
+          headingCount++;
+        }
+      }
+
+      // Extract navigation
+      const navs = document.querySelectorAll('nav, [role="navigation"]');
+      for (const nav of navs) {
+        const links: Array<{ text: string; href?: string }> = [];
+        const anchors = nav.querySelectorAll('a');
+        for (const a of anchors) {
+          if (links.length >= maxNavLinks) break;
+          const text = a.textContent?.trim() || '';
+          const href = a.getAttribute('href') || undefined;
+          if (text) {
+            links.push({ text, href });
+          }
+        }
+        if (links.length > 0) {
+          result.navigation.push({ links });
+        }
+      }
+
+      return result;
+    },
+    {
+      maxElements: MAX_INTERACTIVE_ELEMENTS,
+      maxForms: MAX_FORMS,
+      maxHeadings: MAX_HEADINGS,
+      maxNavLinks: MAX_NAV_LINKS,
+    }
+  );
+
+  session.actions.push({
+    timestamp: Date.now(),
+    action: 'get_dom_snapshot',
+    details: {
+      url,
+      format: 'json',
+      interactiveCount: snapshot.interactiveElements.length,
+      formCount: snapshot.forms.length,
+      headingCount: snapshot.headings.length,
+      navCount: snapshot.navigation.length,
+    },
+  });
+
+  return {
+    url,
+    title: snapshot.title,
+    interactiveElements: snapshot.interactiveElements as InteractiveElement[],
+    forms: snapshot.forms,
+    headings: snapshot.headings,
+    navigation: snapshot.navigation,
+  };
+}

@@ -45,15 +45,15 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     function: {
       name: 'editor_apply_flow_patch',
       description:
-        'Apply ONE patch to flow.json. Pass flat params: packId, op, and for the op: index?, step?, collectibles? at top level (no nested patch object). append: op + step. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID), network_extract (fromVar, as, out).',
+        'Apply ONE patch to flow.json. Pass flat params: packId, op, and for the op: index?, step?, collectibles?, inputs? at top level (no nested patch object). append: op + step. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. update_inputs: op + inputs. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID), network_extract (fromVar, as, out).',
       parameters: {
         type: 'object',
         properties: {
           packId: { type: 'string', description: 'Pack ID' },
           op: {
             type: 'string',
-            enum: ['append', 'insert', 'replace', 'delete', 'update_collectibles'],
-            description: 'append=add step at end; insert=add at index; replace=replace step at index; delete=remove at index; update_collectibles=replace collectibles array',
+            enum: ['append', 'insert', 'replace', 'delete', 'update_collectibles', 'update_inputs'],
+            description: 'append=add step at end; insert=add at index; replace=replace step at index; delete=remove at index; update_collectibles=replace collectibles array; update_inputs=add/update input fields',
           },
           index: { type: 'number', description: 'Required for insert, replace, delete. Step index (0-based).' },
           step: {
@@ -72,6 +72,19 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
               },
             },
           },
+          inputs: {
+            type: 'object',
+            description: 'Required for update_inputs. Object of { fieldName: { type, description?, required?, default? } }. Merges with existing inputs.',
+            additionalProperties: {
+              type: 'object',
+              properties: {
+                type: { type: 'string', description: 'Field type: string, number, boolean, etc.' },
+                description: { type: 'string' },
+                required: { type: 'boolean' },
+                default: {},
+              },
+            },
+          },
         },
         required: ['packId', 'op'],
       },
@@ -82,7 +95,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     function: {
       name: 'editor_run_pack',
       description:
-        'Run a task pack in a separate harness with given inputs. Returns runId, runDir, eventsPath, artifactsDir. Do not use for "run flow in the browser" or "execute steps in the open browser"—use browser_* tools (browser_goto, browser_click, browser_type, etc.) to execute steps in the current browser session instead.',
+        'Run a task pack with given inputs. Returns success (boolean), collectibles (extracted data), meta (url, durationMs, notes), error (if failed), plus runId, runDir, eventsPath, artifactsDir. Use success and collectibles to verify test results. Do not use for "run flow in the browser" or "execute steps in the open browser"—use browser_* tools (browser_goto, browser_click, browser_type, etc.) to execute steps in the current browser session instead.',
       parameters: {
         type: 'object',
         properties: {
@@ -170,6 +183,30 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: { sessionId: { type: 'string' } },
+        required: ['sessionId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_get_dom_snapshot',
+      description:
+        'Get page accessibility snapshot in compact YAML format (default) or verbose JSON. YAML format shows hierarchical DOM structure with element refs [ref=eN] for targeting. Use maxDepth to limit tree depth for very large pages. ~70-80% smaller than JSON format. Prefer this over screenshot for understanding page structure.',
+      parameters: {
+        type: 'object',
+        properties: {
+          sessionId: { type: 'string', description: 'Browser session ID' },
+          format: {
+            type: 'string',
+            enum: ['yaml', 'json'],
+            description: 'Output format: yaml (compact, default) or json (verbose legacy)',
+          },
+          maxDepth: {
+            type: 'number',
+            description: 'Max tree depth to return (default: unlimited). Only applies to yaml format.',
+          },
+        },
         required: ['sessionId'],
       },
     },
@@ -379,7 +416,7 @@ export async function executeAgentTool(
       case 'apply_flow_patch': {
         const packId = args.packId as string;
         if (!packId) throw new Error('packId required');
-        // Accept flat params (packId, op, index?, step?, collectibles?) or legacy nested patch
+        // Accept flat params (packId, op, index?, step?, collectibles?, inputs?) or legacy nested patch
         const legacyPatch = args.patch as Record<string, unknown> | undefined;
         const patch: Record<string, unknown> = legacyPatch
           ? { ...legacyPatch }
@@ -388,8 +425,9 @@ export async function executeAgentTool(
               ...(args.index !== undefined && { index: args.index }),
               ...(args.step !== undefined && { step: args.step }),
               ...(args.collectibles !== undefined && { collectibles: args.collectibles }),
+              ...(args.inputs !== undefined && { inputs: args.inputs }),
             };
-        if (!patch.op) throw new Error('op required (append, insert, replace, delete, or update_collectibles)');
+        if (!patch.op) throw new Error('op required (append, insert, replace, delete, update_collectibles, or update_inputs)');
         const result = await taskPackEditor.applyFlowPatch(packId, patch as any);
         return wrap(JSON.stringify(result, null, 2));
       }
@@ -472,6 +510,18 @@ export async function executeAgentTool(
         const sessionId = args.sessionId as string;
         if (!sessionId) throw new Error('sessionId required');
         const result = await browserInspector.getLinks(sessionId);
+        return wrap(JSON.stringify(result, null, 2));
+      }
+      case 'get_dom_snapshot': {
+        const sessionId = args.sessionId as string;
+        if (!sessionId) throw new Error('sessionId required');
+        const format = (args.format as 'yaml' | 'json') ?? 'yaml';
+        const maxDepth = args.maxDepth as number | undefined;
+        const result = await browserInspector.getDomSnapshot(sessionId, { format, maxDepth });
+        // For YAML format, return the snapshot string directly for compactness
+        if (format === 'yaml' && 'snapshot' in result) {
+          return wrap(`URL: ${result.url}\nTitle: ${result.title}\n\n${result.snapshot}`);
+        }
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'network_list': {

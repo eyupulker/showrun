@@ -420,6 +420,12 @@ export interface NetworkExtractStep extends BaseDslStep {
     fromVar: string;
     as: 'json' | 'text';
     jsonPath?: string;
+    /**
+     * Transform each item in the extracted array.
+     * Keys are output field names, values are jsonPath expressions applied to each item.
+     * Example: { "name": "$.name", "url": "$.website" }
+     */
+    transform?: Record<string, string>;
     out: string;
   };
 }

@@ -5,16 +5,21 @@
 
 import type { LlmProvider } from './provider.js';
 import { OpenAIProvider } from './openai.js';
+import { AnthropicProvider } from './anthropic.js';
 
 export function createLlmProvider(): LlmProvider {
-  const provider = process.env.LLM_PROVIDER || 'openai';
+  // Auto-detect provider based on available API keys
+  const provider = process.env.LLM_PROVIDER ||
+    (process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'openai');
 
   switch (provider) {
     case 'openai':
       return new OpenAIProvider();
+    case 'anthropic':
+      return new AnthropicProvider();
     default:
       throw new Error(`Unsupported LLM provider: ${provider}`);
   }
 }
 
-export type { LlmProvider, ChatMessage } from './provider.js';
+export type { LlmProvider, ChatMessage, StreamEvent } from './provider.js';

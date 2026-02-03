@@ -20,6 +20,7 @@ import type { NetworkCaptureApi, NetworkFindWhere, NetworkReplayOverrides } from
 import { resolveTemplate } from './templating.js';
 import { resolveTargetWithFallback, selectorToTarget } from './target.js';
 import type { AuthFailureMonitor } from '../authResilience.js';
+import { JSONPath } from 'jsonpath-plus';
 
 /**
  * Step execution context
@@ -372,9 +373,25 @@ async function executeSetVar(
   ctx.vars[step.params.name] = resolvedValue;
 }
 
-/** Simple dot-path extraction from object (e.g. "data.items" -> obj.data.items) */
+/**
+ * Extract value from object using path expression.
+ * Supports JSONPath syntax (starting with $) or simple dot notation.
+ * Examples:
+ *   - "$.results[0].hits[*]" - JSONPath with array access and wildcards
+ *   - "$.name" - JSONPath for simple field
+ *   - "data.items" - Simple dot notation (legacy)
+ */
 function getByPath(obj: unknown, path: string): unknown {
-  const parts = path.trim().split('.');
+  const trimmed = path.trim();
+
+  // Use JSONPath for paths starting with $ or containing brackets
+  if (trimmed.startsWith('$') || trimmed.includes('[')) {
+    const results = JSONPath({ path: trimmed, json: obj as object, wrap: false });
+    return results;
+  }
+
+  // Simple dot-path fallback for legacy paths
+  const parts = trimmed.split('.');
   let current: unknown = obj;
   for (const key of parts) {
     if (current == null || typeof current !== 'object') return undefined;
@@ -515,9 +532,10 @@ async function executeNetworkExtract(
   ctx: StepContext,
   step: NetworkExtractStep
 ): Promise<void> {
-  const raw = ctx.vars[step.params.fromVar];
+  // Check vars first, then collectibles (network_replay uses 'out' for collectibles, 'saveAs' for vars)
+  const raw = ctx.vars[step.params.fromVar] ?? ctx.collectibles[step.params.fromVar];
   if (raw === undefined) {
-    throw new Error(`network_extract: var "${step.params.fromVar}" is not set`);
+    throw new Error(`network_extract: var "${step.params.fromVar}" is not set (checked vars and collectibles)`);
   }
   // Replay saveAs stores { body, status, contentType, bodySize }; support that or raw string
   const bodyStr =
@@ -531,6 +549,26 @@ async function executeNetworkExtract(
   if (step.params.as === 'json') {
     const parsed = JSON.parse(bodyStr) as unknown;
     value = step.params.jsonPath ? getByPath(parsed, step.params.jsonPath) : parsed;
+
+    // Apply transform if provided (maps each item in array using jsonPath expressions)
+    if (step.params.transform && Array.isArray(value)) {
+      const transformMap = step.params.transform;
+      value = value.map((item: unknown) => {
+        const transformed: Record<string, unknown> = {};
+        for (const [key, path] of Object.entries(transformMap)) {
+          transformed[key] = getByPath(item, path);
+        }
+        return transformed;
+      });
+    } else if (step.params.transform && !Array.isArray(value) && typeof value === 'object' && value !== null) {
+      // Single object transform
+      const transformMap = step.params.transform;
+      const transformed: Record<string, unknown> = {};
+      for (const [key, path] of Object.entries(transformMap)) {
+        transformed[key] = getByPath(value, path);
+      }
+      value = transformed;
+    }
   } else {
     value = step.params.jsonPath
       ? getByPath(JSON.parse(bodyStr) as unknown, step.params.jsonPath)

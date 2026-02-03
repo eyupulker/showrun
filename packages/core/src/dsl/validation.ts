@@ -604,6 +604,16 @@ function validateStep(step: unknown): step is DslStep {
       if (params.jsonPath !== undefined && typeof params.jsonPath !== 'string') {
         throw new ValidationError('NetworkExtract step "jsonPath" must be a string');
       }
+      if (params.transform !== undefined) {
+        if (typeof params.transform !== 'object' || params.transform === null || Array.isArray(params.transform)) {
+          throw new ValidationError('NetworkExtract step "transform" must be an object mapping field names to jsonPath expressions');
+        }
+        for (const [key, val] of Object.entries(params.transform as Record<string, unknown>)) {
+          if (typeof val !== 'string') {
+            throw new ValidationError(`NetworkExtract step "transform.${key}" must be a string (jsonPath expression)`);
+          }
+        }
+      }
       if (typeof params.out !== 'string' || !params.out) {
         throw new ValidationError('NetworkExtract step must have a non-empty string "out" in params');
       }

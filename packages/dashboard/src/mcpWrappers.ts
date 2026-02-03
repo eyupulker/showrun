@@ -21,7 +21,22 @@ export type FlowPatchOp =
   | { op: 'insert'; index: number; step: DslStep }
   | { op: 'replace'; index: number; step: DslStep }
   | { op: 'delete'; index: number }
-  | { op: 'update_collectibles'; collectibles: CollectibleDefinition[] };
+  | { op: 'update_collectibles'; collectibles: CollectibleDefinition[] }
+  | { op: 'update_inputs'; inputs: Record<string, { type: string; description?: string; required?: boolean; default?: unknown }> };
+
+/**
+ * Result of running a task pack
+ */
+export interface RunPackResult {
+  runId: string;
+  runDir: string;
+  eventsPath: string;
+  artifactsDir: string;
+  success: boolean;
+  collectibles: Record<string, unknown>;
+  meta: { url?: string; durationMs: number; notes?: string };
+  error?: string;
+}
 
 /**
  * TaskPack Editor wrapper functions
@@ -30,7 +45,8 @@ export class TaskPackEditorWrapper {
   constructor(
     private packDirs: string[],
     private workspaceDir: string,
-    private baseRunDir: string
+    private baseRunDir: string,
+    private headful: boolean = false
   ) {}
 
   async listPacks() {
@@ -156,6 +172,7 @@ export class TaskPackEditorWrapper {
 
     const newFlow = [...flowData.flow];
     const newCollectibles = [...(flowData.collectibles || [])];
+    let newInputs = { ...(flowData.inputs || {}) };
 
     const p = patch as Record<string, unknown>;
     const proposal = p.proposal as Record<string, unknown> | undefined;
@@ -222,11 +239,18 @@ export class TaskPackEditorWrapper {
         newCollectibles.length = 0;
         newCollectibles.push(...resolvedPatch.collectibles);
         break;
+      case 'update_inputs':
+        if (!resolvedPatch.inputs || typeof resolvedPatch.inputs !== 'object' || Array.isArray(resolvedPatch.inputs)) {
+          throw new Error("update_inputs requires inputs (object of { fieldName: { type, description?, required?, default? } }).");
+        }
+        // Merge new inputs with existing (allows adding/updating individual fields)
+        newInputs = { ...newInputs, ...resolvedPatch.inputs };
+        break;
     }
 
     const tempPack = {
       metadata: manifest,
-      inputs: flowData.inputs || {},
+      inputs: newInputs,
       collectibles: newCollectibles,
       flow: newFlow,
     };
@@ -241,7 +265,7 @@ export class TaskPackEditorWrapper {
     }
 
     writeFlowJson(packInfo.path, {
-      inputs: flowData.inputs,
+      inputs: newInputs,
       collectibles: newCollectibles,
       flow: newFlow,
     });
@@ -255,10 +279,10 @@ export class TaskPackEditorWrapper {
     };
   }
 
-  async runPack(packId: string, inputs: Record<string, unknown>) {
+  async runPack(packId: string, inputs: Record<string, unknown>): Promise<RunPackResult> {
     const currentPacks = await discoverPacks({ directories: this.packDirs });
     const packInfo = currentPacks.find(({ pack }) => pack.metadata.id === packId);
-    
+
     if (!packInfo) {
       throw new Error(`Pack not found: ${packId}`);
     }
@@ -270,18 +294,35 @@ export class TaskPackEditorWrapper {
 
     const logger = new JSONLLogger(runDir);
 
-    const result = await runTaskPack(pack, inputs, {
-      runDir,
-      logger,
-      headless: true,
-      profileId: packId,
-    });
+    try {
+      const result = await runTaskPack(pack, inputs, {
+        runDir,
+        logger,
+        headless: !this.headful,
+        profileId: packId,
+      });
 
-    return {
-      runId,
-      runDir: result.runDir,
-      eventsPath: result.eventsPath,
-      artifactsDir: result.artifactsDir,
-    };
+      return {
+        runId,
+        runDir: result.runDir,
+        eventsPath: result.eventsPath,
+        artifactsDir: result.artifactsDir,
+        success: true,
+        collectibles: result.collectibles,
+        meta: result.meta,
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        runId,
+        runDir,
+        eventsPath: resolve(runDir, 'events.jsonl'),
+        artifactsDir: resolve(runDir, 'artifacts'),
+        success: false,
+        collectibles: {},
+        meta: { durationMs: 0 },
+        error: errorMessage,
+      };
+    }
   }
 }

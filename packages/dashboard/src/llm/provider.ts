@@ -36,6 +36,18 @@ export interface ChatWithToolsResult {
   toolCalls: ToolCall[];
 }
 
+/** Stream events for chatWithToolsStream */
+export type StreamEvent =
+  | { type: 'thinking_start' }
+  | { type: 'thinking_delta'; text: string }
+  | { type: 'thinking_stop'; text: string }
+  | { type: 'content_start' }
+  | { type: 'content_delta'; text: string }
+  | { type: 'content_stop'; text: string }
+  | { type: 'tool_call_start'; id: string; name: string }
+  | { type: 'tool_call_stop'; toolCall: ToolCall }
+  | { type: 'message_stop' };
+
 export interface LlmProvider {
   name: string;
   generateJson<T>(args: {
@@ -63,4 +75,20 @@ export interface LlmProvider {
     >;
     tools: ToolDef[];
   }): Promise<ChatWithToolsResult>;
+
+  /**
+   * Chat with tools (streaming): yields stream events for thinking, content, and tool calls.
+   * Returns final result when complete.
+   * Optional - providers that don't support streaming can omit this.
+   */
+  chatWithToolsStream?(args: {
+    systemPrompt?: string;
+    messages: Array<
+      | ChatMessage
+      | { role: 'tool'; content: string; tool_call_id: string }
+      | { role: 'assistant'; content: string | null; tool_calls: ToolCall[] }
+    >;
+    tools: ToolDef[];
+    enableThinking?: boolean;
+  }): AsyncGenerator<StreamEvent, ChatWithToolsResult, unknown>;
 }

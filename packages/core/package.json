@@ -9,6 +9,7 @@
     "build": "tsc"
   },
   "dependencies": {
+    "jsonpath-plus": "^10.3.0",
     "nunjucks": "^3.2.4",
     "playwright": "^1.58.0"
   },
