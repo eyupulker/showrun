@@ -226,16 +226,31 @@ export class AnthropicProvider implements LlmProvider {
           continue;
         }
 
-        throw new Error(`Anthropic API error: ${response.status} ${bodyText}`);
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        if (attempt < maxRetries - 1) {
-          // Network error, retry with backoff
+        // 4xx errors (except 429) are client errors - don't retry, they won't succeed
+        if (response.status >= 400 && response.status < 500) {
+          throw new Error(`Anthropic API error: ${response.status} ${bodyText}`);
+        }
+
+        // 5xx errors (except 529) - retry with backoff
+        if (response.status >= 500 && attempt < maxRetries - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Request failed, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
+          console.log(`[Anthropic] Server error ${response.status}, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
           await sleep(waitSec * 1000);
           continue;
         }
+
+        throw new Error(`Anthropic API error: ${response.status} ${bodyText}`);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        // Only retry network errors, not API errors (which are already thrown above)
+        const isNetworkError = !lastError.message.startsWith('Anthropic API error:');
+        if (isNetworkError && attempt < maxRetries - 1) {
+          const waitSec = Math.min(2 ** attempt * 2, 30);
+          console.log(`[Anthropic] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
+          await sleep(waitSec * 1000);
+          continue;
+        }
+        throw lastError;
       }
     }
 
@@ -401,6 +416,7 @@ export class AnthropicProvider implements LlmProvider {
           bodyText = `(failed to read error body)`;
         }
 
+        // Handle rate limits (429) and overloaded (529)
         if ((fetchResponse.status === 429 || fetchResponse.status === 529) && attempt < RATE_LIMIT_MAX_RETRIES - 1) {
           const waitSec = parseRateLimitWaitSeconds(fetchResponse, bodyText);
           console.log(`[Anthropic] Rate limited, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
@@ -408,15 +424,31 @@ export class AnthropicProvider implements LlmProvider {
           continue;
         }
 
-        throw new Error(`Anthropic API error: ${fetchResponse.status} ${bodyText}`);
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        if (attempt < RATE_LIMIT_MAX_RETRIES - 1) {
+        // 4xx errors (except 429) are client errors - don't retry, they won't succeed
+        if (fetchResponse.status >= 400 && fetchResponse.status < 500) {
+          throw new Error(`Anthropic API error: ${fetchResponse.status} ${bodyText}`);
+        }
+
+        // 5xx errors (except 529) - retry with backoff
+        if (fetchResponse.status >= 500 && attempt < RATE_LIMIT_MAX_RETRIES - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Request failed (${lastError.message}), waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
+          console.log(`[Anthropic] Server error ${fetchResponse.status}, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
           await sleep(waitSec * 1000);
           continue;
         }
+
+        throw new Error(`Anthropic API error: ${fetchResponse.status} ${bodyText}`);
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        // Only retry network errors, not API errors (which are already thrown above)
+        const isNetworkError = !lastError.message.startsWith('Anthropic API error:');
+        if (isNetworkError && attempt < RATE_LIMIT_MAX_RETRIES - 1) {
+          const waitSec = Math.min(2 ** attempt * 2, 30);
+          console.log(`[Anthropic] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
+          await sleep(waitSec * 1000);
+          continue;
+        }
+        throw lastError;
       }
     }
 

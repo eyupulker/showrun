@@ -5,6 +5,9 @@
 import type { ToolDef } from './llm/provider.js';
 import type { TaskPackEditorWrapper } from './mcpWrappers.js';
 import * as browserInspector from './browserInspector.js';
+import { getSecretNamesWithValues } from './secretsUtils.js';
+import { resolveTemplates, TaskPackLoader } from '@mcpify/core';
+import { executePlanTool } from './contextManager.js';
 
 /** OpenAI-format tool definitions: Editor MCP + Browser MCP (always on) */
 export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
@@ -31,6 +34,18 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
   {
     type: 'function',
     function: {
+      name: 'editor_list_secrets',
+      description: 'List secrets for a pack. Returns secret names, descriptions, and whether values are set (no actual values for security). Use {{secret.NAME}} in templates to reference secret values.',
+      parameters: {
+        type: 'object',
+        properties: { packId: { type: 'string', description: 'Pack ID' } },
+        required: ['packId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'editor_validate_flow',
       description: 'Validate flow JSON text (DSL steps and collectibles). Returns ok, errors, warnings.',
       parameters: {
@@ -45,7 +60,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     function: {
       name: 'editor_apply_flow_patch',
       description:
-        'Apply ONE patch to flow.json. Pass flat params: packId, op, and for the op: index?, step?, collectibles?, inputs? at top level (no nested patch object). append: op + step. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. update_inputs: op + inputs. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID), network_extract (fromVar, as, out).',
+        'Apply ONE patch to flow.json. Pass flat params: packId, op, and for the op: index?, step?, collectibles?, inputs? at top level (no nested patch object). append: op + step. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. update_inputs: op + inputs. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID), network_extract (fromVar, as, out), select_option (target, value: string|{label}|{index}|array), press_key (key, target?, times?, delayMs?), upload_file (target, files: string|array), frame (frame: string|{name}|{url}, action: enter|exit), new_tab (url?, saveTabIndexAs?), switch_tab (tab: number|last|previous, closeCurrentTab?).',
       parameters: {
         type: 'object',
         properties: {
@@ -110,10 +125,17 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_start_session',
-      description: 'Start a headful browser session for inspection. Returns sessionId. Call when user wants to use browser or no session exists.',
+      description: 'Start a headful browser session for inspection. Returns sessionId. Call when user wants to use browser or no session exists. Use engine="camoufox" for anti-detection Firefox browser (better for scraping sites that block bots).',
       parameters: {
         type: 'object',
-        properties: { headful: { type: 'boolean', description: 'Default true' } },
+        properties: {
+          headful: { type: 'boolean', description: 'Default true' },
+          engine: {
+            type: 'string',
+            enum: ['chromium', 'camoufox'],
+            description: 'Browser engine: "chromium" (default) or "camoufox" (anti-detection Firefox)',
+          },
+        },
         required: [],
       },
     },
@@ -357,19 +379,117 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       },
     },
   },
+  // Context management tools
+  {
+    type: 'function',
+    function: {
+      name: 'agent_save_plan',
+      description: 'Save your current plan/strategy. Use this whenever you formulate a multi-step plan. The plan survives conversation summarization, so include: (1) the user\'s goal, (2) your planned steps, (3) current progress, (4) key decisions made. Call this proactively when working on complex tasks.',
+      parameters: {
+        type: 'object',
+        properties: {
+          plan: {
+            type: 'string',
+            description: 'The plan text. Include goal, steps, progress, and decisions.',
+          },
+        },
+        required: ['plan'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'agent_get_plan',
+      description: 'Retrieve your saved plan. Use this if you need to recall your strategy or after the conversation was summarized.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
 ];
 
 export interface AgentToolContext {
   taskPackEditor: TaskPackEditorWrapper;
   /** Current browser session ID (optional; agent may start one via start_session) */
   browserSessionId?: string | null;
+  /** Current pack ID for template resolution (optional; needed for {{secret.X}} resolution) */
+  packId?: string | null;
+  /** Session key for plan storage (typically packId or a unique session identifier) */
+  sessionKey?: string;
 }
 
-/** Strip editor_ or browser_ prefix for internal dispatch (OpenAI allows only [a-zA-Z0-9_-] in tool names) */
+/**
+ * Resolve templates in a string value using pack secrets.
+ * Falls back to returning the original value if resolution fails.
+ */
+async function resolveTemplateValue(
+  value: string,
+  ctx: AgentToolContext
+): Promise<string> {
+  if (!value || typeof value !== 'string') return value;
+  // Only attempt resolution if the value contains template syntax
+  if (!value.includes('{{')) return value;
+
+  // Get pack path and load secrets if packId is available
+  let secrets: Record<string, string> = {};
+  if (ctx.packId) {
+    try {
+      const packs = await ctx.taskPackEditor.listPacks();
+      const pack = packs.find((p: { id: string; path?: string }) => p.id === ctx.packId);
+      if (pack?.path) {
+        secrets = TaskPackLoader.loadSecrets(pack.path);
+      }
+    } catch (e) {
+      console.warn('[agentTools] Failed to load secrets for template resolution:', e);
+    }
+  }
+
+  try {
+    // Resolve templates using the core templating function
+    const resolved = resolveTemplates(value, {
+      inputs: {},
+      vars: {},
+      secrets,
+    });
+    return resolved as string;
+  } catch (e) {
+    console.warn('[agentTools] Template resolution failed, using original value:', e);
+    return value;
+  }
+}
+
+/** Strip editor_, browser_, or agent_ prefix for internal dispatch (OpenAI allows only [a-zA-Z0-9_-] in tool names) */
 function toolNameToInternal(name: string): string {
   if (name.startsWith('editor_')) return name.slice(7);
   if (name.startsWith('browser_')) return name.slice(8);
+  if (name.startsWith('agent_')) return name.slice(6);
   return name;
+}
+
+/** Max characters for tool outputs before truncation */
+const MAX_TOOL_OUTPUT_CHARS = 8000;
+
+/**
+ * Truncate large tool output to prevent context bloat.
+ * Returns original if under limit, otherwise returns truncated with metadata.
+ */
+function truncateToolOutput(output: string, label?: string): string {
+  if (output.length <= MAX_TOOL_OUTPUT_CHARS) {
+    return output;
+  }
+
+  const truncated = output.slice(0, MAX_TOOL_OUTPUT_CHARS);
+  const result = {
+    _truncated: true,
+    _totalChars: output.length,
+    _shownChars: MAX_TOOL_OUTPUT_CHARS,
+    _message: `Output truncated from ${output.length.toLocaleString()} to ${MAX_TOOL_OUTPUT_CHARS.toLocaleString()} characters.${label ? ` (${label})` : ''} The operation completed successfully.`,
+    partialOutput: truncated + '\n... (truncated)',
+  };
+  return JSON.stringify(result, null, 2);
 }
 
 /** Result of executing a tool: string for LLM, optional browser snapshot for HTTP response */
@@ -407,6 +527,21 @@ export async function executeAgentTool(
         const result = await taskPackEditor.readPack(packId);
         return wrap(JSON.stringify(result, null, 2));
       }
+      case 'list_secrets': {
+        const packId = args.packId as string;
+        if (!packId) throw new Error('packId required');
+        // Get pack path from editor
+        const packInfo = await taskPackEditor.readPack(packId);
+        // Extract path from taskpackJson - we need to get it from the wrapper
+        // For now, use a workaround: list packs and find path
+        const packs = await taskPackEditor.listPacks();
+        const pack = packs.find((p: { id: string }) => p.id === packId);
+        if (!pack || !pack.path) {
+          throw new Error(`Pack ${packId} not found or path not available`);
+        }
+        const secrets = getSecretNamesWithValues(pack.path);
+        return wrap(JSON.stringify({ secrets, note: 'Use {{secret.NAME}} in templates to reference secret values. Never ask for secret values - they are managed through the UI.' }, null, 2));
+      }
       case 'validate_flow': {
         const flowJsonText = args.flowJsonText as string;
         if (typeof flowJsonText !== 'string') throw new Error('flowJsonText required');
@@ -436,12 +571,14 @@ export async function executeAgentTool(
         const inputs = (args.inputs as Record<string, unknown>) || {};
         if (!packId) throw new Error('packId required');
         const result = await taskPackEditor.runPack(packId, inputs);
-        return wrap(JSON.stringify(result, null, 2));
+        const fullJson = JSON.stringify(result, null, 2);
+        return wrap(truncateToolOutput(fullJson, 'run_pack result'));
       }
       case 'start_session': {
         const headful = args.headful !== false;
-        const sessionId = await browserInspector.startBrowserSession(headful);
-        return wrap(JSON.stringify({ sessionId }, null, 2));
+        const engine = (args.engine as 'chromium' | 'camoufox') || 'chromium';
+        const sessionId = await browserInspector.startBrowserSession(headful, engine);
+        return wrap(JSON.stringify({ sessionId, engine }, null, 2));
       }
       case 'close_session': {
         const sessionId = args.sessionId as string;
@@ -453,7 +590,9 @@ export async function executeAgentTool(
         const sessionId = args.sessionId as string;
         const url = args.url as string;
         if (!sessionId || !url) throw new Error('sessionId and url required');
-        const currentUrl = await browserInspector.gotoUrl(sessionId, url);
+        // Resolve templates in URL (e.g., {{secret.BASE_URL}})
+        const resolvedUrl = await resolveTemplateValue(url, ctx);
+        const currentUrl = await browserInspector.gotoUrl(sessionId, resolvedUrl);
         return wrap(JSON.stringify({ url: currentUrl }, null, 2));
       }
       case 'go_back': {
@@ -469,8 +608,10 @@ export async function executeAgentTool(
         const label = args.label as string | undefined;
         const selector = args.selector as string | undefined;
         if (!label && !selector) throw new Error('label or selector required');
+        // Resolve templates in text (e.g., {{secret.USERNAME}}, {{secret.PASSWORD}})
+        const resolvedText = await resolveTemplateValue(text, ctx);
         const result = await browserInspector.typeInElement(sessionId, {
-          text,
+          text: resolvedText,
           label,
           selector,
           clear: args.clear !== false,
@@ -520,9 +661,10 @@ export async function executeAgentTool(
         const result = await browserInspector.getDomSnapshot(sessionId, { format, maxDepth });
         // For YAML format, return the snapshot string directly for compactness
         if (format === 'yaml' && 'snapshot' in result) {
-          return wrap(`URL: ${result.url}\nTitle: ${result.title}\n\n${result.snapshot}`);
+          const output = `URL: ${result.url}\nTitle: ${result.title}\n\n${result.snapshot}`;
+          return wrap(truncateToolOutput(output, 'DOM snapshot'));
         }
-        return wrap(JSON.stringify(result, null, 2));
+        return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'DOM snapshot'));
       }
       case 'network_list': {
         const sessionId = args.sessionId as string;
@@ -553,7 +695,7 @@ export async function executeAgentTool(
         if (!sessionId || !requestId) throw new Error('sessionId and requestId required');
         const full = args.full === true;
         const result = browserInspector.networkGetResponse(sessionId, requestId, full);
-        return wrap(JSON.stringify(result, null, 2));
+        return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'network response'));
       }
       case 'network_replay': {
         const sessionId = args.sessionId as string;
@@ -561,7 +703,7 @@ export async function executeAgentTool(
         if (!sessionId || !requestId) throw new Error('sessionId and requestId required');
         const overrides = args.overrides as Record<string, unknown> | undefined;
         const result = await browserInspector.networkReplay(sessionId, requestId, overrides as Parameters<typeof browserInspector.networkReplay>[2]);
-        return wrap(JSON.stringify(result, null, 2));
+        return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'network replay'));
       }
       case 'network_clear': {
         const sessionId = args.sessionId as string;
@@ -575,6 +717,13 @@ export async function executeAgentTool(
         if (!sessionId) throw new Error('sessionId required');
         const actions = browserInspector.getLastActions(sessionId, limit);
         return wrap(JSON.stringify(actions, null, 2));
+      }
+      // Context management tools (agent_ prefix)
+      case 'save_plan':
+      case 'get_plan': {
+        const sessionKey = ctx.sessionKey || ctx.packId || 'default';
+        const result = executePlanTool(`agent_${internal}`, args, sessionKey);
+        return wrap(result);
       }
       default:
         return wrap(JSON.stringify({ error: `Unknown tool: ${name}` }));

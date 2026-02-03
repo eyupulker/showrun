@@ -38,6 +38,16 @@ import {
 } from './agentTools.js';
 import { TaskPackEditorWrapper } from './mcpWrappers.js';
 import {
+  getSecretNamesWithValues,
+  setSecretValue,
+  deleteSecretValue,
+  updateSecretDefinitions,
+} from './secretsUtils.js';
+import {
+  summarizeIfNeeded,
+  estimateTotalTokens,
+} from './contextManager.js';
+import {
   startBrowserSession,
   gotoUrl,
   goBack,
@@ -673,6 +683,140 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     }
   });
 
+  // REST API: Get secrets for a pack (names only, no values)
+  app.get('/api/packs/:packId/secrets', (req: Request, res: Response) => {
+    const { packId } = req.params;
+    const packInfo = findPackById(packId);
+
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+
+    try {
+      const secrets = getSecretNamesWithValues(packInfo.path);
+      res.json({ secrets });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // REST API: Set a secret value
+  app.put('/api/packs/:packId/secrets/:secretName', (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { packId, secretName } = req.params;
+    const packInfo = findPackById(packId);
+
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+
+    // Validate path is in workspace
+    if (resolvedWorkspaceDir) {
+      try {
+        validatePathInAllowedDir(packInfo.path, resolvedWorkspaceDir);
+      } catch {
+        return res.status(403).json({ error: 'Pack is not in workspace directory' });
+      }
+    }
+
+    const { value } = req.body;
+
+    if (typeof value !== 'string') {
+      return res.status(400).json({ error: 'value (string) is required' });
+    }
+
+    try {
+      setSecretValue(packInfo.path, secretName, value);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // REST API: Delete a secret value
+  app.delete('/api/packs/:packId/secrets/:secretName', (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { packId, secretName } = req.params;
+    const packInfo = findPackById(packId);
+
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+
+    // Validate path is in workspace
+    if (resolvedWorkspaceDir) {
+      try {
+        validatePathInAllowedDir(packInfo.path, resolvedWorkspaceDir);
+      } catch {
+        return res.status(403).json({ error: 'Pack is not in workspace directory' });
+      }
+    }
+
+    try {
+      deleteSecretValue(packInfo.path, secretName);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // REST API: Update secret definitions in manifest
+  app.put('/api/packs/:packId/secrets-schema', (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { packId } = req.params;
+    const packInfo = findPackById(packId);
+
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+
+    // Validate path is in workspace
+    if (resolvedWorkspaceDir) {
+      try {
+        validatePathInAllowedDir(packInfo.path, resolvedWorkspaceDir);
+      } catch {
+        return res.status(403).json({ error: 'Pack is not in workspace directory' });
+      }
+    }
+
+    const { secrets } = req.body;
+
+    if (!Array.isArray(secrets)) {
+      return res.status(400).json({ error: 'secrets must be an array' });
+    }
+
+    // Validate each secret definition
+    for (const secret of secrets) {
+      if (typeof secret.name !== 'string' || !secret.name) {
+        return res.status(400).json({ error: 'Each secret must have a name (string)' });
+      }
+    }
+
+    try {
+      updateSecretDefinitions(packInfo.path, secrets);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
   // Initialize LLM provider for Teach Mode (lazy, only if OPENAI_API_KEY is set)
   let llmProvider: ReturnType<typeof createLlmProvider> | null = null;
   try {
@@ -898,19 +1042,32 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
       res.setHeader('Transfer-Encoding', 'chunked');
       res.flushHeaders?.();
     }
+
+    // Track if request was aborted by client (stop button pressed)
+    let aborted = false;
+    res.on('close', () => {
+      if (!res.writableEnded) {
+        aborted = true;
+        console.log('[Agent] Request aborted by client (stop button)');
+      }
+    });
+
     const writeStreamLine = (obj: object) => {
-      if (streamFlow) res.write(JSON.stringify(obj) + '\n');
+      if (streamFlow && !aborted) res.write(JSON.stringify(obj) + '\n');
     };
 
     // Check if provider supports streaming
     const supportsStreaming = typeof (llmProvider as any).chatWithToolsStream === 'function';
 
-    // Helper to call LLM with or without streaming
-    async function callLlm(): Promise<ChatWithToolsResult> {
+    // Session key for plan storage
+    const sessionKey = packId || `session_${Date.now()}`;
+
+    // Helper to call LLM with or without streaming (uses agentMessages which may be modified by summarization)
+    async function callLlm(currentMessages: AgentMsg[]): Promise<ChatWithToolsResult> {
       if (supportsStreaming && streamFlow) {
         const generator = (llmProvider as any).chatWithToolsStream({
           systemPrompt,
-          messages: agentMessages,
+          messages: currentMessages,
           tools: MCP_AGENT_TOOL_DEFINITIONS,
           enableThinking: true,
         }) as AsyncGenerator<StreamEvent, ChatWithToolsResult, unknown>;
@@ -926,7 +1083,7 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
       } else {
         return await (llmProvider as any).chatWithTools({
           systemPrompt,
-          messages: agentMessages,
+          messages: currentMessages,
           tools: MCP_AGENT_TOOL_DEFINITIONS,
         });
       }
@@ -934,7 +1091,44 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
 
     try {
       for (let iter = 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
-        const result = await callLlm();
+        // Check if client aborted (stop button pressed)
+        if (aborted) {
+          console.log('[Agent] Stopping agent loop - client aborted');
+          if (streamFlow) {
+            writeStreamLine({ type: 'done', error: 'Stopped by user' });
+            res.end();
+          }
+          return;
+        }
+
+        // Check token count and summarize if needed
+        const tokenEstimate = estimateTotalTokens(systemPrompt, agentMessages);
+        if (tokenEstimate > 100_000) {
+          console.log(`[Agent] Token estimate ${tokenEstimate} exceeds threshold, attempting summarization...`);
+          writeStreamLine({ type: 'summarizing', tokensBefore: tokenEstimate });
+          try {
+            const summaryResult = await summarizeIfNeeded(
+              systemPrompt,
+              agentMessages,
+              llmProvider!,
+              sessionKey
+            );
+            if (summaryResult.wasSummarized) {
+              agentMessages = summaryResult.messages;
+              console.log(`[Agent] Summarized: ${summaryResult.tokensBefore} -> ${summaryResult.tokensAfter} tokens`);
+              writeStreamLine({
+                type: 'summarized',
+                tokensBefore: summaryResult.tokensBefore,
+                tokensAfter: summaryResult.tokensAfter,
+              });
+            }
+          } catch (summaryError) {
+            console.error('[Agent] Summarization failed:', summaryError);
+            // Continue anyway, the API will fail if truly over limit
+          }
+        }
+
+        const result = await callLlm(agentMessages);
 
         if (result.toolCalls && result.toolCalls.length > 0) {
           // Track consecutive browser-only rounds (only enforce if limit > 0)
@@ -960,6 +1154,8 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
           const ctx: AgentToolContext = {
             taskPackEditor,
             browserSessionId: lastBrowserSessionId,
+            packId: packId ?? null,
+            sessionKey,
           };
           for (const tc of result.toolCalls) {
             let toolArgs: Record<string, unknown> = {};
@@ -985,6 +1181,16 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
 
             // Emit tool_result event after executing the tool
             writeStreamLine({ type: 'tool_result', tool: tc.name, args: toolArgs, result: resultParsed, success });
+
+            // Check for abort after each tool execution
+            if (aborted) {
+              console.log('[Agent] Stopping mid-tool-loop - client aborted');
+              if (streamFlow) {
+                writeStreamLine({ type: 'done', error: 'Stopped by user' });
+                res.end();
+              }
+              return;
+            }
 
             if (tc.name === 'browser_start_session') {
               try {

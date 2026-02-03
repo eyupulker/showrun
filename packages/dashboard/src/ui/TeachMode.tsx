@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 
 interface Pack {
   id: string;
@@ -34,6 +34,9 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // AbortController for stopping AI requests
+  const abortControllerRef = useRef<AbortController | null>(null);
+
   // AI chat – always uses agent (MCPs always on)
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -50,6 +53,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
   const [isThinking, setIsThinking] = useState(false);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [lastValidation, setLastValidation] = useState<{ ok: boolean; errors: string[]; warnings: string[] } | null>(null);
+  const [isSummarizing, setIsSummarizing] = useState(false);
   const chatEndRef = React.useRef<HTMLDivElement | null>(null);
 
   // Network: request history so user can select one and provide id to AI
@@ -177,6 +181,11 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
     setIsThinking(false);
 
     const useStream = !!(effectivePackId && onFlowUpdated);
+
+    // Create new AbortController for this request
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
     try {
       const messagesForApi = [...chatMessages, userMessage].map((m) => ({
         role: m.role,
@@ -196,6 +205,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
             browserSessionId: sessionId || null,
             stream: true,
           }),
+          signal: abortController.signal,
         });
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
@@ -268,6 +278,10 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
                 onFlowUpdated?.(obj.flow);
               }
               if (obj.validation !== undefined) setLastValidation(obj.validation as { ok: boolean; errors: string[]; warnings: string[] });
+            } else if (obj.type === 'summarizing') {
+              setIsSummarizing(true);
+            } else if (obj.type === 'summarized') {
+              setIsSummarizing(false);
             } else if (obj.type === 'done') {
               // Clear active tool on completion (safety)
               setActiveToolExecution(null);
@@ -322,16 +336,30 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
         if (result.browserSessionId && !sessionId) setSessionId(result.browserSessionId);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setChatMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : String(err)}` }]);
+      // Handle abort gracefully - don't show as error
+      if (err instanceof Error && err.name === 'AbortError') {
+        setChatMessages((prev) => [...prev, { role: 'assistant', content: '(Stopped by user)' }]);
+      } else {
+        setError(err instanceof Error ? err.message : String(err));
+        setChatMessages((prev) => [...prev, { role: 'assistant', content: `Error: ${err instanceof Error ? err.message : String(err)}` }]);
+      }
       setActiveToolExecution(null); // Clear on error
     } finally {
       setChatLoading(false);
       setActiveToolExecution(null); // Safety clear
+      abortControllerRef.current = null; // Clear abort controller
       // Clear streaming state
       setStreamingThinking('');
       setStreamingContent('');
       setIsThinking(false);
+      setIsSummarizing(false);
+    }
+  };
+
+  const handleStopChat = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
   };
 
@@ -773,8 +801,25 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
                   </div>
                 </div>
               )}
+              {/* Summarization indicator */}
+              {isSummarizing && (
+                <div style={{ padding: '10px 14px', backgroundColor: '#fff3cd', borderRadius: '8px', color: '#856404', border: '1px solid #ffc107' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{
+                      display: 'inline-block',
+                      width: '14px',
+                      height: '14px',
+                      border: '2px solid #ffc107',
+                      borderTopColor: '#856404',
+                      borderRadius: '50%',
+                      animation: 'spin 1s linear infinite'
+                    }} />
+                    <span>Summarizing conversation to reduce context size...</span>
+                  </div>
+                </div>
+              )}
               {/* Generic loading indicator when nothing else is showing */}
-              {!streamingThinking && !isThinking && !streamingContent && !activeToolExecution && (
+              {!streamingThinking && !isThinking && !streamingContent && !activeToolExecution && !isSummarizing && (
                 <div style={{ padding: '10px 14px', backgroundColor: '#f5f5f5', borderRadius: '8px', color: '#666' }}>
                   …
                 </div>
@@ -823,13 +868,30 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
             }}
             disabled={chatLoading}
           />
-          <button
-            onClick={handleSendChat}
-            disabled={chatLoading || !chatInput.trim()}
-            style={{ padding: '10px 16px', borderRadius: '6px', fontWeight: 500 }}
-          >
-            Send
-          </button>
+          {chatLoading ? (
+            <button
+              onClick={handleStopChat}
+              style={{
+                padding: '10px 16px',
+                borderRadius: '6px',
+                fontWeight: 500,
+                backgroundColor: '#dc3545',
+                color: 'white',
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={handleSendChat}
+              disabled={!chatInput.trim()}
+              style={{ padding: '10px 16px', borderRadius: '6px', fontWeight: 500 }}
+            >
+              Send
+            </button>
+          )}
         </div>
       </div>
     </div>

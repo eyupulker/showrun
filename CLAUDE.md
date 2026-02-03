@@ -1,0 +1,276 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project Overview
+
+mcpify-anything is a TypeScript + Playwright framework for deterministic, versioned browser automation. It implements a **Task Pack** system - self-contained automation modules that define flows in JSON or TypeScript and run via CLI, MCP server, or web dashboard.
+
+## Build & Run Commands
+
+```bash
+# Install dependencies
+pnpm install
+pnpm exec playwright install chromium
+
+# Build all packages and task packs
+pnpm build
+
+# Run example task packs
+pnpm test:example           # TypeScript example
+pnpm test:example-json      # JSON-only example
+
+# Manual CLI execution
+node packages/harness/dist/cli.js run --pack ./taskpacks/example --inputs '{}'
+
+# Start dashboard (web UI with Teach Mode)
+pnpm --filter @mcpify/dashboard start --packs ./taskpacks
+pnpm --filter @mcpify/dashboard start --packs ./taskpacks --headful  # show browser
+
+# Start MCP server
+pnpm --filter @mcpify/mcp-server run tp-mcp --packs ./taskpacks
+```
+
+## Architecture
+
+```
+packages/
+├── core/           # Types, DSL, loader, runner, validator
+├── harness/        # CLI (`tp run --pack <path> --inputs <json>`)
+├── mcp-server/     # MCP server exposing packs as tools
+├── dashboard/      # Web UI + Express + Socket.IO (React frontend)
+├── browser-inspector-mcp/   # MCP for browser inspection
+├── taskpack-editor-mcp/     # MCP for editing flows
+└── mcpify/         # Unified CLI
+
+taskpacks/          # Task pack definitions
+```
+
+### Core Flow
+
+1. **Loader** (`packages/core/src/loader.ts`) loads a TaskPack from directory
+2. **Validator** (`packages/core/src/validator.ts`) validates inputs against pack schema
+3. **Runner** (`packages/core/src/runner.ts`) executes the pack with Playwright
+4. **DSL Interpreter** (`packages/core/src/dsl/interpreter.ts`) executes declarative steps
+
+### Task Pack Types
+
+**1. JSON inline** (no build): Single file with embedded flow
+```
+taskpacks/my-pack/
+└── taskpack.json   # metadata + inputs + collectibles + flow array
+```
+
+**2. JSON separate** (no build): Metadata and flow in separate files
+```
+taskpacks/my-pack/
+├── taskpack.json   # metadata with "kind": "json-dsl"
+└── flow.json       # inputs + collectibles + flow array
+```
+
+**3. TypeScript** (requires build): Full module with DSL builders
+```
+taskpacks/my-pack/
+├── taskpack.json   # metadata with "main": "dist/index.js"
+├── package.json
+├── tsconfig.json
+└── src/index.ts    # exports TaskPack with flow using builders
+```
+
+### DSL Step Types
+
+All steps defined in `packages/core/src/dsl/types.ts`:
+- `navigate` - Go to URL
+- `click`, `fill` - Interact with elements
+- `wait_for` - Wait for element/URL/load state
+- `extract_title`, `extract_text`, `extract_attribute` - Extract data
+- `assert` - Validate conditions
+- `set_var` - Set template variable
+- `network_find`, `network_replay`, `network_extract` - Network capture/replay
+- `select_option` - Select dropdown options (by value, label, or index)
+- `press_key` - Press keyboard keys (Enter, Tab, Escape, shortcuts)
+- `upload_file` - Upload files to file input elements
+- `frame` - Switch into/out of iframes
+- `new_tab`, `switch_tab` - Multi-tab browser workflows
+
+### Target Selection
+
+Steps use `target` for element selection (prefer over deprecated `selector`):
+```typescript
+{ kind: 'css', selector: '...' }
+{ kind: 'text', text: '...' }
+{ kind: 'role', role: 'button', name: '...' }
+{ kind: 'label', text: '...' }
+{ kind: 'placeholder', text: '...' }
+{ kind: 'testId', id: '...' }
+{ anyOf: [...] }  // fallback chain
+```
+
+### Template Variables
+
+Steps support `{{inputs.xxx}}`, `{{vars.xxx}}`, and `{{secret.xxx}}` substitution (Nunjucks).
+
+**Available filters:**
+- Built-in Nunjucks filters: `urlencode`, `upper`, `lower`, `trim`, etc.
+- `totp` - Generate TOTP code from base32 secret: `{{secret.TOTP_KEY | totp}}`
+
+### Secrets Management
+
+Task packs can define secrets (credentials, API keys) in `taskpack.json`:
+```json
+{
+  "secrets": [
+    { "name": "API_KEY", "description": "External API key", "required": true },
+    { "name": "PASSWORD", "description": "Login password" }
+  ]
+}
+```
+
+Secret values are stored in `.secrets.json` (gitignored) and referenced via `{{secret.NAME}}`:
+```json
+{
+  "type": "fill",
+  "params": {
+    "target": { "kind": "label", "text": "Password" },
+    "value": "{{secret.PASSWORD}}"
+  }
+}
+```
+
+**TOTP/2FA support:** Store base32 TOTP key as a secret and use the `totp` filter:
+```json
+{
+  "type": "fill",
+  "params": {
+    "target": { "kind": "label", "text": "2FA Code" },
+    "value": "{{secret.TOTP_KEY | totp}}"
+  }
+}
+```
+
+**Security features:**
+- Values stored per-pack in `.secrets.json` (never committed)
+- AI agents only see secret names, never values
+- Values are write-only via API (cannot retrieve after setting)
+- Secret values are redacted in logs
+
+### Run-Once & Auth Resilience
+
+Steps can have `"once": "session"` or `"once": "profile"` to run only once. On 401/403, runner can clear once-cache, re-run setup steps, and retry.
+
+### Browser Settings
+
+Task packs can configure browser engine and persistence in `taskpack.json`:
+```json
+{
+  "browser": {
+    "engine": "chromium",
+    "persistence": "profile"
+  }
+}
+```
+
+**Engine options:**
+- `chromium` (default) - Standard Playwright Chromium
+- `camoufox` - Firefox-based anti-detection browser (run `npx camoufox-js fetch` to install)
+
+**Persistence modes:**
+- `none` (default) - Fresh browser each run, no data persisted
+- `session` - Data persisted in temp directory, cleared after 30min inactivity
+- `profile` - Data persisted in pack's `.browser-profile/` directory (gitignored)
+
+### Conditional Step Execution (skip_if)
+
+Steps can be conditionally skipped using `skip_if`:
+```json
+{
+  "id": "login_email",
+  "type": "fill",
+  "skip_if": { "url_includes": "/dashboard" },
+  "params": { "target": { "kind": "label", "text": "Email" }, "value": "..." }
+}
+```
+
+**Supported conditions:**
+- `url_includes` - URL contains string: `{ "url_includes": "/dashboard" }`
+- `url_matches` - URL matches regex: `{ "url_matches": "^https://.*\\.example\\.com" }`
+- `element_visible` - Element is visible: `{ "element_visible": { "kind": "text", "text": "Logout" } }`
+- `element_exists` - Element exists in DOM: `{ "element_exists": { "kind": "css", "selector": ".user-menu" } }`
+- `var_equals` - Variable equals value: `{ "var_equals": { "name": "loggedIn", "value": true } }`
+- `var_truthy` - Variable is truthy: `{ "var_truthy": "authToken" }`
+- `var_falsy` - Variable is falsy: `{ "var_falsy": "needsLogin" }`
+- `all` - All conditions true (AND): `{ "all": [...conditions] }`
+- `any` - Any condition true (OR): `{ "any": [...conditions] }`
+
+**Common pattern - skip login if already authenticated:**
+```json
+{
+  "flow": [
+    { "id": "nav", "type": "navigate", "params": { "url": "https://example.com" } },
+    { "id": "fill_email", "type": "fill", "skip_if": { "url_includes": "/dashboard" }, "params": { ... } },
+    { "id": "fill_pass", "type": "fill", "skip_if": { "url_includes": "/dashboard" }, "params": { ... } },
+    { "id": "submit", "type": "click", "skip_if": { "url_includes": "/dashboard" }, "params": { ... } }
+  ]
+}
+```
+
+Combined with `"persistence": "profile"`, this enables packs to skip login on subsequent runs when cookies persist.
+
+### Dashboard AI Agent
+
+The dashboard includes an AI agent (Teach Mode) with browser and editor tools. Key features:
+
+**Browser Engine Selection:**
+The AI can start browser sessions with either engine:
+- `browser_start_session` with `engine: "chromium"` (default)
+- `browser_start_session` with `engine: "camoufox"` (anti-detection Firefox)
+
+Use camoufox when scraping sites that block bots or detect automation.
+
+**Context Management:**
+- Automatic summarization when context exceeds ~100k tokens
+- `agent_save_plan` / `agent_get_plan` tools for persisting plans across summarization
+- Tool output truncation (8k char limit) to prevent context bloat
+
+**Tool Output Truncation:**
+Large tool outputs are automatically truncated with metadata:
+```json
+{
+  "_truncated": true,
+  "_totalChars": 50000,
+  "_shownChars": 8000,
+  "_message": "Output truncated... The operation completed successfully.",
+  "partialOutput": "..."
+}
+```
+
+## Key Patterns
+
+- All packages extend root `tsconfig.json` (ES2022, Node16, strict)
+- Workspace deps use `workspace:*` protocol
+- CLI tools defined via `bin` in package.json
+- JSONL logging for structured events (`./runs/<timestamp>/events.jsonl`)
+- Socket.IO for real-time UI updates in dashboard
+- Artifacts on error: `error.png`, `error.html`
+
+## Exit Codes
+
+- `0` - Success
+- `1` - Execution failure
+- `2` - Validation error
+
+## Product Roadmap
+
+The project roadmap is maintained in `docs/ROADMAP.md`. This document tracks:
+- Current state assessment (what's working)
+- Gap analysis (missing features, production readiness, developer experience)
+- Prioritized roadmap with P0/P1/P2/P3 phases
+- Implementation status of planned features
+
+**IMPORTANT: After implementing new features, always update the roadmap:**
+1. Mark completed items with **Implemented** status
+2. Update the "What's Working Well" section if significant features were added
+3. Update step counts or feature lists to reflect current state
+4. Move items between priority phases if scope changes
+
+This ensures the roadmap stays accurate and useful for planning future work.

@@ -3,8 +3,10 @@
  * Direct browser session management for Teach Mode
  */
 
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { Target } from '@mcpify/core';
+
+export type BrowserEngine = 'chromium' | 'camoufox';
 
 // ElementFingerprint type (matches browser-inspector-mcp)
 export interface ElementFingerprint {
@@ -99,8 +101,10 @@ interface ReplayData {
 }
 
 interface BrowserSession {
-  browser: Browser;
+  browser: Browser | null;
+  context: BrowserContext;
   page: Page;
+  engine: BrowserEngine;
   actions: Array<{ timestamp: number; action: string; details?: any }>;
   networkBuffer: NetworkEntry[];
   networkMap: Map<string, NetworkEntry>;
@@ -182,13 +186,38 @@ function attachNetworkCapture(
   });
 }
 
-export async function startBrowserSession(headful = true): Promise<string> {
-  const browser = await chromium.launch({
-    headless: !headful,
-    channel: 'chromium',
-  });
+export async function startBrowserSession(headful = true, engine: BrowserEngine = 'chromium'): Promise<string> {
+  let browser: Browser | null = null;
+  let context: BrowserContext;
+  let page: Page;
 
-  const page = await browser.newPage();
+  if (engine === 'camoufox') {
+    // Dynamic import to avoid loading Camoufox when not needed
+    let Camoufox: (options: { headless?: boolean }) => Promise<BrowserContext>;
+    try {
+      const camoufoxModule = await import('camoufox-js');
+      Camoufox = camoufoxModule.Camoufox;
+    } catch (error) {
+      throw new Error(
+        'Camoufox is not available. Run "npx camoufox-js fetch" to download the browser. ' +
+        `Error: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+
+    // Camoufox returns a BrowserContext directly
+    context = await Camoufox({ headless: !headful });
+    const existingPages = context.pages();
+    page = existingPages.length > 0 ? existingPages[0] : await context.newPage();
+  } else {
+    // Default: Chromium
+    browser = await chromium.launch({
+      headless: !headful,
+      channel: 'chromium',
+    });
+    context = await browser.newContext();
+    page = await context.newPage();
+  }
+
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   const networkBuffer: NetworkEntry[] = [];
   const networkMap = new Map<string, NetworkEntry>();
@@ -196,7 +225,9 @@ export async function startBrowserSession(headful = true): Promise<string> {
 
   sessions.set(sessionId, {
     browser,
+    context,
     page,
+    engine,
     actions: [],
     networkBuffer,
     networkMap,
@@ -208,7 +239,7 @@ export async function startBrowserSession(headful = true): Promise<string> {
   sessions.get(sessionId)!.actions.push({
     timestamp: Date.now(),
     action: 'start_session',
-    details: { headful },
+    details: { headful, engine },
   });
 
   return sessionId;
@@ -891,7 +922,11 @@ export function closeSession(sessionId: string): Promise<void> {
     return Promise.resolve();
   }
   sessions.delete(sessionId);
-  return session.browser.close();
+  // Close browser if available (Chromium), otherwise close context (Camoufox)
+  if (session.browser) {
+    return session.browser.close();
+  }
+  return session.context.close();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

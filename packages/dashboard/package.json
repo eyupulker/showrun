@@ -15,6 +15,7 @@
     "@mcpify/core": "workspace:*",
     "@mcpify/mcp-server": "workspace:*",
     "@mcpify/harness": "workspace:*",
+    "camoufox-js": "^0.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
     "socket.io": "^4.8.1",
