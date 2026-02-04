@@ -109,12 +109,12 @@ async function executeExtractText(
     return;
   }
 
-  if (step.params.first ?? true) {
-    // Get first element only
+  if (step.params.first === true) {
+    // Get first element only (explicit first: true)
     const text = await locator.first().textContent();
     ctx.collectibles[step.params.out] = step.params.trim ?? true ? text?.trim() ?? '' : text ?? '';
   } else {
-    // Get all elements
+    // Get all elements (default behavior for scraping)
     const texts: string[] = [];
     for (let i = 0; i < count; i++) {
       const text = await locator.nth(i).textContent();
@@ -293,10 +293,12 @@ async function executeExtractAttribute(
     return;
   }
 
-  if (step.params.first ?? true) {
+  if (step.params.first === true) {
+    // Get first element only (explicit first: true)
     const value = await locator.first().getAttribute(step.params.attribute);
     ctx.collectibles[step.params.out] = value ?? step.params.default ?? '';
   } else {
+    // Get all elements (default behavior for scraping)
     const values: (string | null)[] = [];
     for (let i = 0; i < count; i++) {
       const value = await locator.nth(i).getAttribute(step.params.attribute);

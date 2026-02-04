@@ -93,6 +93,22 @@ All steps defined in `packages/core/src/dsl/types.ts`:
 - `frame` - Switch into/out of iframes
 - `new_tab`, `switch_tab` - Multi-tab browser workflows
 
+### Extraction Steps: Single vs Multiple Elements
+
+`extract_text` and `extract_attribute` extract from **all matching elements by default** (returns array):
+
+```json
+{ "type": "extract_text", "params": { "target": { "kind": "css", "selector": ".item" }, "out": "items" } }
+// Returns: ["Item 1", "Item 2", "Item 3"]
+```
+
+To extract only the first element, set `first: true`:
+
+```json
+{ "type": "extract_text", "params": { "target": { "kind": "css", "selector": ".item" }, "out": "firstItem", "first": true } }
+// Returns: "Item 1"
+```
+
 ### Target Selection
 
 Steps use `target` for element selection (prefer over deprecated `selector`):
