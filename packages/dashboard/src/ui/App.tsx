@@ -217,6 +217,29 @@ function App() {
     }
   };
 
+  const handleDeleteConversation = async (id: string) => {
+    if (!config) return;
+
+    try {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'x-mcpify-token': config.token,
+        },
+      });
+
+      if (res.ok) {
+        setConversations((prev) => prev.filter((c) => c.id !== id));
+        if (selectedConversationId === id) {
+          setSelectedConversationId(null);
+          setSelectedConversation(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+    }
+  };
+
   const handleConversationUpdate = (updates: Partial<Conversation>) => {
     if (!selectedConversation) return;
     setSelectedConversation((prev) => (prev ? { ...prev, ...updates } : null));
@@ -300,6 +323,7 @@ function App() {
           onSelect={(id) => setSelectedConversationId(id)}
           onNewChat={handleNewChat}
           onEditTitle={handleEditTitle}
+          onDelete={handleDeleteConversation}
         />
       )}
 
