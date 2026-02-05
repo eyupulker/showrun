@@ -6,7 +6,9 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@jmespath-community/jmespath": "^1.3.0",
@@ -18,6 +20,7 @@
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@types/nunjucks": "^3.2.6",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^3.0.0"
   }
 }

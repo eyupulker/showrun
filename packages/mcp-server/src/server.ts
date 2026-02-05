@@ -35,7 +35,7 @@ export interface MCPServerOptions {
 /**
  * Converts Task Pack input schema to Zod schema for McpServer
  */
-function inputSchemaToZodSchema(inputs: InputSchema): z.ZodRawShape {
+export function inputSchemaToZodSchema(inputs: InputSchema): z.ZodRawShape {
   const shape: z.ZodRawShape = {};
 
   for (const [fieldName, fieldDef] of Object.entries(inputs)) {

@@ -226,7 +226,7 @@ export async function startBrowserSession(headful = true, engine: BrowserEngine 
 
   if (engine === 'camoufox') {
     // Dynamic import to avoid loading Camoufox when not needed
-    let Camoufox: (options: { headless?: boolean }) => Promise<BrowserContext>;
+    let Camoufox: (options: { headless?: boolean; humanize?: number | boolean }) => Promise<Browser>;
     try {
       const camoufoxModule = await import('camoufox-js');
       Camoufox = camoufoxModule.Camoufox;
@@ -237,10 +237,11 @@ export async function startBrowserSession(headful = true, engine: BrowserEngine 
       );
     }
 
-    // Camoufox returns a BrowserContext directly
-    context = await Camoufox({ headless: !headful });
-    const existingPages = context.pages();
-    page = existingPages.length > 0 ? existingPages[0] : await context.newPage();
+    // Camoufox returns a Browser instance
+    // humanize: adds human-like cursor movement delays (up to 2 seconds)
+    browser = await Camoufox({ headless: !headful, humanize: 2.0 });
+    context = await browser.newContext();
+    page = await context.newPage();
   } else {
     // Default: Chromium
     browser = await chromium.launch({
@@ -969,6 +970,42 @@ export function closeSession(sessionId: string): Promise<void> {
   return session.context.close();
 }
 
+/**
+ * Check if a browser session is still alive (browser not crashed/closed).
+ * Returns false if session doesn't exist or browser is disconnected.
+ */
+export function isSessionAlive(sessionId: string): boolean {
+  const session = sessions.get(sessionId);
+  if (!session) return false;
+
+  // Check if browser is still connected
+  if (session.browser) {
+    return session.browser.isConnected();
+  }
+  // For persistent contexts (camoufox), check if page is usable
+  try {
+    // isClosed() returns true if the page has been closed
+    return !session.page.isClosed();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Get session info (if it exists). Returns null if session doesn't exist.
+ * Used to check if a session is still active before starting a new one.
+ */
+export function getSession(sessionId: string): { engine: BrowserEngine; url: string } | null {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return null;
+  }
+  return {
+    engine: session.engine,
+    url: session.page.url(),
+  };
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DOM Snapshot for Autonomous Exploration
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1443,5 +1480,107 @@ export async function getDomSnapshot(
     forms: snapshot.forms,
     headings: snapshot.headings,
     navigation: snapshot.navigation,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Coordinate-based Interactions (for CAPTCHA bypass, iframe elements, etc.)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Click at exact x,y coordinates on the page.
+ * Useful for clicking on elements inside iframes (like reCAPTCHA checkbox)
+ * where normal selectors don't work across iframe boundaries.
+ *
+ * With Camoufox's humanize option enabled, cursor movements will appear
+ * human-like (smooth curves with variable speed).
+ *
+ * @param sessionId - Browser session ID
+ * @param x - X coordinate (pixels from left edge of viewport)
+ * @param y - Y coordinate (pixels from top edge of viewport)
+ * @param options - Click options (button type, click count)
+ */
+export async function clickAtCoordinates(
+  sessionId: string,
+  x: number,
+  y: number,
+  options?: { button?: 'left' | 'right' | 'middle'; clickCount?: number }
+): Promise<{ url: string; clicked: boolean; x: number; y: number }> {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  const { page } = session;
+  await page.mouse.click(x, y, {
+    button: options?.button ?? 'left',
+    clickCount: options?.clickCount ?? 1,
+  });
+
+  session.actions.push({
+    timestamp: Date.now(),
+    action: 'click_coordinates',
+    details: { x, y, button: options?.button ?? 'left', url: page.url() },
+  });
+
+  return { url: page.url(), clicked: true, x, y };
+}
+
+/**
+ * Element bounding box information
+ */
+export interface ElementBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+}
+
+/**
+ * Get the bounding box of an element by CSS selector.
+ * Returns the position and dimensions, plus the center point for clicking.
+ *
+ * Use this to find coordinates for elements that are difficult to target
+ * with normal selectors (e.g., iframe contents, canvas elements).
+ *
+ * @param sessionId - Browser session ID
+ * @param selector - CSS selector for the element
+ * @returns Element bounds or null if element not found/not visible
+ */
+export async function getElementBounds(
+  sessionId: string,
+  selector: string
+): Promise<ElementBounds | null> {
+  const session = sessions.get(sessionId);
+  if (!session) {
+    throw new Error(`Session not found: ${sessionId}`);
+  }
+
+  const { page } = session;
+  const element = await page.$(selector);
+  if (!element) {
+    return null;
+  }
+
+  const box = await element.boundingBox();
+  if (!box) {
+    return null;
+  }
+
+  session.actions.push({
+    timestamp: Date.now(),
+    action: 'get_element_bounds',
+    details: { selector, bounds: box, url: page.url() },
+  });
+
+  return {
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height,
+    centerX: box.x + box.width / 2,
+    centerY: box.y + box.height / 2,
   };
 }

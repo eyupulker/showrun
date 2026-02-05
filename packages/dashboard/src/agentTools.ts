@@ -5,6 +5,7 @@
 import type { ToolDef } from './llm/provider.js';
 import type { TaskPackEditorWrapper } from './mcpWrappers.js';
 import * as browserInspector from './browserInspector.js';
+import { isSessionAlive, startBrowserSession, closeSession } from './browserInspector.js';
 import { getSecretNamesWithValues } from './secretsUtils.js';
 import { resolveTemplates, TaskPackLoader } from '@mcpify/core';
 import { executePlanTool } from './contextManager.js';
@@ -12,6 +13,27 @@ import {
   updateConversation,
   type Conversation,
 } from './db.js';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Browser Session Management (per-conversation, in-memory)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Map of conversationId -> browserSessionId (in-memory, not persisted) */
+const conversationBrowserSessions = new Map<string, string>();
+
+/** Get the browser session for a conversation, if any */
+export function getConversationBrowserSession(conversationId: string): string | null {
+  return conversationBrowserSessions.get(conversationId) ?? null;
+}
+
+/** Set the browser session for a conversation */
+export function setConversationBrowserSession(conversationId: string, sessionId: string | null): void {
+  if (sessionId) {
+    conversationBrowserSessions.set(conversationId, sessionId);
+  } else {
+    conversationBrowserSessions.delete(conversationId);
+  }
+}
 
 /** OpenAI-format tool definitions: Editor MCP + Browser MCP (always on) */
 export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
@@ -148,34 +170,14 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
   {
     type: 'function',
     function: {
-      name: 'browser_start_session',
-      description: 'Start a headful browser session for inspection. Returns sessionId. Call when user wants to use browser or no session exists. Use engine="camoufox" for anti-detection Firefox browser (better for scraping sites that block bots).',
-      parameters: {
-        type: 'object',
-        properties: {
-          headful: { type: 'boolean', description: 'Default true' },
-          engine: {
-            type: 'string',
-            enum: ['chromium', 'camoufox'],
-            description: 'Browser engine: "chromium" (default) or "camoufox" (anti-detection Firefox)',
-          },
-        },
-        required: [],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
       name: 'browser_goto',
-      description: 'Navigate browser to URL. Requires sessionId.',
+      description: 'Navigate browser to URL. Browser session is managed automatically.',
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
           url: { type: 'string' },
         },
-        required: ['sessionId', 'url'],
+        required: ['url'],
       },
     },
   },
@@ -186,8 +188,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       description: 'Navigate the browser back one step in history. Use when the user asks to go back.',
       parameters: {
         type: 'object',
-        properties: { sessionId: { type: 'string' } },
-        required: ['sessionId'],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -199,13 +201,12 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
           text: { type: 'string', description: 'Text to type' },
           label: { type: 'string', description: 'Accessible name/label of the input (e.g. "Search")' },
           selector: { type: 'string', description: 'CSS selector when label is not enough' },
           clear: { type: 'boolean', description: 'Clear field before typing (default true)' },
         },
-        required: ['sessionId', 'text'],
+        required: ['text'],
       },
     },
   },
@@ -216,8 +217,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       description: 'Take a screenshot of the current page. Returns { imageBase64, mimeType, url, timestamp }. When you need page context (e.g. user asks "what page am I on?", "what buttons do you see?", "look at the page"), call this first; the image will be attached for you to analyze.',
       parameters: {
         type: 'object',
-        properties: { sessionId: { type: 'string' } },
-        required: ['sessionId'],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -228,8 +229,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       description: 'Get all links on the current page (href, visible text, title). Use this to find which link to click instead of screenshot + vision; cheaper and accurate.',
       parameters: {
         type: 'object',
-        properties: { sessionId: { type: 'string' } },
-        required: ['sessionId'],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -242,7 +243,6 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string', description: 'Browser session ID' },
           format: {
             type: 'string',
             enum: ['yaml', 'json'],
@@ -253,7 +253,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
             description: 'Max tree depth to return (default: unlimited). Only applies to yaml format.',
           },
         },
-        required: ['sessionId'],
+        required: [],
       },
     },
   },
@@ -265,12 +265,42 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
           linkText: { type: 'string', description: 'Visible text of the element to click (e.g. "Sign in", "Winter 2026")' },
           role: { type: 'string', enum: ['link', 'button', 'text'], description: 'Use "link" (default) for <a>, "button" for buttons, "text" for divs/spans/list items (batch names, tabs)' },
           selector: { type: 'string', description: 'CSS selector if linkText is not sufficient' },
         },
-        required: ['sessionId'],
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_click_coordinates',
+      description: 'Click at exact x,y coordinates on the page. Use for clicking on elements inside iframes (like reCAPTCHA checkbox) where normal selectors don\'t work across iframe boundaries. Get coordinates from browser_get_element_bounds or by analyzing a screenshot. With Camoufox engine, cursor movements appear human-like.',
+      parameters: {
+        type: 'object',
+        properties: {
+          x: { type: 'number', description: 'X coordinate (pixels from left edge of viewport)' },
+          y: { type: 'number', description: 'Y coordinate (pixels from top edge of viewport)' },
+          button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'Mouse button to click (default "left")' },
+          clickCount: { type: 'number', description: '1 for single click, 2 for double click (default 1)' },
+        },
+        required: ['x', 'y'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_get_element_bounds',
+      description: 'Get the bounding box of an element by CSS selector. Returns position (x, y), dimensions (width, height), and center point (centerX, centerY) for clicking. Use this to find coordinates for elements that are difficult to target with normal selectors, such as iframe contents or positioned elements.',
+      parameters: {
+        type: 'object',
+        properties: {
+          selector: { type: 'string', description: 'CSS selector for the element (e.g., "iframe[title*=\'reCAPTCHA\']", "#my-element")' },
+        },
+        required: ['selector'],
       },
     },
   },
@@ -282,12 +312,11 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
           limit: { type: 'number', description: 'Max requests to return (default 50)' },
           filter: { type: 'string', enum: ['all', 'api', 'xhr'], description: 'Filter type (default "api" - likely API calls only)' },
           compact: { type: 'boolean', description: 'If true (default), return minimal fields. Set false to include request/response headers.' },
         },
-        required: ['sessionId'],
+        required: [],
       },
     },
   },
@@ -299,11 +328,10 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
           query: { type: 'string', description: 'Substring to match in URL, headers, postData, or response body (case-insensitive)' },
           limit: { type: 'number', description: 'Max results to return (default 20)' },
         },
-        required: ['sessionId', 'query'],
+        required: ['query'],
       },
     },
   },
@@ -315,10 +343,9 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
           requestId: { type: 'string', description: 'Request ID the user selected (e.g. req-1-123)' },
         },
-        required: ['sessionId', 'requestId'],
+        required: ['requestId'],
       },
     },
   },
@@ -330,11 +357,10 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
           requestId: { type: 'string', description: 'Request ID from network list or network_get' },
           full: { type: 'boolean', description: 'If true, return full captured snippet (up to 2000 chars); default false returns first 200 chars' },
         },
-        required: ['sessionId', 'requestId'],
+        required: ['requestId'],
       },
     },
   },
@@ -346,7 +372,6 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
           requestId: { type: 'string', description: 'Request ID from network list or network_get' },
           overrides: {
             type: 'object',
@@ -361,7 +386,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
             },
           },
         },
-        required: ['sessionId', 'requestId'],
+        required: ['requestId'],
       },
     },
   },
@@ -372,8 +397,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       description: 'Clear the session network buffer.',
       parameters: {
         type: 'object',
-        properties: { sessionId: { type: 'string' } },
-        required: ['sessionId'],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -385,10 +410,9 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       parameters: {
         type: 'object',
         properties: {
-          sessionId: { type: 'string' },
           limit: { type: 'number', description: 'Default 10' },
         },
-        required: ['sessionId'],
+        required: [],
       },
     },
   },
@@ -396,11 +420,11 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_close_session',
-      description: 'Close the browser session and free resources.',
+      description: 'Close the browser session and free resources. Note: Browser is automatically closed when pack is marked as ready.',
       parameters: {
         type: 'object',
-        properties: { sessionId: { type: 'string' } },
-        required: ['sessionId'],
+        properties: {},
+        required: [],
       },
     },
   },
@@ -504,18 +528,50 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       },
     },
   },
+  {
+    type: 'function',
+    function: {
+      name: 'request_secrets',
+      description: 'Request the user to provide secret values needed for the automation (e.g., passwords, API keys, TOTP secrets). This will show a modal to the user where they can enter the values securely. The AI never sees the actual values - only knows when they have been provided. Use this when the pack needs credentials that are not yet set.',
+      parameters: {
+        type: 'object',
+        properties: {
+          secrets: {
+            type: 'array',
+            description: 'List of secrets to request from the user',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string', description: 'Secret name (must match the secret defined in taskpack.json)' },
+                description: { type: 'string', description: 'Description of what this secret is used for' },
+                required: { type: 'boolean', description: 'Whether this secret is required (default true)' },
+              },
+              required: ['name'],
+            },
+          },
+          message: {
+            type: 'string',
+            description: 'A message explaining to the user why these secrets are needed',
+          },
+        },
+        required: ['secrets', 'message'],
+      },
+    },
+  },
 ];
 
 export interface AgentToolContext {
   taskPackEditor: TaskPackEditorWrapper;
-  /** Current browser session ID (optional; agent may start one via start_session) */
-  browserSessionId?: string | null;
   /** Current pack ID for template resolution (optional; needed for {{secret.X}} resolution) */
   packId?: string | null;
   /** Session key for plan storage (typically packId or a unique session identifier) */
   sessionKey?: string;
-  /** Current conversation ID (optional; needed for conversation_* tools) */
+  /** Current conversation ID (optional; needed for conversation_* and browser_* tools) */
   conversationId?: string | null;
+  /** Callback to trigger secrets request modal (set by server) */
+  onSecretsRequest?: (request: { secrets: Array<{ name: string; description?: string; required?: boolean }>; message: string }) => void;
+  /** Whether to run browser in headful mode (default: true for dashboard) */
+  headful?: boolean;
 }
 
 /**
@@ -536,12 +592,18 @@ async function resolveTemplateValue(
     try {
       const packs = await ctx.taskPackEditor.listPacks();
       const pack = packs.find((p: { id: string; path?: string }) => p.id === ctx.packId);
+      console.log(`[resolveTemplateValue] packId=${ctx.packId}, packFound=${!!pack}, packPath=${pack?.path}`);
       if (pack?.path) {
         secrets = TaskPackLoader.loadSecrets(pack.path);
+        console.log(`[resolveTemplateValue] Loaded ${Object.keys(secrets).length} secrets: ${Object.keys(secrets).join(', ')}`);
+      } else {
+        console.warn(`[resolveTemplateValue] Pack not found or no path for packId=${ctx.packId}`);
       }
     } catch (e) {
       console.warn('[agentTools] Failed to load secrets for template resolution:', e);
     }
+  } else {
+    console.warn(`[resolveTemplateValue] No packId in context, cannot load secrets for template: ${value}`);
   }
 
   try {
@@ -600,6 +662,72 @@ export interface ExecuteToolResult {
  * Execute one agent tool by name (editor.* or browser.*) with parsed arguments.
  * Returns string for LLM and optional browser snapshot for response.
  */
+/** Tools that only the initializer agent should use (pack creation is automatic now) */
+const INITIALIZER_ONLY_TOOLS = new Set([
+  'editor_create_pack',
+  'conversation_link_pack',
+]);
+
+/** Tool definitions for the main agent (excludes pack creation/linking - handled by initializer) */
+export const MAIN_AGENT_TOOL_DEFINITIONS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => !INITIALIZER_ONLY_TOOLS.has(t.function.name)
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Browser Tools that need automatic session management
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** Browser tools that need a session - sessionId is auto-injected */
+const BROWSER_TOOLS = new Set([
+  'goto',
+  'go_back',
+  'type',
+  'screenshot',
+  'get_links',
+  'get_dom_snapshot',
+  'click',
+  'click_coordinates',
+  'get_element_bounds',
+  'network_list',
+  'network_search',
+  'network_get',
+  'network_get_response',
+  'network_replay',
+  'network_clear',
+  'last_actions',
+  'close_session',
+]);
+
+/**
+ * Get or create a browser session for the conversation.
+ * Auto-starts camoufox if no session exists or session is dead.
+ */
+async function ensureBrowserSession(ctx: AgentToolContext): Promise<string> {
+  if (!ctx.conversationId) {
+    throw new Error('Browser tools require a conversation context');
+  }
+
+  const existingSessionId = getConversationBrowserSession(ctx.conversationId);
+
+  // Check if existing session is still alive
+  if (existingSessionId && isSessionAlive(existingSessionId)) {
+    return existingSessionId;
+  }
+
+  // Session is dead or doesn't exist - start new one
+  // Always use camoufox for better anti-detection
+  const headful = ctx.headful !== false; // Default true for dashboard
+  const engine = 'camoufox' as const;
+
+  console.log(`[BrowserAuto] Starting camoufox session for conversation ${ctx.conversationId}`);
+  const sessionId = await startBrowserSession(headful, engine);
+
+  // Store session in memory map
+  setConversationBrowserSession(ctx.conversationId, sessionId);
+
+  return sessionId;
+}
+
 export async function executeAgentTool(
   name: string,
   args: Record<string, unknown>,
@@ -612,6 +740,20 @@ export async function executeAgentTool(
     s: string,
     snapshot?: { screenshotBase64: string; mimeType: string; url: string }
   ): ExecuteToolResult => (snapshot ? { stringForLlm: s, browserSnapshot: snapshot } : { stringForLlm: s });
+
+  // Auto-inject sessionId for browser tools
+  let effectiveArgs = args;
+  if (BROWSER_TOOLS.has(internal)) {
+    try {
+      const sessionId = await ensureBrowserSession(ctx);
+      effectiveArgs = { ...args, sessionId };
+    } catch (err) {
+      return wrap(JSON.stringify({
+        error: `Browser session failed: ${err instanceof Error ? err.message : String(err)}`,
+        hint: 'The browser may have been closed. Try the operation again to auto-restart.',
+      }));
+    }
+  }
 
   try {
     switch (internal) {
@@ -665,6 +807,15 @@ export async function executeAgentTool(
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'create_pack': {
+        // Check if conversation already has a linked pack
+        if (ctx.packId) {
+          return wrap(JSON.stringify({
+            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack("${ctx.packId}") to see the current flow, then use editor_apply_flow_patch to modify it.`,
+            existingPackId: ctx.packId,
+            suggestion: 'Call editor_read_pack first to understand the existing flow, then use editor_apply_flow_patch to make changes.',
+          }, null, 2));
+        }
+
         const id = args.id as string;
         const name = args.name as string;
         const description = args.description as string | undefined;
@@ -684,37 +835,34 @@ export async function executeAgentTool(
         const fullJson = JSON.stringify(result, null, 2);
         return wrap(truncateToolOutput(fullJson, 'run_pack result'));
       }
-      case 'start_session': {
-        const headful = args.headful !== false;
-        const engine = (args.engine as 'chromium' | 'camoufox') || 'chromium';
-        const sessionId = await browserInspector.startBrowserSession(headful, engine);
-        return wrap(JSON.stringify({ sessionId, engine }, null, 2));
-      }
+      // Browser tools - sessionId is auto-injected via effectiveArgs
       case 'close_session': {
-        const sessionId = args.sessionId as string;
-        if (!sessionId) throw new Error('sessionId required');
-        await browserInspector.closeSession(sessionId);
+        const sessionId = effectiveArgs.sessionId as string;
+        await closeSession(sessionId);
+        // Remove from tracking
+        if (ctx.conversationId) {
+          setConversationBrowserSession(ctx.conversationId, null);
+        }
         return wrap(JSON.stringify({ success: true }, null, 2));
       }
       case 'goto': {
-        const sessionId = args.sessionId as string;
+        const sessionId = effectiveArgs.sessionId as string;
         const url = args.url as string;
-        if (!sessionId || !url) throw new Error('sessionId and url required');
+        if (!url) throw new Error('url required');
         // Resolve templates in URL (e.g., {{secret.BASE_URL}})
         const resolvedUrl = await resolveTemplateValue(url, ctx);
         const currentUrl = await browserInspector.gotoUrl(sessionId, resolvedUrl);
         return wrap(JSON.stringify({ url: currentUrl }, null, 2));
       }
       case 'go_back': {
-        const sessionId = args.sessionId as string;
-        if (!sessionId) throw new Error('sessionId required');
+        const sessionId = effectiveArgs.sessionId as string;
         const result = await browserInspector.goBack(sessionId);
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'type': {
-        const sessionId = args.sessionId as string;
+        const sessionId = effectiveArgs.sessionId as string;
         const text = args.text as string;
-        if (!sessionId || text === undefined) throw new Error('sessionId and text required');
+        if (text === undefined) throw new Error('text required');
         const label = args.label as string | undefined;
         const selector = args.selector as string | undefined;
         if (!label && !selector) throw new Error('label or selector required');
@@ -729,8 +877,7 @@ export async function executeAgentTool(
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'click': {
-        const sessionId = args.sessionId as string;
-        if (!sessionId) throw new Error('sessionId required');
+        const sessionId = effectiveArgs.sessionId as string;
         const linkText = args.linkText as string | undefined;
         const selector = args.selector as string | undefined;
         const role = (args.role as 'link' | 'button' | 'text') || 'link';
@@ -738,9 +885,30 @@ export async function executeAgentTool(
         const result = await browserInspector.clickElement(sessionId, { linkText, selector, role });
         return wrap(JSON.stringify(result, null, 2));
       }
+      case 'click_coordinates': {
+        const sessionId = effectiveArgs.sessionId as string;
+        const x = args.x as number;
+        const y = args.y as number;
+        if (typeof x !== 'number' || typeof y !== 'number') {
+          throw new Error('x and y coordinates are required and must be numbers');
+        }
+        const button = (args.button as 'left' | 'right' | 'middle') ?? 'left';
+        const clickCount = (args.clickCount as number) ?? 1;
+        const result = await browserInspector.clickAtCoordinates(sessionId, x, y, { button, clickCount });
+        return wrap(JSON.stringify(result, null, 2));
+      }
+      case 'get_element_bounds': {
+        const sessionId = effectiveArgs.sessionId as string;
+        const selector = args.selector as string;
+        if (!selector) throw new Error('selector required');
+        const result = await browserInspector.getElementBounds(sessionId, selector);
+        if (result === null) {
+          return wrap(JSON.stringify({ found: false, message: 'Element not found or not visible' }, null, 2));
+        }
+        return wrap(JSON.stringify({ found: true, ...result }, null, 2));
+      }
       case 'screenshot': {
-        const sessionId = args.sessionId as string;
-        if (!sessionId) throw new Error('sessionId required');
+        const sessionId = effectiveArgs.sessionId as string;
         const result = await browserInspector.takeScreenshot(sessionId);
         return wrap(
           JSON.stringify(
@@ -758,14 +926,12 @@ export async function executeAgentTool(
         );
       }
       case 'get_links': {
-        const sessionId = args.sessionId as string;
-        if (!sessionId) throw new Error('sessionId required');
+        const sessionId = effectiveArgs.sessionId as string;
         const result = await browserInspector.getLinks(sessionId);
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'get_dom_snapshot': {
-        const sessionId = args.sessionId as string;
-        if (!sessionId) throw new Error('sessionId required');
+        const sessionId = effectiveArgs.sessionId as string;
         const format = (args.format as 'yaml' | 'json') ?? 'yaml';
         const maxDepth = args.maxDepth as number | undefined;
         const result = await browserInspector.getDomSnapshot(sessionId, { format, maxDepth });
@@ -777,8 +943,7 @@ export async function executeAgentTool(
         return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'DOM snapshot'));
       }
       case 'network_list': {
-        const sessionId = args.sessionId as string;
-        if (!sessionId) throw new Error('sessionId required');
+        const sessionId = effectiveArgs.sessionId as string;
         const limit = (args.limit as number) ?? 50;
         const filter = (args.filter as 'all' | 'api' | 'xhr') ?? 'api';
         const compact = args.compact !== false; // default true
@@ -786,46 +951,44 @@ export async function executeAgentTool(
         return wrap(JSON.stringify(list, null, 2));
       }
       case 'network_search': {
-        const sessionId = args.sessionId as string;
+        const sessionId = effectiveArgs.sessionId as string;
         const query = args.query as string;
-        if (!sessionId || query == null) throw new Error('sessionId and query required');
+        if (query == null) throw new Error('query required');
         const limit = (args.limit as number) ?? 20;
         const list = browserInspector.networkSearch(sessionId, query, limit);
         return wrap(JSON.stringify(list, null, 2));
       }
       case 'network_get': {
-        const sessionId = args.sessionId as string;
+        const sessionId = effectiveArgs.sessionId as string;
         const requestId = args.requestId as string;
-        if (!sessionId || !requestId) throw new Error('sessionId and requestId required');
+        if (!requestId) throw new Error('requestId required');
         const result = browserInspector.networkGet(sessionId, requestId);
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'network_get_response': {
-        const sessionId = args.sessionId as string;
+        const sessionId = effectiveArgs.sessionId as string;
         const requestId = args.requestId as string;
-        if (!sessionId || !requestId) throw new Error('sessionId and requestId required');
+        if (!requestId) throw new Error('requestId required');
         const full = args.full === true;
         const result = browserInspector.networkGetResponse(sessionId, requestId, full);
         return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'network response'));
       }
       case 'network_replay': {
-        const sessionId = args.sessionId as string;
+        const sessionId = effectiveArgs.sessionId as string;
         const requestId = args.requestId as string;
-        if (!sessionId || !requestId) throw new Error('sessionId and requestId required');
+        if (!requestId) throw new Error('requestId required');
         const overrides = args.overrides as Record<string, unknown> | undefined;
         const result = await browserInspector.networkReplay(sessionId, requestId, overrides as Parameters<typeof browserInspector.networkReplay>[2]);
         return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'network replay'));
       }
       case 'network_clear': {
-        const sessionId = args.sessionId as string;
-        if (!sessionId) throw new Error('sessionId required');
+        const sessionId = effectiveArgs.sessionId as string;
         browserInspector.networkClear(sessionId);
         return wrap(JSON.stringify({ success: true }, null, 2));
       }
       case 'last_actions': {
-        const sessionId = args.sessionId as string;
+        const sessionId = effectiveArgs.sessionId as string;
         const limit = (args.limit as number) || 10;
-        if (!sessionId) throw new Error('sessionId required');
         const actions = browserInspector.getLastActions(sessionId, limit);
         return wrap(JSON.stringify(actions, null, 2));
       }
@@ -865,6 +1028,17 @@ export async function executeAgentTool(
         if (!ctx.conversationId) {
           return wrap(JSON.stringify({ warning: 'No conversation context, status not saved but noted' }));
         }
+
+        // Auto-close browser when pack is ready
+        if (status === 'ready') {
+          const existingSessionId = getConversationBrowserSession(ctx.conversationId);
+          if (existingSessionId) {
+            console.log(`[BrowserAuto] Closing browser for completed pack (conversation ${ctx.conversationId})`);
+            await closeSession(existingSessionId);
+            setConversationBrowserSession(ctx.conversationId, null);
+          }
+        }
+
         const updated = updateConversation(ctx.conversationId, { status });
         if (!updated) throw new Error('Conversation not found');
         return wrap(JSON.stringify({ success: true, status }));
@@ -878,6 +1052,25 @@ export async function executeAgentTool(
         const updated = updateConversation(ctx.conversationId, { packId });
         if (!updated) throw new Error('Conversation not found');
         return wrap(JSON.stringify({ success: true, packId }));
+      }
+      // Secrets request tool
+      case 'request_secrets': {
+        const secrets = args.secrets as Array<{ name: string; description?: string; required?: boolean }>;
+        const message = args.message as string;
+        if (!Array.isArray(secrets) || secrets.length === 0) {
+          throw new Error('secrets array is required and must not be empty');
+        }
+        if (!message) {
+          throw new Error('message is required');
+        }
+        // The actual secret request is handled by the server via streaming event
+        // This tool just returns a signal that the agent should wait
+        return wrap(JSON.stringify({
+          _type: 'secrets_request',
+          secrets,
+          message,
+          note: 'Secrets request sent to user. The agent loop will pause and resume when secrets are provided.',
+        }));
       }
       default:
         return wrap(JSON.stringify({ error: `Unknown tool: ${name}` }));

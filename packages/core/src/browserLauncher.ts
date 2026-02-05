@@ -161,7 +161,7 @@ async function launchCamoufox(config: {
   const { headless, userDataDir, persistence } = config;
 
   // Dynamic import to avoid loading Camoufox when not needed
-  let Camoufox: (options: { headless?: boolean; user_data_dir?: string }) => Promise<BrowserContext>;
+  let Camoufox: (options: { headless?: boolean; persistentContextDir?: string; humanize?: number | boolean }) => Promise<Browser>;
   try {
     const camoufoxModule = await import('camoufox-js');
     Camoufox = camoufoxModule.Camoufox;
@@ -172,24 +172,26 @@ async function launchCamoufox(config: {
     );
   }
 
-  // Camoufox returns a BrowserContext directly
-  const context = await Camoufox({
+  // Camoufox returns a Browser instance
+  // humanize: adds human-like cursor movement delays (up to 2 seconds)
+  const browser = await Camoufox({
     headless,
-    ...(userDataDir ? { user_data_dir: userDataDir } : {}),
+    humanize: 2.0,
+    ...(userDataDir ? { persistentContextDir: userDataDir } : {}),
   });
 
-  const existingPages = context.pages();
-  const page = existingPages.length > 0 ? existingPages[0] : await context.newPage();
+  const context = await browser.newContext();
+  const page = await context.newPage();
 
   return {
     context,
     page,
-    browser: null,
+    browser,
     engine: 'camoufox',
     persistence,
     userDataDir,
     async close() {
-      await context.close().catch(() => {});
+      await browser.close().catch(() => {});
     },
   };
 }

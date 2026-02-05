@@ -29,6 +29,8 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [packsList, setPacksList] = useState(packs);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Sync packsList with packs prop when it changes
   React.useEffect(() => {
@@ -120,6 +122,36 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
     }
   };
 
+  const handleDeletePack = async (packId: string) => {
+    setIsDeleting(true);
+    setError(null);
+
+    try {
+      const res = await fetch(`/api/packs/${packId}`, {
+        method: 'DELETE',
+        headers: {
+          'X-MCPIFY-TOKEN': token,
+        },
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to delete pack');
+      }
+
+      // Remove from local state
+      setPacksList((prev) => prev.filter((p) => p.id !== packId));
+      if (selectedPack?.id === packId) {
+        setSelectedPack(null);
+      }
+      setDeleteConfirm(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   if (editingPackId) {
     return (
       <PackEditor
@@ -144,6 +176,61 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
           onCreate={handleCreatePack}
           token={token}
         />
+      )}
+      {deleteConfirm && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+          }}
+          onClick={() => !isDeleting && setDeleteConfirm(null)}
+        >
+          <div
+            className="card"
+            style={{
+              width: '400px',
+              maxWidth: '90vw',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 style={{ marginTop: 0, color: 'var(--error)' }}>Delete Pack</h3>
+            <p style={{ color: 'var(--text-secondary)' }}>
+              Are you sure you want to delete <strong>{deleteConfirm}</strong>?
+            </p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+              This will permanently delete the pack directory and all its files. This action cannot be undone.
+            </p>
+            {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+              <button
+                className="btn-secondary"
+                onClick={() => setDeleteConfirm(null)}
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => handleDeletePack(deleteConfirm)}
+                disabled={isDeleting}
+                style={{
+                  backgroundColor: 'var(--error)',
+                  borderColor: 'var(--error)',
+                }}
+              >
+                {isDeleting ? 'Deleting...' : 'Delete Pack'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
@@ -174,16 +261,33 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
                   </div>
                 </div>
                 {pack.kind === 'json-dsl' && (
-                  <button
-                    className="btn-secondary"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingPackId(pack.id);
-                    }}
-                    style={{ marginLeft: '12px', padding: '6px 12px', fontSize: '12px' }}
-                  >
-                    Edit
-                  </button>
+                  <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
+                    <button
+                      className="btn-secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingPackId(pack.id);
+                      }}
+                      style={{ padding: '6px 12px', fontSize: '12px' }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteConfirm(pack.id);
+                      }}
+                      style={{
+                        padding: '6px 12px',
+                        fontSize: '12px',
+                        color: 'var(--error)',
+                        borderColor: 'var(--error)',
+                      }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 )}
               </div>
             </div>

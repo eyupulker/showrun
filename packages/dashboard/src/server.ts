@@ -4,7 +4,7 @@ import { Server as SocketIOServer } from 'socket.io';
 import cors from 'cors';
 import { randomBytes } from 'crypto';
 import { resolve, dirname } from 'path';
-import { mkdirSync, existsSync, readFileSync } from 'fs';
+import { mkdirSync, existsSync, readFileSync, rmSync } from 'fs';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -30,6 +30,7 @@ import {
   deleteConversation,
   addMessage,
   getMessagesForConversation,
+  exportConversationForDebug,
   type Conversation,
   type Message,
 } from './db.js';
@@ -46,12 +47,15 @@ import { validateJsonTaskPack } from '@mcpify/core';
 import type { TaskPackManifest, InputSchema, CollectibleDefinition } from '@mcpify/core';
 import type { DslStep } from '@mcpify/core';
 import { createLlmProvider } from './llm/index.js';
-import type { ChatMessage, ToolCall, StreamEvent, ChatWithToolsResult } from './llm/provider.js';
+import type { ChatMessage, ToolCall, StreamEvent, ChatWithToolsResult, ToolDef } from './llm/provider.js';
 import { proposeStep, type ProposeStepRequest } from './teachMode.js';
 import {
   MCP_AGENT_TOOL_DEFINITIONS,
+  MAIN_AGENT_TOOL_DEFINITIONS,
   executeAgentTool,
   type AgentToolContext,
+  getConversationBrowserSession,
+  setConversationBrowserSession,
 } from './agentTools.js';
 import { TaskPackEditorWrapper } from './mcpWrappers.js';
 import {
@@ -144,6 +148,13 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   // Map MCP run IDs to database run IDs for tracking
   const mcpRunIdMap = new Map<string, string>();
   const MCP_DEFAULT_PORT = 3340;
+
+  // Pending secrets requests - maps conversationId to resolve function
+  // Used to block agent execution until user provides secrets
+  const pendingSecretsRequests = new Map<string, {
+    resolve: (secretNames: string[]) => void;
+    reject: (error: Error) => void;
+  }>();
 
   // Create Express app
   const app = express();
@@ -418,8 +429,8 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     }
   });
 
-  // Delete conversation
-  app.delete('/api/conversations/:id', (req: Request, res: Response) => {
+  // Delete conversation (and its linked pack if any)
+  app.delete('/api/conversations/:id', async (req: Request, res: Response) => {
     if (!requireToken(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
@@ -427,13 +438,53 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     const { id } = req.params;
 
     try {
+      // Get conversation first to check for linked pack
+      const conversation = getConversation(id);
+      if (!conversation) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+
+      // Close any active browser session for this conversation
+      const existingSessionId = getConversationBrowserSession(id);
+      if (existingSessionId) {
+        console.log(`[BrowserAuto] Closing browser for deleted conversation ${id}`);
+        await closeSession(existingSessionId);
+        setConversationBrowserSession(id, null);
+      }
+
+      // If conversation has a linked pack, delete it too (1:1 relationship)
+      let packDeleted = false;
+      if (conversation.packId) {
+        const packInfo = packMap.get(conversation.packId);
+        if (packInfo && resolvedWorkspaceDir) {
+          try {
+            // Only delete JSON-DSL packs in workspace directory
+            const manifest = TaskPackLoader.loadManifest(packInfo.path);
+            if (manifest.kind === 'json-dsl') {
+              validatePathInAllowedDir(packInfo.path, resolvedWorkspaceDir);
+              rmSync(packInfo.path, { recursive: true, force: true });
+              packMap.delete(conversation.packId);
+              packDeleted = true;
+              console.log(`[Dashboard] Pack deleted with conversation: ${conversation.packId}`);
+            }
+          } catch (packErr) {
+            // Log but don't fail - pack might be outside workspace or not JSON-DSL
+            console.warn(`[Dashboard] Could not delete pack ${conversation.packId}:`, packErr);
+          }
+        }
+      }
+
+      // Delete the conversation
       const deleted = deleteConversation(id);
       if (!deleted) {
         return res.status(404).json({ error: 'Conversation not found' });
       }
 
       io.emit('conversations:updated', getAllConversations());
-      res.json({ success: true });
+      if (packDeleted) {
+        io.emit('packs:updated', packMap.size);
+      }
+      res.json({ success: true, packDeleted });
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),
@@ -452,6 +503,53 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
 
     const messages = getMessagesForConversation(id);
     res.json(messages);
+  });
+
+  // Export conversation for debugging (includes all messages, tool calls, runs, etc.)
+  app.get('/api/conversations/:id/export', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const format = req.query.format as string | undefined; // 'json' (default) or 'download'
+
+    try {
+      const exportData = exportConversationForDebug(id);
+
+      if (!exportData) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+
+      // Add pack info if linked
+      let packInfo: { id: string; name: string; path: string } | null = null;
+      if (exportData.conversation.packId) {
+        const pack = packMap.get(exportData.conversation.packId);
+        if (pack) {
+          packInfo = {
+            id: pack.pack.metadata.id,
+            name: pack.pack.metadata.name,
+            path: pack.path,
+          };
+        }
+      }
+
+      const fullExport = {
+        ...exportData,
+        packInfo,
+      };
+
+      if (format === 'download') {
+        // Send as downloadable file
+        const filename = `conversation-debug-${id.slice(0, 8)}-${Date.now()}.json`;
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.send(JSON.stringify(fullExport, null, 2));
+      } else {
+        // Return as regular JSON response
+        res.json(fullExport);
+      }
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   // Add message to conversation
@@ -738,6 +836,62 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
         taskpackJson,
         flowJson,
       });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // REST API: Delete pack (only JSON-DSL packs in workspace)
+  app.delete('/api/packs/:packId', async (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { packId } = req.params;
+    const packInfo = findPackById(packId);
+
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+
+    // Only allow deleting JSON-DSL packs
+    try {
+      const manifest = TaskPackLoader.loadManifest(packInfo.path);
+      if (manifest.kind !== 'json-dsl') {
+        return res.status(400).json({ error: 'Only JSON-DSL packs can be deleted' });
+      }
+    } catch (error) {
+      return res.status(400).json({
+        error: 'Pack is not a JSON-DSL pack or manifest is invalid',
+        details: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    // Validate path is in workspace (security check)
+    if (resolvedWorkspaceDir) {
+      try {
+        validatePathInAllowedDir(packInfo.path, resolvedWorkspaceDir);
+      } catch {
+        return res.status(403).json({ error: 'Pack is not in workspace directory - cannot delete' });
+      }
+    } else {
+      return res.status(403).json({ error: 'No workspace directory configured - cannot delete packs' });
+    }
+
+    try {
+      // Remove the pack directory
+      rmSync(packInfo.path, { recursive: true, force: true });
+
+      // Remove from packMap
+      packMap.delete(packId);
+
+      // Emit update
+      io.emit('packs:updated', packMap.size);
+
+      console.log(`[Dashboard] Pack deleted: ${packId} (${packInfo.path})`);
+      res.json({ success: true, packId, message: `Pack "${packId}" has been deleted` });
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),
@@ -1124,6 +1278,97 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     }
   }
 
+  // ============================================================================
+  // Pack Initializer: Automatically creates and links pack before main agent runs
+  // ============================================================================
+
+  /** Tool definition for initializer agent - only pack creation */
+  const INITIALIZER_TOOL: ToolDef = {
+    type: 'function',
+    function: {
+      name: 'create_pack',
+      description: 'Create a task pack for this automation',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'Pack ID in reverse domain notation (e.g., "gmail.email.scraper", "yc.company.collector")',
+          },
+          name: {
+            type: 'string',
+            description: 'Human-readable name (e.g., "Gmail Email Scraper")',
+          },
+        },
+        required: ['id', 'name'],
+      },
+    },
+  };
+
+  const INITIALIZER_SYSTEM_PROMPT = `You are a pack naming assistant. Given the user's automation request, create a task pack with an appropriate ID and name.
+
+Rules for pack ID:
+- Use reverse domain notation: site.purpose.action (e.g., "gmail.email.scraper", "yc.companies.collector")
+- Lowercase, alphanumeric, dots and hyphens only
+- Keep it short but descriptive
+
+Rules for pack name:
+- Human-readable title (e.g., "Gmail Email Scraper", "YC Companies Collector")
+- Capitalize appropriately
+
+Call create_pack with your chosen id and name.`;
+
+  /**
+   * Run lightweight LLM call to create and name pack based on user's intent.
+   * This runs BEFORE the main agent loop to ensure packId is always set.
+   */
+  async function runPackInitializer(
+    userMessage: string,
+    editor: TaskPackEditorWrapper,
+    convId: string,
+    provider: ReturnType<typeof createLlmProvider>
+  ): Promise<{ id: string; path: string; name: string }> {
+    // Single LLM call with minimal context
+    const result = await (provider as any).chatWithTools({
+      systemPrompt: INITIALIZER_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: userMessage }],
+      tools: [INITIALIZER_TOOL],
+    });
+
+    // Extract tool call
+    let packId: string;
+    let packName: string;
+
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      const tc = result.toolCalls[0];
+      let args: { id?: string; name?: string } = {};
+      try {
+        args = JSON.parse(tc.arguments || '{}');
+      } catch {
+        // ignore parse errors
+      }
+      packId = args.id || `pack.${Date.now().toString(36)}`;
+      packName = args.name || 'New Automation';
+    } else {
+      // Fallback if LLM didn't call tool
+      packId = `pack.${Date.now().toString(36)}`;
+      packName = userMessage.slice(0, 60) || 'New Automation';
+    }
+
+    // Sanitize pack ID: lowercase, only alphanumeric/dots/hyphens/underscores
+    packId = packId.toLowerCase().replace(/[^a-z0-9._-]/g, '.');
+
+    // Create pack via editor wrapper
+    const packResult = await editor.createPack(packId, packName);
+
+    // Link to conversation in database
+    updateConversation(convId, { packId });
+
+    console.log(`[PackInit] Created pack "${packId}" for conversation ${convId}`);
+
+    return { id: packId, path: packResult.path, name: packName };
+  }
+
   // REST API: Teach Mode chat (AI flow-writing assistant)
   app.post('/api/teach/chat', async (req: Request, res: Response) => {
     if (!requireToken(req)) {
@@ -1171,37 +1416,6 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     }
   });
 
-  // Action-first system addon: agent MUST use tools, never passive advice
-  const TEACH_AGENT_ACTION_FIRST =
-    `\n\nTEACH MODE AGENT RULES (MANDATORY):
-- You MUST use tools. Editor MCP and Browser MCP are ALWAYS available. Tool calls are expected, not optional.
-- PACK CREATION WORKFLOW:
-  - If packId IS provided (a pack is already linked to this conversation): DO NOT create a new pack. Use the existing pack. FIRST call editor_read_pack(packId) to see current state, then use editor_apply_flow_patch to make changes.
-  - Only create a new pack when NO packId is provided (packId is null/undefined). In that case:
-    1. First call editor_create_pack with a unique id (e.g., "mycompany.sitename.collector"), name, and description
-    2. Then call conversation_link_pack with the new packId to associate it with this conversation
-    3. Then use editor_apply_flow_patch to add steps to the flow
-    4. Use editor_run_pack to test the flow
-  - IMPORTANT: Once a pack is linked to a conversation, ALL subsequent messages in that conversation should edit that same pack. Never create a second pack unless the user explicitly asks for a new/different one.
-- If the user asks to create a flow, add a step, or extract data: propose a DSL step and apply it via editor_apply_flow_patch. One step per patch; multiple steps = multiple patches in sequence. Supported step types include navigate, click, fill, extract_text, extract_attribute, wait_for, set_var, and network_find, network_replay, network_extract (for API-first flows: find a captured request, replay it with overrides, optionally extract from the response). Steps can include an optional "once" field ("session" or "profile") to mark them as run-once steps that are skipped on subsequent runs when auth is still valid (useful for login/setup steps).
-- When the user asks to execute/run the flow in the browser or to run the steps in the open browser: use browser_* tools (browser_goto, browser_click, browser_type, etc.) to perform the steps. Do NOT use editor_run_pack for this—editor_run_pack runs the pack in a separate run, not in the current browser session.
-- When the user asks you to CLICK a link or button (e.g. "click the Sign in link"): use browser_click with linkText and role "link" or "button". For batch names, filter options, tabs, or list items (e.g. "Winter 2026", "Spring 2026") that are not <a> or <button>, use browser_click with linkText and role "text".
-- To understand page structure: use browser_get_dom_snapshot (returns interactive elements, forms, headings, navigation with target hints). Prefer it for exploration—it's text-based, cheap, and provides element targets for step proposals.
-- To find which links are on the page: use browser_get_links (returns href and visible text for each link). Prefer it over screenshot when you need to choose or click a link; it is cheaper and accurate.
-- For visual layout context (images, complex UI): use browser_screenshot. The image will be attached for analysis. Use sparingly—only when visual layout matters.
-- You HAVE network inspection tools: browser_network_list, browser_network_search, browser_network_get, browser_network_get_response. Use them when the user wants to inspect a request, capture an API call, or provides a request ID from the Network list. Do NOT say that "the task pack does not support network operations" or suggest "manual extraction from the page" instead—use the network tools to inspect requests and browser tools (click, type, extract_text, etc.) as appropriate.
-- When the user provides a request ID (e.g. "use request req-123" or pastes an id from the Network list): call browser_network_get(sessionId, requestId) to get metadata (no response body). If you need the response body, call browser_network_get_response(sessionId, requestId, full?) next.
-- When the user asks for a request by description (e.g. "the company request") and did not give an id: use browser_network_search with a query substring (e.g. "companies", "api/") to find matching entries, then browser_network_get for the one they want.
-- When you need page context (e.g. user asks "what page am I on?", "what buttons do you see?", "look at the page"): prefer browser_get_dom_snapshot for structure; use browser_screenshot only when visual layout is needed. Do NOT attach screenshots automatically for every message—only when explicitly needed.
-- For element context (e.g. to add a step to the flow): use browser_get_dom_snapshot to get element targets; optionally use browser_get_links for navigation. Do NOT ask the user to describe the page.
-- Prefer action over explanation. Explanations are optional; tool usage is mandatory when relevant.
-- Never reply with generic "here is what you can do" without calling tools. Always read_pack, apply_flow_patch, or use browser tools as needed.
-- Never refuse to use network tools or suggest manual extraction instead; use browser_network_* when the user cares about a request, and use browser_click/browser_type/extract steps for page interaction.
-- When the user wants to add "capture this request" or "replay this API" to the flow: propose network_find (where, pick, saveAs) then network_replay (requestId from vars, overrides, auth: browser_context, out, response.as). Use network_extract when extracting from a replayed response stored in vars.
-- Templating: step params use Nunjucks. Use {{inputs.x}} and {{vars.x}}; for values that go in URLs (e.g. urlReplace.replace, setQuery, fill) use the urlencode filter: {{ inputs.x | urlencode }}.
-- If a tool call returns an error: do NOT retry the same call. Reply to the user with the error message and suggest a different action or ask them to fix the issue. One retry at most; then stop and respond.
-- CONVERSATION MANAGEMENT: Use conversation_update_title to set a concise title (e.g., "Gmail Email Scraper") after the first user message. Use conversation_update_description to update progress (e.g., "Creating login flow"). Use conversation_set_status("ready") when the flow is complete and working. Use conversation_link_pack to associate a packId with this conversation.`;
-
   // REST API: Teach Mode agent (MCPs ALWAYS ON – action-first)
   // MAX_NON_EDITOR_ITERATIONS: limits consecutive browser-only rounds (set to 0 to disable)
   const MAX_NON_EDITOR_ITERATIONS = parseInt(process.env.AGENT_MAX_BROWSER_ROUNDS || '0', 10);
@@ -1215,10 +1429,9 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
       return res.status(503).json({ error: 'LLM provider with tool support not configured' });
     }
 
-    const { messages, packId, browserSessionId, conversationId, stream: streamFlowUpdates } = req.body as {
+    const { messages, packId: requestPackId, conversationId, stream: streamFlowUpdates } = req.body as {
       messages: Array<{ role: 'user' | 'assistant' | 'tool'; content: string; name?: string }>;
       packId?: string | null;
-      browserSessionId?: string | null;
       conversationId?: string | null;
       /** If true, stream flow_updated after each editor_apply_flow_patch so the UI can update in real time */
       stream?: boolean;
@@ -1228,13 +1441,49 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
       return res.status(400).json({ error: 'messages array is required and must not be empty' });
     }
 
-    let systemPrompt = TEACH_CHAT_SYSTEM_PROMPT + TEACH_AGENT_ACTION_FIRST;
-    if (packId) {
-      systemPrompt = `${systemPrompt}\n\npackId for this session: ${packId}. You MUST call editor.read_pack with this packId before proposing flow changes.`;
+    // Auto-initialize pack if not linked yet
+    let effectivePackId = requestPackId;
+    if (!effectivePackId && conversationId && llmProvider) {
+      const conversation = getConversation(conversationId);
+      if (conversation && !conversation.packId) {
+        // Get first user message for pack naming
+        const firstUserMsg = messages.find((m) => m.role === 'user')?.content || '';
+
+        try {
+          const packInfo = await runPackInitializer(
+            firstUserMsg,
+            taskPackEditor,
+            conversationId,
+            llmProvider
+          );
+          effectivePackId = packInfo.id;
+
+          // Emit update so frontend knows pack is linked
+          io.emit('conversations:updated', getAllConversations());
+          // Also emit packs:updated since a new pack was created
+          discoverPacks({ directories: packDirs }).then((newPacks) => {
+            packMap.clear();
+            for (const { pack, path } of newPacks) {
+              packMap.set(pack.metadata.id, { pack, path });
+            }
+            io.emit('packs:updated', packMap.size);
+          });
+        } catch (err) {
+          console.error('[PackInit] Failed to create pack:', err);
+          // Continue without pack - agent can still run, just no secrets
+        }
+      } else if (conversation?.packId) {
+        // Use existing pack from conversation
+        effectivePackId = conversation.packId;
+      }
     }
-    if (browserSessionId) {
-      systemPrompt = `${systemPrompt}\n\nCurrent browser sessionId (use browser_goto, browser_go_back, browser_type, browser_screenshot, browser_get_links, browser_get_dom_snapshot, browser_click, browser_network_list, browser_network_search, browser_network_get, browser_network_get_response, browser_network_replay, browser_last_actions): ${browserSessionId}`;
+
+    let systemPrompt = TEACH_CHAT_SYSTEM_PROMPT;
+    if (effectivePackId) {
+      systemPrompt = `${systemPrompt}\n\n**Pack "${effectivePackId}" is linked to this conversation. Use editor_read_pack("${effectivePackId}") to see its current state, then use editor_apply_flow_patch to modify it.**`;
     }
+    // Note: Browser sessions are now managed automatically per-conversation.
+    // No need to inform the AI about session management.
 
     type ContentPart =
       | { type: 'text'; text: string }
@@ -1247,7 +1496,6 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     let agentMessages: AgentMsg[] = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
       .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
-    let lastBrowserSessionId: string | null = browserSessionId ?? null;
     const toolTrace: Array<{ tool: string; args: Record<string, unknown>; result: unknown; success: boolean }> = [];
     let updatedFlow: unknown = undefined;
     let validation: { ok: boolean; errors: string[]; warnings: string[] } | undefined = undefined;
@@ -1280,16 +1528,18 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     // Check if provider supports streaming
     const supportsStreaming = typeof (llmProvider as any).chatWithToolsStream === 'function';
 
-    // Session key for plan storage
-    const sessionKey = packId || `session_${Date.now()}`;
+    // Session key for plan storage - prefer conversationId for persistence
+    const sessionKey = conversationId || effectivePackId || `session_${Date.now()}`;
 
     // Helper to call LLM with or without streaming (uses agentMessages which may be modified by summarization)
+    // Note: Uses MAIN_AGENT_TOOL_DEFINITIONS which excludes editor_create_pack and conversation_link_pack
+    // since pack creation is now automatic via runPackInitializer
     async function callLlm(currentMessages: AgentMsg[]): Promise<ChatWithToolsResult> {
       if (supportsStreaming && streamFlow) {
         const generator = (llmProvider as any).chatWithToolsStream({
           systemPrompt,
           messages: currentMessages,
-          tools: MCP_AGENT_TOOL_DEFINITIONS,
+          tools: MAIN_AGENT_TOOL_DEFINITIONS,
           enableThinking: true,
         }) as AsyncGenerator<StreamEvent, ChatWithToolsResult, unknown>;
 
@@ -1305,7 +1555,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
         return await (llmProvider as any).chatWithTools({
           systemPrompt,
           messages: currentMessages,
-          tools: MCP_AGENT_TOOL_DEFINITIONS,
+          tools: MAIN_AGENT_TOOL_DEFINITIONS,
         });
       }
     }
@@ -1374,10 +1624,10 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
           });
           const ctx: AgentToolContext = {
             taskPackEditor,
-            browserSessionId: lastBrowserSessionId,
-            packId: packId ?? null,
+            packId: effectivePackId ?? null,
             sessionKey,
             conversationId: conversationId ?? null,
+            headful,  // Dashboard always runs headful
           };
           for (const tc of result.toolCalls) {
             let toolArgs: Record<string, unknown> = {};
@@ -1391,7 +1641,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
             writeStreamLine({ type: 'tool_start', tool: tc.name, args: toolArgs });
 
             const execResult = await executeAgentTool(tc.name, toolArgs, ctx);
-            const resultStr = execResult.stringForLlm;
+            let resultStr = execResult.stringForLlm;
             let resultParsed: unknown;
             try {
               resultParsed = JSON.parse(resultStr);
@@ -1431,14 +1681,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
               return;
             }
 
-            if (tc.name === 'browser_start_session') {
-              try {
-                const parsed = resultParsed as { sessionId?: string };
-                if (parsed?.sessionId) lastBrowserSessionId = parsed.sessionId;
-              } catch {
-                // ignore
-              }
-            }
+            // Browser sessions are now managed automatically - no need to track sessionId
             if (execResult.browserSnapshot) {
               browserResponse = {
                 screenshotBase64: execResult.browserSnapshot.screenshotBase64,
@@ -1446,15 +1689,64 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
                 url: execResult.browserSnapshot.url,
               };
             }
-            if (tc.name === 'editor_apply_flow_patch' && packId) {
+            if (tc.name === 'editor_apply_flow_patch' && effectivePackId) {
               try {
-                const { flowJson } = await taskPackEditor.readPack(packId);
+                const { flowJson } = await taskPackEditor.readPack(effectivePackId);
                 updatedFlow = flowJson;
                 const val = await taskPackEditor.validateFlow(JSON.stringify(flowJson));
                 validation = { ok: val.ok, errors: val.errors, warnings: val.warnings };
                 writeStreamLine({ type: 'flow_updated', flow: flowJson, validation: val });
               } catch {
                 // ignore
+              }
+            }
+
+            // Handle secrets request - block until user provides secrets
+            if (tc.name === 'request_secrets' && conversationId) {
+              try {
+                const parsed = resultParsed as { _type?: string; secrets?: unknown[]; message?: string };
+                if (parsed?._type === 'secrets_request' && parsed.secrets && parsed.message) {
+                  // Use the effectivePackId that was set at the start of the request
+                  // (pack is auto-initialized before the agent loop starts)
+
+                  // Emit streaming event to show the modal
+                  writeStreamLine({
+                    type: 'secrets_request',
+                    secrets: parsed.secrets,
+                    message: parsed.message,
+                    packId: effectivePackId,
+                    conversationId,
+                  });
+
+                  // Block execution until user provides secrets
+                  console.log(`[Agent] Waiting for user to provide secrets for conversation ${conversationId}...`);
+                  const secretNames = await new Promise<string[]>((resolve, reject) => {
+                    // Store the resolve function so the secrets-filled endpoint can call it
+                    pendingSecretsRequests.set(conversationId, { resolve, reject });
+
+                    // Set a timeout (5 minutes) to prevent hanging forever
+                    setTimeout(() => {
+                      if (pendingSecretsRequests.has(conversationId)) {
+                        pendingSecretsRequests.delete(conversationId);
+                        reject(new Error('Timeout waiting for secrets - user did not respond within 5 minutes'));
+                      }
+                    }, 5 * 60 * 1000);
+                  });
+
+                  console.log(`[Agent] User provided secrets: ${secretNames.join(', ')}`);
+
+                  // Update the tool result to indicate success
+                  resultStr = JSON.stringify({
+                    success: true,
+                    message: `User provided secrets: ${secretNames.join(', ')}. You can now use {{secret.NAME}} templates in steps.`,
+                    secretsProvided: secretNames,
+                  });
+                }
+              } catch (secretsError) {
+                console.error('[Agent] Error waiting for secrets:', secretsError);
+                resultStr = JSON.stringify({
+                  error: secretsError instanceof Error ? secretsError.message : String(secretsError),
+                });
               }
             }
 
@@ -1486,7 +1778,6 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
             ...(updatedFlow !== undefined && { updatedFlow }),
             ...(validation !== undefined && { validation }),
             ...(browserResponse !== undefined && { browser: browserResponse }),
-            browserSessionId: lastBrowserSessionId ?? undefined,
           });
           res.end();
         } else {
@@ -1496,7 +1787,6 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
             ...(updatedFlow !== undefined && { updatedFlow }),
             ...(validation !== undefined && { validation }),
             ...(browserResponse !== undefined && { browser: browserResponse }),
-            browserSessionId: lastBrowserSessionId ?? undefined,
           });
         }
         return;
@@ -1518,6 +1808,43 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
         });
       }
     }
+  });
+
+  // REST API: Resume agent after secrets have been filled
+  app.post('/api/teach/agent/:conversationId/secrets-filled', async (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { conversationId } = req.params;
+    const { secretNames } = req.body as { secretNames?: string[] };
+
+    // Verify conversation exists
+    const conversation = getConversation(conversationId);
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const secretsList = secretNames || [];
+
+    // Resolve the pending secrets request to unblock the agent
+    const pending = pendingSecretsRequests.get(conversationId);
+    if (pending) {
+      console.log(`[Agent] Resolving pending secrets request for conversation ${conversationId}`);
+      pendingSecretsRequests.delete(conversationId);
+      pending.resolve(secretsList);
+    } else {
+      console.log(`[Agent] No pending secrets request found for conversation ${conversationId}`);
+    }
+
+    // Emit event so UI knows secrets were filled
+    io.emit('conversations:updated', getAllConversations());
+
+    res.json({
+      success: true,
+      message: 'Secrets recorded. Agent will continue automatically.',
+      secretsProvided: secretsList,
+    });
   });
 
   // REST API: Apply flow patch (Teach Mode)

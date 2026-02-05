@@ -4,6 +4,7 @@
  */
 
 import type { LlmProvider } from './llm/provider.js';
+import { getConversationPlan, setConversationPlan } from './db.js';
 
 // Token estimation: ~4 characters per token (rough approximation for Claude)
 const CHARS_PER_TOKEN = 4;
@@ -78,30 +79,83 @@ export function estimateTotalTokens<T extends { role: string; content: unknown; 
 }
 
 /**
- * Session plan storage (in-memory, keyed by packId or sessionId)
+ * Session plan storage (in-memory cache + database persistence)
+ * Keys can be packId, sessionId, or conversationId
  */
-const planStorage = new Map<string, string>();
+const planStorageCache = new Map<string, string>();
+
+/**
+ * Check if a key looks like a conversation ID (UUID format)
+ */
+function isConversationId(key: string): boolean {
+  // UUID v4 pattern: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(key);
+}
 
 /**
  * Save a plan for a session
+ * If the sessionKey is a conversation ID, persists to database
  */
 export function savePlan(sessionKey: string, plan: string): void {
-  planStorage.set(sessionKey, plan);
-  console.log(`[ContextManager] Plan saved for ${sessionKey} (${plan.length} chars)`);
+  // Always update in-memory cache
+  planStorageCache.set(sessionKey, plan);
+
+  // Persist to database if it's a conversation ID
+  if (isConversationId(sessionKey)) {
+    try {
+      setConversationPlan(sessionKey, plan);
+      console.log(`[ContextManager] Plan saved to DB for conversation ${sessionKey} (${plan.length} chars)`);
+    } catch (err) {
+      console.warn(`[ContextManager] Failed to persist plan to DB:`, err);
+    }
+  } else {
+    console.log(`[ContextManager] Plan saved in-memory for ${sessionKey} (${plan.length} chars)`);
+  }
 }
 
 /**
  * Get a plan for a session
+ * If the sessionKey is a conversation ID, checks database if not in cache
  */
 export function getPlan(sessionKey: string): string | null {
-  return planStorage.get(sessionKey) || null;
+  // Check in-memory cache first
+  const cached = planStorageCache.get(sessionKey);
+  if (cached) {
+    return cached;
+  }
+
+  // If it's a conversation ID, try loading from database
+  if (isConversationId(sessionKey)) {
+    try {
+      const dbPlan = getConversationPlan(sessionKey);
+      if (dbPlan) {
+        // Cache it for future access
+        planStorageCache.set(sessionKey, dbPlan);
+        console.log(`[ContextManager] Plan loaded from DB for conversation ${sessionKey}`);
+        return dbPlan;
+      }
+    } catch (err) {
+      console.warn(`[ContextManager] Failed to load plan from DB:`, err);
+    }
+  }
+
+  return null;
 }
 
 /**
  * Clear a plan for a session
  */
 export function clearPlan(sessionKey: string): void {
-  planStorage.delete(sessionKey);
+  planStorageCache.delete(sessionKey);
+
+  // Clear from database if it's a conversation ID
+  if (isConversationId(sessionKey)) {
+    try {
+      setConversationPlan(sessionKey, '');
+    } catch (err) {
+      console.warn(`[ContextManager] Failed to clear plan from DB:`, err);
+    }
+  }
 }
 
 /**

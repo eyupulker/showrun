@@ -8,7 +8,8 @@
     "build": "pnpm -r build",
     "dev": "pnpm build && pnpm test:example",
     "test:example": "node packages/harness/dist/cli.js run --pack ./taskpacks/example --inputs '{}'",
-    "test:example-json": "node packages/harness/dist/cli.js run --pack ./taskpacks/example-json --inputs '{}'"
+    "test:example-json": "node packages/harness/dist/cli.js run --pack ./taskpacks/example-json --inputs '{}'",
+    "test:unit": "pnpm -r test"
   },
   "workspaces": [
     "packages/*",

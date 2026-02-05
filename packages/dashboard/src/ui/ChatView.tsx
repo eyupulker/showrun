@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MessageBubble, { type ToolCall } from './MessageBubble.js';
 import ChatInput from './ChatInput.js';
+import SecretsPanel from './SecretsPanel.js';
+import SecretsRequestModal from './SecretsRequestModal.js';
 
 export interface Message {
   id: string;
@@ -76,6 +78,14 @@ export default function ChatView({
 
   // UI state
   const [showNetwork, setShowNetwork] = useState(true);
+  const [rightPanelTab, setRightPanelTab] = useState<'network' | 'secrets'>('network');
+
+  // Secrets request modal state (AI-triggered)
+  const [secretsRequest, setSecretsRequest] = useState<{
+    secrets: Array<{ name: string; description?: string; required?: boolean }>;
+    message: string;
+    packId?: string; // packId from streaming event, in case conversation.packId hasn't synced yet
+  } | null>(null);
 
   // Network requests
   const [networkRequests, setNetworkRequests] = useState<NetworkEntry[]>([]);
@@ -84,6 +94,11 @@ export default function ChatView({
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Refs to capture streaming state for error handling
+  const streamingThinkingRef = useRef('');
+  const streamingContentRef = useRef('');
+  const toolTraceRef = useRef<ToolTraceEntry[]>([]);
 
   // Load conversation messages when conversation changes
   useEffect(() => {
@@ -94,6 +109,11 @@ export default function ChatView({
     } else {
       setMessages([]);
     }
+  }, [conversation?.id]);
+
+  // Clear secrets request state when conversation changes to prevent modal from showing with wrong packId
+  useEffect(() => {
+    setSecretsRequest(null);
   }, [conversation?.id]);
 
   // Scroll to bottom on new messages
@@ -196,6 +216,10 @@ export default function ChatView({
     setStreamingThinking('');
     setStreamingContent('');
     setIsThinking(false);
+    // Reset refs for fresh start
+    streamingThinkingRef.current = '';
+    streamingContentRef.current = '';
+    toolTraceRef.current = [];
 
     // Save user message to database
     try {
@@ -263,14 +287,24 @@ export default function ChatView({
           if (obj.type === 'thinking_start') {
             setIsThinking(true);
             setStreamingThinking('');
+            streamingThinkingRef.current = '';
           } else if (obj.type === 'thinking_delta' && obj.text) {
-            setStreamingThinking((prev) => prev + obj.text);
+            setStreamingThinking((prev) => {
+              const newVal = prev + obj.text;
+              streamingThinkingRef.current = newVal;
+              return newVal;
+            });
           } else if (obj.type === 'thinking_stop') {
             setIsThinking(false);
           } else if (obj.type === 'content_start') {
             setStreamingContent('');
+            streamingContentRef.current = '';
           } else if (obj.type === 'content_delta' && obj.text) {
-            setStreamingContent((prev) => prev + obj.text);
+            setStreamingContent((prev) => {
+              const newVal = prev + obj.text;
+              streamingContentRef.current = newVal;
+              return newVal;
+            });
           } else if (obj.type === 'content_stop') {
             // Content finished streaming
           } else if (obj.type === 'tool_start') {
@@ -281,15 +315,24 @@ export default function ChatView({
             });
           } else if (obj.type === 'tool_result') {
             setActiveToolExecution(null);
-            setToolTrace((prev) => [
-              ...prev,
-              {
-                tool: obj.tool!,
-                args: obj.args as Record<string, unknown>,
-                result: obj.result,
-                success: obj.success ?? true,
-              },
-            ]);
+            const newEntry = {
+              tool: obj.tool!,
+              args: obj.args as Record<string, unknown>,
+              result: obj.result,
+              success: obj.success ?? true,
+            };
+            setToolTrace((prev) => {
+              const newVal = [...prev, newEntry];
+              toolTraceRef.current = newVal;
+              return newVal;
+            });
+          } else if (obj.type === 'secrets_request') {
+            // AI is requesting user to provide secrets
+            setSecretsRequest({
+              secrets: obj.secrets || [],
+              message: obj.message || 'The AI agent needs some secrets to continue.',
+              packId: obj.packId, // Include packId from streaming event
+            });
           } else if (obj.type === 'tool_call_start') {
             // LLM is preparing a tool call (from Anthropic streaming)
             setActiveToolExecution({
@@ -368,23 +411,47 @@ export default function ChatView({
         setError(result.error);
       }
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
-        const stoppedMessage: Message = {
-          id: `temp-${Date.now()}`,
-          role: 'assistant',
-          content: '(Stopped by user)',
-          createdAt: Date.now(),
-        };
-        setMessages((prev) => [...prev, stoppedMessage]);
-      } else {
+      // Capture streaming state from refs before finally clears them
+      const capturedThinking = streamingThinkingRef.current;
+      const capturedContent = streamingContentRef.current;
+      const capturedToolTrace = [...toolTraceRef.current];
+
+      const isAbort = err instanceof Error && err.name === 'AbortError';
+      const errorContent = isAbort
+        ? '(Stopped by user)'
+        : `Error: ${err instanceof Error ? err.message : String(err)}`;
+
+      // Build message with captured data
+      const finalContent = capturedContent || errorContent;
+      const assistantMessage: Message = {
+        id: `temp-${Date.now()}`,
+        role: 'assistant',
+        content: finalContent,
+        toolCalls: capturedToolTrace.length > 0 ? JSON.stringify(capturedToolTrace) : null,
+        thinkingContent: capturedThinking || null,
+        createdAt: Date.now(),
+      };
+      setMessages((prev) => [...prev, assistantMessage]);
+
+      // Persist the partial message to database
+      if (conversation) {
+        try {
+          await apiCall(`/api/conversations/${conversation.id}/messages`, {
+            method: 'POST',
+            body: JSON.stringify({
+              role: 'assistant',
+              content: finalContent,
+              toolCalls: capturedToolTrace.length > 0 ? capturedToolTrace : null,
+              thinkingContent: capturedThinking || null,
+            }),
+          });
+        } catch (saveErr) {
+          console.error('Failed to save partial assistant message:', saveErr);
+        }
+      }
+
+      if (!isAbort) {
         setError(err instanceof Error ? err.message : String(err));
-        const errorMessage: Message = {
-          id: `temp-${Date.now()}`,
-          role: 'assistant',
-          content: `Error: ${err instanceof Error ? err.message : String(err)}`,
-          createdAt: Date.now(),
-        };
-        setMessages((prev) => [...prev, errorMessage]);
       }
       setActiveToolExecution(null);
     } finally {
@@ -395,6 +462,10 @@ export default function ChatView({
       setStreamingContent('');
       setIsThinking(false);
       setIsSummarizing(false);
+      // Reset refs
+      streamingThinkingRef.current = '';
+      streamingContentRef.current = '';
+      toolTraceRef.current = [];
     }
   };
 
@@ -407,6 +478,40 @@ export default function ChatView({
 
   const useRequestId = (requestId: string) => {
     setInputValue(`Use request ${requestId}`);
+  };
+
+  const handleExportConversation = async () => {
+    if (!conversation) return;
+    try {
+      const response = await fetch(`/api/conversations/${conversation.id}/export?format=download`, {
+        headers: {
+          'x-mcpify-token': token,
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`Export failed: ${response.status}`);
+      }
+      // Get the filename from Content-Disposition header or use default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `conversation-debug-${conversation.id.slice(0, 8)}.json`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/);
+        if (match) filename = match[1];
+      }
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      setError(err instanceof Error ? err.message : 'Export failed');
+    }
   };
 
   if (!conversation) {
@@ -428,6 +533,56 @@ export default function ChatView({
           to { transform: rotate(360deg); }
         }
       `}</style>
+
+      {/* Conversation header */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: '12px 16px',
+        borderBottom: '1px solid var(--border-subtle)',
+        backgroundColor: 'var(--bg-sidebar)',
+      }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontWeight: 600,
+            fontSize: '14px',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}>
+            {conversation.title}
+          </div>
+          {conversation.packId && (
+            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              Pack: {conversation.packId}
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span style={{
+            fontSize: '11px',
+            padding: '2px 8px',
+            borderRadius: '4px',
+            backgroundColor: conversation.status === 'ready' ? 'rgba(34, 197, 94, 0.1)' :
+                           conversation.status === 'error' ? 'rgba(239, 68, 68, 0.1)' :
+                           'rgba(59, 130, 246, 0.1)',
+            color: conversation.status === 'ready' ? 'var(--accent-green)' :
+                   conversation.status === 'error' ? 'var(--accent-red)' :
+                   'var(--accent-blue)',
+          }}>
+            {conversation.status}
+          </span>
+          <button
+            className="btn-secondary"
+            onClick={handleExportConversation}
+            title="Export conversation for debugging"
+            style={{ padding: '4px 10px', fontSize: '12px' }}
+          >
+            Export
+          </button>
+        </div>
+      </div>
 
       {error && (
         <div className="error" style={{ margin: '16px 24px 0' }}>
@@ -532,7 +687,7 @@ export default function ChatView({
           />
         </div>
 
-        {/* Right side panel (network) */}
+        {/* Right side panel (network / secrets) */}
         <div style={{
           width: '400px',
           borderLeft: '1px solid var(--border-subtle)',
@@ -542,7 +697,7 @@ export default function ChatView({
           backgroundColor: 'var(--bg-sidebar)',
         }}>
           {/* Network panel */}
-          {showNetwork && sessionId && (
+          {rightPanelTab === 'network' && sessionId && (
             <div className="network-panel" style={{ margin: '12px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
               <div className="network-panel-header">
                 <span>Network</span>
@@ -583,7 +738,38 @@ export default function ChatView({
             </div>
           )}
 
-          {/* Network toggle */}
+          {/* Network placeholder when no session */}
+          {rightPanelTab === 'network' && !sessionId && (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+                Start a browser session to view network requests
+              </div>
+            </div>
+          )}
+
+          {/* Secrets panel */}
+          {rightPanelTab === 'secrets' && conversation?.packId && (
+            <div style={{ margin: '12px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <SecretsPanel
+                packId={conversation.packId}
+                token={token}
+              />
+            </div>
+          )}
+
+          {/* Secrets placeholder when no pack linked */}
+          {rightPanelTab === 'secrets' && !conversation?.packId && (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+                No pack linked to this conversation.
+                <div style={{ marginTop: '8px', fontSize: '11px' }}>
+                  Create or link a pack to manage secrets.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tab buttons */}
           <div style={{
             display: 'flex',
             gap: '8px',
@@ -591,21 +777,47 @@ export default function ChatView({
             borderTop: '1px solid var(--border-subtle)',
           }}>
             <button
-              className={`btn-secondary ${showNetwork ? '' : ''}`}
+              className="btn-secondary"
               style={{
                 flex: 1,
                 padding: '8px',
                 fontSize: '12px',
-                backgroundColor: showNetwork ? 'var(--bg-card-active)' : undefined,
+                backgroundColor: rightPanelTab === 'network' ? 'var(--bg-card-active)' : undefined,
               }}
-              onClick={() => setShowNetwork(!showNetwork)}
-              disabled={!sessionId}
+              onClick={() => setRightPanelTab('network')}
             >
               Network
             </button>
+            {conversation?.packId && (
+              <button
+                className="btn-secondary"
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  fontSize: '12px',
+                  backgroundColor: rightPanelTab === 'secrets' ? 'var(--bg-card-active)' : undefined,
+                }}
+                onClick={() => setRightPanelTab('secrets')}
+              >
+                Secrets
+              </button>
+            )}
           </div>
         </div>
       </div>
+
+      {/* Secrets Request Modal (AI-triggered) */}
+      {secretsRequest && (conversation?.packId || secretsRequest.packId) && (
+        <SecretsRequestModal
+          secrets={secretsRequest.secrets}
+          message={secretsRequest.message}
+          packId={(conversation?.packId || secretsRequest.packId)!}
+          conversationId={conversation?.id || ''}
+          token={token}
+          onComplete={() => setSecretsRequest(null)}
+          onCancel={() => setSecretsRequest(null)}
+        />
+      )}
     </div>
   );
 }

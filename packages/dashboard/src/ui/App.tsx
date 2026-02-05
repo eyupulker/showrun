@@ -164,6 +164,37 @@ function App() {
     loadConversation();
   }, [selectedConversationId, config]);
 
+  // Sync selectedConversation with conversations list when it updates
+  // This ensures changes from socket updates (e.g., packId linked) are reflected
+  useEffect(() => {
+    if (!selectedConversationId || !selectedConversation) return;
+
+    const updated = conversations.find((c) => c.id === selectedConversationId);
+    if (updated) {
+      // Merge list updates into selectedConversation, preserving messages
+      const hasChanges =
+        updated.title !== selectedConversation.title ||
+        updated.description !== selectedConversation.description ||
+        updated.status !== selectedConversation.status ||
+        updated.packId !== selectedConversation.packId;
+
+      if (hasChanges) {
+        setSelectedConversation((prev) =>
+          prev
+            ? {
+                ...prev,
+                title: updated.title,
+                description: updated.description,
+                status: updated.status,
+                packId: updated.packId,
+                updatedAt: updated.updatedAt,
+              }
+            : null
+        );
+      }
+    }
+  }, [conversations, selectedConversationId]);
+
   const handleNewChat = async () => {
     if (!config) return;
 

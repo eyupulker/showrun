@@ -167,6 +167,12 @@ function runMigrations(database: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_runs_createdAt ON runs(createdAt);
       `,
     },
+    {
+      name: '004_add_plan_to_conversations',
+      sql: `
+        ALTER TABLE conversations ADD COLUMN plan TEXT;
+      `,
+    },
   ];
 
   const appliedMigrations = new Set(
@@ -284,6 +290,27 @@ function mapRowToConversation(row: any): Conversation {
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+// ============================================================================
+// Plan persistence for conversations
+// ============================================================================
+
+/**
+ * Get the saved plan for a conversation
+ */
+export function getConversationPlan(conversationId: string): string | null {
+  const database = getDatabase();
+  const row = database.prepare('SELECT plan FROM conversations WHERE id = ?').get(conversationId) as any;
+  return row?.plan || null;
+}
+
+/**
+ * Set the plan for a conversation
+ */
+export function setConversationPlan(conversationId: string, plan: string): void {
+  const database = getDatabase();
+  database.prepare('UPDATE conversations SET plan = ?, updatedAt = ? WHERE id = ?').run(plan, Date.now(), conversationId);
 }
 
 // ============================================================================
@@ -531,6 +558,108 @@ function mapRowToRun(row: any): DbRunInfo {
     collectiblesJson: row.collectiblesJson,
     metaJson: row.metaJson,
     errorMessage: row.errorMessage,
+  };
+}
+
+// ============================================================================
+// Conversation Debug Export
+// ============================================================================
+
+/**
+ * Full conversation export for debugging - includes all messages and related runs
+ */
+export interface ConversationDebugExport {
+  exportedAt: string;
+  exportVersion: string;
+  conversation: Conversation & { plan?: string | null };
+  messages: Array<Message & { toolCallsParsed?: unknown[] }>;
+  runs: DbRunInfo[];
+  stats: {
+    messageCount: number;
+    userMessageCount: number;
+    assistantMessageCount: number;
+    toolCallCount: number;
+    runCount: number;
+    successfulRuns: number;
+    failedRuns: number;
+    totalDurationMs: number;
+  };
+}
+
+/**
+ * Export a conversation with all related data for debugging
+ */
+export function exportConversationForDebug(conversationId: string): ConversationDebugExport | null {
+  const database = getDatabase();
+
+  // Get conversation with plan
+  const convRow = database
+    .prepare('SELECT *, plan FROM conversations WHERE id = ?')
+    .get(conversationId) as any;
+  if (!convRow) return null;
+
+  const conversation = {
+    ...mapRowToConversation(convRow),
+    plan: convRow.plan || null,
+  };
+
+  // Get all messages with parsed tool calls
+  const messageRows = database
+    .prepare('SELECT * FROM messages WHERE conversationId = ? ORDER BY createdAt ASC')
+    .all(conversationId) as any[];
+
+  const messages = messageRows.map((row) => {
+    const msg = mapRowToMessage(row);
+    let toolCallsParsed: unknown[] | undefined;
+    if (msg.toolCalls) {
+      try {
+        toolCallsParsed = JSON.parse(msg.toolCalls);
+      } catch {
+        // ignore parse errors
+      }
+    }
+    return { ...msg, toolCallsParsed };
+  });
+
+  // Get related runs
+  const runRows = database
+    .prepare('SELECT * FROM runs WHERE conversationId = ? ORDER BY createdAt ASC')
+    .all(conversationId) as any[];
+  const runs = runRows.map(mapRowToRun);
+
+  // Calculate stats
+  let toolCallCount = 0;
+  let userMessageCount = 0;
+  let assistantMessageCount = 0;
+
+  for (const msg of messages) {
+    if (msg.role === 'user') userMessageCount++;
+    if (msg.role === 'assistant') assistantMessageCount++;
+    if (msg.toolCallsParsed && Array.isArray(msg.toolCallsParsed)) {
+      toolCallCount += msg.toolCallsParsed.length;
+    }
+  }
+
+  const successfulRuns = runs.filter((r) => r.status === 'success').length;
+  const failedRuns = runs.filter((r) => r.status === 'failed').length;
+  const totalDurationMs = runs.reduce((sum, r) => sum + (r.durationMs || 0), 0);
+
+  return {
+    exportedAt: new Date().toISOString(),
+    exportVersion: '1.0.0',
+    conversation,
+    messages,
+    runs,
+    stats: {
+      messageCount: messages.length,
+      userMessageCount,
+      assistantMessageCount,
+      toolCallCount,
+      runCount: runs.length,
+      successfulRuns,
+      failedRuns,
+      totalDurationMs,
+    },
   };
 }
 
