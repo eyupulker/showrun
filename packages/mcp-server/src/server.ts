@@ -140,25 +140,13 @@ export async function createMCPServer(
               `[MCP Server] Tool completed: ${toolName} (runId: ${runId}) - Success`
             );
 
-            const output = {
-              taskId: pack.metadata.id,
-              version: pack.metadata.version,
-              runId,
-              meta: runResult.meta,
-              collectibles: runResult.collectibles,
-              runDir: runResult.runDir,
-              eventsPath: runResult.eventsPath,
-              artifactsDir: runResult.artifactsDir,
-            };
-
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: JSON.stringify(output, null, 2),
+                  text: JSON.stringify(runResult.collectibles, null, 2),
                 },
               ],
-              structuredContent: output,
             };
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
@@ -167,33 +155,14 @@ export async function createMCPServer(
               `[MCP Server] Tool failed: ${toolName} (runId: ${runId}) - ${errorMessage}`
             );
 
-            // Still return paths if available
-            const eventsPath = join(runDir, 'events.jsonl');
-            const artifactsDir = join(runDir, 'artifacts');
-
-            const errorOutput = {
-              taskId: pack.metadata.id,
-              version: pack.metadata.version,
-              runId,
-              error: errorMessage,
-              meta: {
-                durationMs: 0,
-                notes: `Error: ${errorMessage}`,
-              },
-              collectibles: {},
-              runDir,
-              eventsPath,
-              artifactsDir,
-            };
-
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: JSON.stringify(errorOutput, null, 2),
+                  text: JSON.stringify({ error: errorMessage }, null, 2),
                 },
               ],
-              structuredContent: errorOutput,
+              isError: true,
             };
           }
         });

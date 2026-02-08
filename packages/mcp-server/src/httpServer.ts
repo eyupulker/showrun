@@ -166,16 +166,6 @@ export async function createMCPServerOverHTTP(
                 cacheDir: packDir,
               });
               const durationMs = Date.now() - startTime;
-              const output = {
-                taskId: pack.metadata.id,
-                version: pack.metadata.version,
-                runId,
-                meta: runResult.meta,
-                collectibles: runResult.collectibles,
-                runDir: runResult.runDir,
-                eventsPath: runResult.eventsPath,
-                artifactsDir: runResult.artifactsDir,
-              };
 
               // Notify run complete (success)
               onRunComplete?.({
@@ -187,23 +177,13 @@ export async function createMCPServerOverHTTP(
               });
 
               return {
-                content: [{ type: 'text' as const, text: JSON.stringify(output, null, 2) }],
-                structuredContent: output,
+                content: [
+                  { type: 'text' as const, text: JSON.stringify(runResult.collectibles, null, 2) },
+                ],
               };
             } catch (error) {
               const durationMs = Date.now() - startTime;
               const errorMessage = error instanceof Error ? error.message : String(error);
-              const errorOutput = {
-                taskId: pack.metadata.id,
-                version: pack.metadata.version,
-                runId,
-                error: errorMessage,
-                meta: { durationMs: 0, notes: `Error: ${errorMessage}` },
-                collectibles: {},
-                runDir,
-                eventsPath: join(runDir, 'events.jsonl'),
-                artifactsDir: join(runDir, 'artifacts'),
-              };
 
               // Notify run complete (failure)
               onRunComplete?.({
@@ -215,8 +195,10 @@ export async function createMCPServerOverHTTP(
               });
 
               return {
-                content: [{ type: 'text' as const, text: JSON.stringify(errorOutput, null, 2) }],
-                structuredContent: errorOutput,
+                content: [
+                  { type: 'text' as const, text: JSON.stringify({ error: errorMessage }, null, 2) },
+                ],
+                isError: true,
               };
             }
           });
