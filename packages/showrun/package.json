@@ -18,7 +18,7 @@
   "dependencies": {
     "playwright": "^1.58.0",
     "camoufox-js": "^0.8.5",
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^12.6.2",
     "express": "^4.21.2",
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",

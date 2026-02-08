@@ -22,7 +22,7 @@
     "@showrun/core": "workspace:*",
     "@showrun/mcp-server": "workspace:*",
     "@showrun/harness": "workspace:*",
-    "better-sqlite3": "^11.7.0",
+    "better-sqlite3": "^12.6.2",
     "camoufox-js": "^0.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.21.2",
@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "vitest": "^3.0.0",
-    "@types/better-sqlite3": "^7.6.12",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.0",
     "@types/express": "^4.17.21",
     "@types/react": "^18.3.12",
