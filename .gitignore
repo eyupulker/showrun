@@ -40,6 +40,9 @@ showrun-once-cache/
 # Browser profile persistence (stored in pack directories)
 .browser-profile/
 
+# Flow version snapshots (stored in pack directories)
+.versions/
+
 # Turbo (if used later)
 .turbo
 

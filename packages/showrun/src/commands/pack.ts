@@ -13,6 +13,9 @@ import {
   writeTaskPackManifest,
   writeFlowJson,
   readJsonFile,
+  saveVersion,
+  listVersions,
+  restoreVersion,
 } from '@showrun/core';
 import type { TaskPackManifest, InputSchema, CollectibleDefinition, DslStep } from '@showrun/core';
 
@@ -303,6 +306,101 @@ export async function cmdPackSetMeta(args: string[]): Promise<void> {
 }
 
 /**
+ * Save a version snapshot of a pack
+ */
+export async function cmdPackSnapshot(args: string[]): Promise<void> {
+  let packPath: string | undefined;
+  let label: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const next = args[i + 1];
+
+    if (arg === '--path') {
+      if (!next || next.startsWith('--')) throw new Error('--path requires a pack directory path');
+      packPath = resolve(cwd(), next);
+      i++;
+    } else if (arg === '--label') {
+      if (!next || next.startsWith('--')) throw new Error('--label requires a label string');
+      label = next;
+      i++;
+    }
+  }
+
+  if (!packPath) throw new Error('--path is required');
+  if (!existsSync(packPath)) throw new Error(`Pack directory not found: ${packPath}`);
+
+  const version = saveVersion(packPath, { source: 'cli', label });
+  console.log(`✓ Saved version #${version.number} (v${version.version})${label ? `: ${label}` : ''}`);
+}
+
+/**
+ * Show version history for a pack
+ */
+export async function cmdPackHistory(args: string[]): Promise<void> {
+  let packPath: string | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const next = args[i + 1];
+
+    if (arg === '--path') {
+      if (!next || next.startsWith('--')) throw new Error('--path requires a pack directory path');
+      packPath = resolve(cwd(), next);
+      i++;
+    }
+  }
+
+  if (!packPath) throw new Error('--path is required');
+  if (!existsSync(packPath)) throw new Error(`Pack directory not found: ${packPath}`);
+
+  const versions = listVersions(packPath);
+  if (versions.length === 0) {
+    console.log('No versions saved yet.');
+    return;
+  }
+
+  console.log(`Versions for pack (${versions.length} total):\n`);
+  for (const v of [...versions].reverse()) {
+    const ts = new Date(v.timestamp).toLocaleString();
+    const labelPart = v.label ? ` — ${v.label}` : '';
+    const sourcePart = ` [${v.source}]`;
+    console.log(`  #${v.number}  v${v.version}  ${ts}${sourcePart}${labelPart}`);
+  }
+}
+
+/**
+ * Restore a specific version
+ */
+export async function cmdPackRestore(args: string[]): Promise<void> {
+  let packPath: string | undefined;
+  let versionNumber: number | undefined;
+
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    const next = args[i + 1];
+
+    if (arg === '--path') {
+      if (!next || next.startsWith('--')) throw new Error('--path requires a pack directory path');
+      packPath = resolve(cwd(), next);
+      i++;
+    } else if (arg === '--version') {
+      if (!next || next.startsWith('--')) throw new Error('--version requires a version number');
+      versionNumber = parseInt(next, 10);
+      if (isNaN(versionNumber)) throw new Error('--version must be a number');
+      i++;
+    }
+  }
+
+  if (!packPath) throw new Error('--path is required');
+  if (versionNumber === undefined) throw new Error('--version is required');
+  if (!existsSync(packPath)) throw new Error(`Pack directory not found: ${packPath}`);
+
+  restoreVersion(packPath, versionNumber);
+  console.log(`✓ Restored version #${versionNumber}. Current state was auto-saved first.`);
+}
+
+/**
  * Handle pack subcommand
  */
 export async function cmdPack(args: string[]): Promise<void> {
@@ -322,6 +420,15 @@ export async function cmdPack(args: string[]): Promise<void> {
         break;
       case 'set-meta':
         await cmdPackSetMeta(subcommandArgs);
+        break;
+      case 'snapshot':
+        await cmdPackSnapshot(subcommandArgs);
+        break;
+      case 'history':
+        await cmdPackHistory(subcommandArgs);
+        break;
+      case 'restore':
+        await cmdPackRestore(subcommandArgs);
         break;
       case undefined:
       case '--help':
@@ -361,10 +468,24 @@ Commands:
     --path <path>      Pack directory (required)
     --meta <json|file> Metadata JSON string or file path (required)
 
+  snapshot      Save a version snapshot
+    --path <path>      Pack directory (required)
+    --label <text>     Optional label for the snapshot
+
+  history       Show version history
+    --path <path>      Pack directory (required)
+
+  restore       Restore a previous version
+    --path <path>      Pack directory (required)
+    --version <num>    Version number to restore (required)
+
 Examples:
   showrun pack create --dir ./taskpacks --id my-pack --name "My Pack"
   showrun pack validate --path ./taskpacks/my-pack
   showrun pack set-flow --path ./taskpacks/my-pack --flow '{"flow":[...]}'
   showrun pack set-meta --path ./taskpacks/my-pack --meta '{"description":"..."}'
+  showrun pack snapshot --path ./taskpacks/my-pack --label "Before refactor"
+  showrun pack history --path ./taskpacks/my-pack
+  showrun pack restore --path ./taskpacks/my-pack --version 1
 `);
 }

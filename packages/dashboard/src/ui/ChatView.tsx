@@ -3,6 +3,7 @@ import MessageBubble, { type ToolCall } from './MessageBubble.js';
 import ChatInput from './ChatInput.js';
 import SecretsPanel from './SecretsPanel.js';
 import SecretsRequestModal from './SecretsRequestModal.js';
+import VersionPanel from './VersionPanel.js';
 
 export interface Message {
   id: string;
@@ -78,7 +79,7 @@ export default function ChatView({
 
   // UI state
   const [showNetwork, setShowNetwork] = useState(true);
-  const [rightPanelTab, setRightPanelTab] = useState<'network' | 'secrets'>('network');
+  const [rightPanelTab, setRightPanelTab] = useState<'network' | 'secrets' | 'versions'>('network');
 
   // Secrets request modal state (AI-triggered)
   const [secretsRequest, setSecretsRequest] = useState<{
@@ -514,6 +515,24 @@ export default function ChatView({
     }
   };
 
+  const handleRunPack = async () => {
+    if (!conversation?.packId) return;
+    try {
+      setError(null);
+      await apiCall('/api/runs', {
+        method: 'POST',
+        body: JSON.stringify({
+          packId: conversation.packId,
+          inputs: {},
+          conversationId: conversation.id,
+          source: 'dashboard',
+        }),
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   if (!conversation) {
     return (
       <div className="welcome-screen">
@@ -573,6 +592,16 @@ export default function ChatView({
           }}>
             {conversation.status}
           </span>
+          {conversation.packId && conversation.status === 'ready' && (
+            <button
+              className="btn-primary"
+              onClick={handleRunPack}
+              title="Run this pack"
+              style={{ padding: '4px 10px', fontSize: '12px' }}
+            >
+              Run
+            </button>
+          )}
           <button
             className="btn-secondary"
             onClick={handleExportConversation}
@@ -769,6 +798,28 @@ export default function ChatView({
             </div>
           )}
 
+          {/* Versions panel */}
+          {rightPanelTab === 'versions' && conversation?.packId && (
+            <div style={{ margin: '12px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <VersionPanel
+                packId={conversation.packId}
+                token={token}
+              />
+            </div>
+          )}
+
+          {/* Versions placeholder when no pack linked */}
+          {rightPanelTab === 'versions' && !conversation?.packId && (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+                No pack linked to this conversation.
+                <div style={{ marginTop: '8px', fontSize: '11px' }}>
+                  Create or link a pack to manage versions.
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Tab buttons */}
           <div style={{
             display: 'flex',
@@ -800,6 +851,20 @@ export default function ChatView({
                 onClick={() => setRightPanelTab('secrets')}
               >
                 Secrets
+              </button>
+            )}
+            {conversation?.packId && (
+              <button
+                className="btn-secondary"
+                style={{
+                  flex: 1,
+                  padding: '8px',
+                  fontSize: '12px',
+                  backgroundColor: rightPanelTab === 'versions' ? 'var(--bg-card-active)' : undefined,
+                }}
+                onClick={() => setRightPanelTab('versions')}
+              >
+                Versions
               </button>
             )}
           </div>

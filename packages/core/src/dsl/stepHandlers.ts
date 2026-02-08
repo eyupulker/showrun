@@ -59,9 +59,19 @@ async function executeNavigate(
   ctx: StepContext,
   step: NavigateStep
 ): Promise<void> {
-  await ctx.page.goto(step.params.url, {
-    waitUntil: step.params.waitUntil ?? 'networkidle',
-  });
+  try {
+    await ctx.page.goto(step.params.url, {
+      waitUntil: step.params.waitUntil ?? 'networkidle',
+    });
+  } catch (err: any) {
+    // Ignore timeout errors — the page content is usually loaded even if
+    // networkidle never fires (common on SPAs with long-polling / websockets).
+    if (err?.name === 'TimeoutError' || err?.message?.includes('Timeout')) {
+      // Navigation reached the page but the load event didn't settle in time.
+      return;
+    }
+    throw err;
+  }
 }
 
 /**
@@ -893,7 +903,15 @@ async function executeNewTab(
 
   // Navigate if URL provided
   if (step.params.url) {
-    await newPage.goto(step.params.url, { waitUntil: 'networkidle' });
+    try {
+      await newPage.goto(step.params.url, { waitUntil: 'networkidle' });
+    } catch (err: any) {
+      if (err?.name === 'TimeoutError' || err?.message?.includes('Timeout')) {
+        // Page loaded but networkidle didn't settle — continue anyway.
+      } else {
+        throw err;
+      }
+    }
   }
 
   // Save tab index if requested

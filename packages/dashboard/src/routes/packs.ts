@@ -13,6 +13,9 @@ import {
   writeFlowJson,
   validatePathInAllowedDir,
   readJsonFile,
+  saveVersion,
+  listVersions,
+  restoreVersion,
 } from '@showrun/core';
 import type { TaskPackManifest, InputSchema, CollectibleDefinition, DslStep } from '@showrun/core';
 
@@ -423,6 +426,69 @@ export function createPacksRouter(ctx: DashboardContext): Router {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  });
+
+  // ── Version management endpoints ──────────────────────────────────────────
+
+  // List versions for a pack
+  router.get('/api/packs/:packId/versions', (req: Request, res: Response) => {
+    const { packId } = req.params;
+    const packInfo = findPackById(packId);
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+    try {
+      const versions = listVersions(packInfo.path);
+      res.json({ versions });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // Save a new version snapshot
+  router.post('/api/packs/:packId/versions', (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const { packId } = req.params;
+    const packInfo = findPackById(packId);
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+    try {
+      const { label } = req.body || {};
+      const version = saveVersion(packInfo.path, {
+        source: 'dashboard',
+        label: label || undefined,
+      });
+      res.json(version);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  // Restore a specific version
+  router.post('/api/packs/:packId/versions/:versionNumber/restore', async (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const { packId, versionNumber } = req.params;
+    const packInfo = findPackById(packId);
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+    try {
+      restoreVersion(packInfo.path, parseInt(versionNumber, 10));
+
+      // Reload pack in memory
+      const reloaded = await TaskPackLoader.loadTaskPack(packInfo.path);
+      ctx.packMap.set(packId, { pack: reloaded, path: packInfo.path });
+      ctx.io.emit('packs:updated', ctx.packMap.size);
+
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 

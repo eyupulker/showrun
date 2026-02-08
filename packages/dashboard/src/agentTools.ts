@@ -7,7 +7,7 @@ import type { TaskPackEditorWrapper } from './mcpWrappers.js';
 import * as browserInspector from './browserInspector.js';
 import { isSessionAlive, startBrowserSession, closeSession } from './browserInspector.js';
 import { getSecretNamesWithValues } from './secretsUtils.js';
-import { resolveTemplates, TaskPackLoader } from '@showrun/core';
+import { resolveTemplates, TaskPackLoader, saveVersion } from '@showrun/core';
 import { executePlanTool } from './contextManager.js';
 import {
   updateConversation,
@@ -564,6 +564,8 @@ export interface AgentToolContext {
   onSecretsRequest?: (request: { secrets: Array<{ name: string; description?: string; required?: boolean }>; message: string }) => void;
   /** Whether to run browser in headful mode (default: true for dashboard) */
   headful?: boolean;
+  /** Pack map for version auto-save (optional; provided by dashboard) */
+  packMap?: Map<string, { pack: unknown; path: string }>;
 }
 
 /**
@@ -1045,6 +1047,23 @@ export async function executeAgentTool(
             console.log(`[BrowserAuto] Closing browser for completed pack (conversation ${ctx.conversationId})`);
             await closeSession(existingSessionId);
             setConversationBrowserSession(ctx.conversationId, null);
+          }
+
+          // Auto-version on ready
+          if (ctx.packId && ctx.packMap) {
+            try {
+              const packInfo = ctx.packMap.get(ctx.packId);
+              if (packInfo) {
+                saveVersion(packInfo.path, {
+                  source: 'agent',
+                  conversationId: ctx.conversationId ?? undefined,
+                  label: 'Auto-saved on ready',
+                });
+                console.log(`[Versioning] Auto-saved version for pack ${ctx.packId}`);
+              }
+            } catch (e) {
+              console.error('[Versioning] Auto-save failed:', e);
+            }
           }
         }
 

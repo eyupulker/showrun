@@ -58,11 +58,7 @@ export function validateJsonTaskPack(pack: TaskPack): void {
     errors.push('Task pack must have a flow array');
   } else {
     // Validate flow (includes step validation and duplicate ID check)
-    try {
-      validateFlow(pack.flow);
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-    }
+    validateFlow(pack.flow, errors);
 
     // Validate collectibles match flow
     if (pack.collectibles && pack.flow) {

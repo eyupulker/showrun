@@ -1,5 +1,7 @@
 # ShowRun
 
+> **Experimental** — This project is in early development. APIs, file formats, and CLI interfaces may change without notice. Use at your own risk.
+
 A TypeScript + Playwright framework for deterministic, versioned browser automation **Task Packs**: define flows in JSON or code, run them via CLI or MCP, and edit them with an AI-assisted dashboard (Teach Mode).
 
 ## What is a Task Pack?
@@ -37,6 +39,24 @@ Task Packs are designed to be:
 ```
 
 ## Quick Start
+
+### Environment Setup
+
+Before running, create a `.env` file in the project root with your API keys:
+
+```bash
+cp .env.example .env  # if an example file exists, or create .env manually
+```
+
+At minimum, you need an LLM API key for Teach Mode (AI-assisted flow editing):
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+# or
+OPENAI_API_KEY=sk-...
+```
+
+See `packages/dashboard/README.md` for the full list of supported environment variables.
 
 ### From Git Clone
 
@@ -328,6 +348,10 @@ See `packages/mcp-server/README.md` for details.
 - Node.js 20+
 - pnpm (or npm with workspaces)
 - Playwright Chromium browser (`pnpm exec playwright install chromium`)
+
+## Contributing
+
+There are no formal contribution guidelines yet. That said, all contributions are welcome — feel free to open issues, submit pull requests, or start discussions.
 
 ## License
 

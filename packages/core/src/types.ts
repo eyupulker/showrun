@@ -269,3 +269,25 @@ export interface TaskPack {
    */
   browser?: BrowserSettings;
 }
+
+/**
+ * A saved version snapshot of a flow
+ */
+export interface FlowVersion {
+  number: number;
+  /** Version string from taskpack.json metadata.version at snapshot time */
+  version: string;
+  /** ISO 8601 timestamp */
+  timestamp: string;
+  label?: string;
+  source: 'agent' | 'cli' | 'dashboard';
+  conversationId?: string;
+}
+
+/**
+ * Manifest tracking all saved versions for a pack
+ */
+export interface VersionManifest {
+  versions: FlowVersion[];
+  maxVersions: number;
+}

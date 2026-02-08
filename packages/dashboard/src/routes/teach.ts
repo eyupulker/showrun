@@ -465,6 +465,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
             sessionKey,
             conversationId: conversationId ?? null,
             headful: ctx.headful, // Dashboard always runs headful
+            packMap: ctx.packMap,
           };
           for (const tc of result.toolCalls) {
             let toolArgs: Record<string, unknown> = {};
