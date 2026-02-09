@@ -19,8 +19,8 @@ if (!existsSync(cliPath)) {
   console.error('Error: ShowRun CLI not built.');
   console.error('');
   console.error('For GitHub usage, you need to build first:');
-  console.error('  git clone https://github.com/OlymposHQ/flowforge');
-  console.error('  cd flowforge');
+  console.error('  git clone https://github.com/useshowrun/showrun');
+  console.error('  cd showrun');
   console.error('  pnpm install');
   console.error('  pnpm build');
   console.error('  node packages/showrun/dist/cli.js dashboard');
