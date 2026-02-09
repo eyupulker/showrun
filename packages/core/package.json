@@ -5,6 +5,15 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -22,5 +31,19 @@
     "@types/nunjucks": "^3.2.6",
     "typescript": "^5.3.3",
     "vitest": "^3.0.0"
+  },
+  "license": "MIT",
+  "author": "ShowRun",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/useshowrun/showrun.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/useshowrun/showrun",
+  "bugs": {
+    "url": "https://github.com/useshowrun/showrun/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -11,6 +11,9 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc && vite build",
     "dev": "tsc && vite build --watch",
@@ -48,5 +51,19 @@
     "@vitejs/plugin-react": "^4.3.3",
     "typescript": "^5.3.3",
     "vite": "^6.0.7"
+  },
+  "license": "MIT",
+  "author": "ShowRun",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/useshowrun/showrun.git",
+    "directory": "packages/dashboard"
+  },
+  "homepage": "https://github.com/useshowrun/showrun",
+  "bugs": {
+    "url": "https://github.com/useshowrun/showrun/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

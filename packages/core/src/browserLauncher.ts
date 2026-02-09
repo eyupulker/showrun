@@ -163,8 +163,11 @@ async function launchCamoufox(config: {
 }): Promise<BrowserSession> {
   const { headless, userDataDir, persistence } = config;
 
+  // Desktop-only screen constraints to prevent mobile fingerprints
+  const screen = { minWidth: 1024, minHeight: 768 };
+
   // Dynamic import to avoid loading Camoufox when not needed
-  let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean }) => Promise<Browser | BrowserContext>;
+  let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean; screen?: { minWidth?: number; maxWidth?: number; minHeight?: number; maxHeight?: number } }) => Promise<Browser | BrowserContext>;
   try {
     const camoufoxModule = await import('camoufox-js');
     Camoufox = camoufoxModule.Camoufox;
@@ -181,6 +184,7 @@ async function launchCamoufox(config: {
     const context = await Camoufox({
       headless,
       humanize: 2.0,
+      screen,
       user_data_dir: userDataDir,
     }) as unknown as BrowserContext;
 
@@ -204,6 +208,7 @@ async function launchCamoufox(config: {
   const browser = await Camoufox({
     headless,
     humanize: 2.0,
+    screen,
   }) as Browser;
 
   const context = await browser.newContext();

@@ -243,6 +243,31 @@ function validateSkipCondition(condition: unknown, errors?: string[], prefix?: s
 }
 
 /**
+ * Allowed params per step type — used to reject unknown/hallucinated keys.
+ */
+const ALLOWED_PARAMS: Record<string, string[]> = {
+  navigate: ['url', 'waitUntil'],
+  extract_title: ['out'],
+  extract_text: ['selector', 'target', 'out', 'first', 'trim', 'default', 'hint', 'scope', 'near'],
+  sleep: ['durationMs'],
+  wait_for: ['selector', 'target', 'url', 'loadState', 'visible', 'timeoutMs', 'hint', 'scope', 'near'],
+  click: ['selector', 'target', 'first', 'waitForVisible', 'hint', 'scope', 'near'],
+  fill: ['selector', 'target', 'value', 'first', 'clear', 'hint', 'scope', 'near'],
+  extract_attribute: ['selector', 'target', 'attribute', 'out', 'first', 'default', 'hint', 'scope', 'near'],
+  assert: ['selector', 'target', 'visible', 'textIncludes', 'urlIncludes', 'message', 'hint', 'scope', 'near'],
+  set_var: ['name', 'value'],
+  network_find: ['where', 'pick', 'saveAs', 'waitForMs', 'pollIntervalMs'],
+  network_replay: ['requestId', 'overrides', 'auth', 'out', 'saveAs', 'response'],
+  network_extract: ['fromVar', 'as', 'path', 'jsonPath', 'transform', 'out'],
+  select_option: ['selector', 'target', 'value', 'first', 'hint', 'scope', 'near'],
+  press_key: ['key', 'selector', 'target', 'times', 'delayMs', 'hint', 'scope', 'near'],
+  upload_file: ['selector', 'target', 'files', 'first', 'hint', 'scope', 'near'],
+  frame: ['frame', 'action'],
+  new_tab: ['url', 'saveTabIndexAs'],
+  switch_tab: ['tab', 'closeCurrentTab'],
+};
+
+/**
  * Validates a single step, pushing errors to the array.
  */
 function validateStep(step: unknown, stepIndex: number, errors: string[]): void {
@@ -912,6 +937,33 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       errors.push(
         `${prefix}: Unknown step type: ${s.type}. Supported types: navigate, extract_title, extract_text, extract_attribute, sleep, wait_for, click, fill, assert, set_var, network_find, network_replay, network_extract, select_option, press_key, upload_file, frame, new_tab, switch_tab`
       );
+  }
+
+  // Check for unknown params
+  const allowed = ALLOWED_PARAMS[s.type as string];
+  if (allowed) {
+    const unknown = Object.keys(params).filter(k => !allowed.includes(k));
+    if (unknown.length > 0) {
+      const evalLike = unknown.filter(k =>
+        ['eval', 'expression', 'evaluate', 'exec', 'script', 'code', 'js', 'javascript', 'function'].includes(k.toLowerCase())
+      );
+      let hint = '';
+      if (evalLike.length > 0) {
+        hint = '. To extract/transform data from JSON responses, use the network_extract step with a JMESPath "path" expression instead of eval';
+      }
+      errors.push(
+        `${prefix}: Unknown param(s) ${unknown.map(k => `"${k}"`).join(', ')} in "${s.type}" step. Allowed params: ${allowed.join(', ')}${hint}`
+      );
+    }
+  }
+
+  // Check for eval() in string param values
+  for (const [key, val] of Object.entries(params)) {
+    if (typeof val === 'string' && /\beval\s*\(/.test(val)) {
+      errors.push(
+        `${prefix}: param "${key}" contains eval() which is not supported. To extract/transform data from JSON responses, use the network_extract step with a JMESPath "path" expression`
+      );
+    }
   }
 }
 

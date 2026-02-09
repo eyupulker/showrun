@@ -50,6 +50,16 @@
     "ai-agents"
   ],
   "license": "MIT",
+  "author": "ShowRun",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/useshowrun/showrun.git",
+    "directory": "packages/showrun"
+  },
+  "homepage": "https://github.com/useshowrun/showrun",
+  "bugs": {
+    "url": "https://github.com/useshowrun/showrun/issues"
+  },
   "engines": {
     "node": ">=20.0.0"
   }

@@ -11,6 +11,9 @@
       "import": "./dist/index.js"
     }
   },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
@@ -27,5 +30,19 @@
     "@types/node": "^20.11.0",
     "typescript": "^5.3.3",
     "vitest": "^3.0.0"
+  },
+  "license": "MIT",
+  "author": "ShowRun",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/useshowrun/showrun.git",
+    "directory": "packages/mcp-server"
+  },
+  "homepage": "https://github.com/useshowrun/showrun",
+  "bugs": {
+    "url": "https://github.com/useshowrun/showrun/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

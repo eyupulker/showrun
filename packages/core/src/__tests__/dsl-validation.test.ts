@@ -142,3 +142,131 @@ describe('validateFlow — collect-all errors', () => {
     expect(errors[2]).toContain('Step 2');
   });
 });
+
+describe('validateFlow — unknown params rejection', () => {
+  it('rejects unknown params like "extract" and "expression" on extract_text', () => {
+    const errors: string[] = [];
+    validateFlow(
+      [
+        {
+          id: 'bad_extract',
+          type: 'extract_text',
+          params: {
+            selector: '.price',
+            out: 'price',
+            extract: 'eval',
+            expression: 'parseFloat(text)',
+          },
+        },
+      ],
+      errors
+    );
+
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('Unknown param(s) "extract", "expression"');
+    expect(errors[0]).toContain('"extract_text" step');
+    expect(errors[0]).toContain('Allowed params:');
+  });
+
+  it('provides eval hint when unknown param name looks eval-like', () => {
+    const errors: string[] = [];
+    validateFlow(
+      [
+        {
+          id: 'eval_step',
+          type: 'extract_text',
+          params: {
+            selector: '.data',
+            out: 'result',
+            eval: 'some expression',
+          },
+        },
+      ],
+      errors
+    );
+
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('network_extract step with a JMESPath');
+  });
+
+  it('does not provide eval hint for non-eval-like unknown params', () => {
+    const errors: string[] = [];
+    validateFlow(
+      [
+        {
+          id: 'typo_step',
+          type: 'click',
+          params: {
+            selector: '#btn',
+            frist: true, // typo of "first"
+          },
+        },
+      ],
+      errors
+    );
+
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('Unknown param(s) "frist"');
+    expect(errors[0]).not.toContain('network_extract');
+  });
+
+  it('detects eval() in string param values', () => {
+    const errors: string[] = [];
+    validateFlow(
+      [
+        {
+          id: 'eval_value',
+          type: 'fill',
+          params: {
+            selector: '#input',
+            value: 'eval(document.cookie)',
+          },
+        },
+      ],
+      errors
+    );
+
+    expect(errors.some((e) => e.includes('contains eval()'))).toBe(true);
+    expect(errors.some((e) => e.includes('network_extract'))).toBe(true);
+  });
+
+  it('allows valid params without errors', () => {
+    const errors: string[] = [];
+    validateFlow(
+      [
+        {
+          id: 'valid_extract',
+          type: 'extract_text',
+          params: {
+            selector: '.price',
+            out: 'price',
+            first: true,
+            trim: true,
+            default: 'N/A',
+          },
+        },
+      ],
+      errors
+    );
+
+    expect(errors).toEqual([]);
+  });
+
+  it('does not reject unknown params for unknown step types', () => {
+    const errors: string[] = [];
+    validateFlow(
+      [
+        {
+          id: 'custom_step',
+          type: 'custom_magic',
+          params: { anything: 'goes' },
+        },
+      ],
+      errors
+    );
+
+    // Should only have the "Unknown step type" error, not unknown params
+    expect(errors.length).toBe(1);
+    expect(errors[0]).toContain('Unknown step type: custom_magic');
+  });
+});
