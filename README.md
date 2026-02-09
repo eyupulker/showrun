@@ -62,8 +62,8 @@ See `packages/dashboard/README.md` for the full list of supported environment va
 
 ```bash
 # Clone the repository
-git clone https://github.com/OlymposHQ/flowforge
-cd flowforge
+git clone https://github.com/useshowrun/showrun
+cd showrun
 
 # Install dependencies (requires pnpm)
 pnpm install
