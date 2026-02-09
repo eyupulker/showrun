@@ -711,7 +711,6 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
 const EDITOR_TOOL_NAMES = new Set([
   'editor_read_pack',
   'editor_list_secrets',
-  'editor_validate_flow',
   'editor_apply_flow_patch',
   'editor_run_pack',
 ]);

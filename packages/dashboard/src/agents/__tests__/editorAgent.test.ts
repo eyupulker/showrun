@@ -58,10 +58,10 @@ describe('Tool Definitions Split', () => {
     const names = EDITOR_AGENT_TOOLS.map(t => t.function.name);
     expect(names).toContain('editor_read_pack');
     expect(names).toContain('editor_list_secrets');
-    expect(names).toContain('editor_validate_flow');
     expect(names).toContain('editor_apply_flow_patch');
     expect(names).toContain('editor_run_pack');
-    expect(names).toHaveLength(5);
+    expect(names).not.toContain('editor_validate_flow');
+    expect(names).toHaveLength(4);
   });
 
   it('EDITOR_AGENT_TOOLS does NOT contain browser or conversation tools', () => {
