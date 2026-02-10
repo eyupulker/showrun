@@ -761,8 +761,8 @@ export default function ChatView({
                 {isSummarizing && (
                   <div style={{
                     padding: '10px 14px',
-                    backgroundColor: 'rgba(245, 158, 11, 0.1)',
-                    border: '1px solid rgba(245, 158, 11, 0.2)',
+                    backgroundColor: 'rgba(255, 103, 26, 0.1)',
+                    border: '1px solid rgba(255, 103, 26, 0.2)',
                     borderRadius: '8px',
                     display: 'flex',
                     alignItems: 'center',

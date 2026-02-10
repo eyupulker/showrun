@@ -152,9 +152,9 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
 
         if (!success && onToolError) {
           const errorStr = resultParsed && typeof resultParsed === 'object' && 'error' in resultParsed
-            ? String((resultParsed as any).error).slice(0, 2000)
-            : String(resultStr).slice(0, 2000);
-          onToolError(tc.name, toolArgs, errorStr, iter);
+            ? String((resultParsed as any).error).slice(0, 5000)
+            : String(resultStr).slice(0, 5000);
+          onToolError(tc.name, toolArgs, errorStr, iter, (result.content ?? '').slice(0, 5000) || null);
         }
 
         // Check abort after each tool

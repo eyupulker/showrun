@@ -31,6 +31,7 @@ export interface ShowRunConfig {
   };
   agent?: {
     maxBrowserRounds?: number;
+    debug?: boolean;
   };
   prompts?: {
     teachChatSystemPrompt?: string;
@@ -181,6 +182,7 @@ const CONFIG_TO_ENV: Array<{ path: string[]; envVar: string }> = [
   { path: ['llm', 'openai', 'model'], envVar: 'OPENAI_MODEL' },
   { path: ['llm', 'openai', 'baseUrl'], envVar: 'OPENAI_BASE_URL' },
   { path: ['agent', 'maxBrowserRounds'], envVar: 'MAX_BROWSER_ROUNDS' },
+  { path: ['agent', 'debug'], envVar: 'SHOWRUN_DEBUG' },
   { path: ['prompts', 'teachChatSystemPrompt'], envVar: 'TEACH_CHAT_SYSTEM_PROMPT' },
   { path: ['prompts', 'autonomousExplorationPromptPath'], envVar: 'AUTONOMOUS_EXPLORATION_PROMPT_PATH' },
   { path: ['prompts', 'teachModeSystemPromptPath'], envVar: 'TEACH_MODE_SYSTEM_PROMPT_PATH' },
@@ -309,6 +311,7 @@ export const DEFAULT_CONFIG_TEMPLATE: ShowRunConfig = {
   },
   agent: {
     maxBrowserRounds: 0,
+    debug: false,
   },
   prompts: {
     teachChatSystemPrompt: '',

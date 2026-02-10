@@ -28,7 +28,7 @@ export interface AgentLoopOptions {
   /** Callback after each tool execution (optional) */
   onToolResult?: (toolName: string, args: Record<string, unknown>, result: unknown, success: boolean) => void;
   /** Callback when a tool call fails — for centralized error logging */
-  onToolError?: (toolName: string, args: Record<string, unknown>, error: string, iteration: number) => void;
+  onToolError?: (toolName: string, args: Record<string, unknown>, error: string, iteration: number, assistantContent: string | null) => void;
   /** AbortSignal to cancel the loop */
   abortSignal?: { aborted: boolean };
   /** Session key for plan storage / summarization */
@@ -70,7 +70,7 @@ export interface EditorAgentOptions {
   /** Callback when flow is updated (for UI real-time updates) */
   onFlowUpdated?: (flow: unknown, validation?: unknown) => void;
   /** Callback when an editor tool call fails — for centralized error logging */
-  onToolError?: (toolName: string, args: Record<string, unknown>, error: string, iteration: number) => void;
+  onToolError?: (toolName: string, args: Record<string, unknown>, error: string, iteration: number, assistantContent: string | null) => void;
   /** AbortSignal */
   abortSignal?: { aborted: boolean };
   /** Session key for plan storage */

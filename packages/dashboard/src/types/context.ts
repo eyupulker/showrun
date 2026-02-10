@@ -34,6 +34,7 @@ export interface DashboardContext {
   workspaceDir: string | null;
   baseRunDir: string;
   headful: boolean;
+  debug: boolean;
 
   // Pack management
   packMap: Map<string, PackMapEntry>;

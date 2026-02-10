@@ -53,6 +53,7 @@ export interface DashboardOptions {
   baseRunDir: string;
   workspaceDir?: string; // Writable directory for JSON pack creation/editing
   dataDir?: string; // Database directory (default: ./data)
+  debug?: boolean; // Enable debug logging (failed tool calls, etc.)
 }
 
 /**
@@ -129,6 +130,12 @@ function loadSystemPrompt(): string {
  */
 export async function startDashboard(options: DashboardOptions): Promise<void> {
   const { packs: packDirs, port, host = '127.0.0.1', headful, baseRunDir, workspaceDir, dataDir = './data' } = options;
+  // --debug flag takes priority, then SHOWRUN_DEBUG env/config
+  const debug = options.debug || process.env.SHOWRUN_DEBUG === 'true';
+
+  if (debug) {
+    console.log('[Dashboard] Debug mode enabled — failed tool calls will be logged to data/failed-tool-calls.jsonl');
+  }
 
   // Initialize database
   console.log(`[Dashboard] Initializing database...`);
@@ -258,6 +265,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     workspaceDir: resolvedWorkspaceDir,
     baseRunDir: resolvedBaseRunDir,
     headful,
+    debug,
     packMap,
     runManager,
     concurrencyLimiter,

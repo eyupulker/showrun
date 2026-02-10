@@ -22,9 +22,10 @@ import { join } from 'path';
 
 /**
  * Log failed tool calls to JSONL for analysis.
+ * Only active when debug mode is enabled (--debug flag).
  * Covers: disallowed tools, execution errors, and any tool returning an error result.
  */
-function logFailedToolCall(entry: {
+function logFailedToolCall(enabled: boolean, entry: {
   tool: string;
   args: Record<string, unknown>;
   reason: 'disallowed' | 'execution_error' | 'error_result';
@@ -35,6 +36,7 @@ function logFailedToolCall(entry: {
   iteration: number;
   recentUserMessage: string | null;
 }) {
+  if (!enabled) return;
   try {
     const logDir = join(process.cwd(), 'data');
     mkdirSync(logDir, { recursive: true });
@@ -518,12 +520,12 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                 ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
                 : null;
 
-              logFailedToolCall({
+              logFailedToolCall(ctx.debug, {
                 tool: tc.name,
                 args: toolArgs,
                 reason: 'disallowed',
                 error: `Tool "${tc.name}" is not in the Exploration Agent's allowed set`,
-                assistantContent: (result.content ?? '').slice(0, 1000),
+                assistantContent: (result.content ?? '').slice(0, 5000),
                 conversationId: conversationId ?? null,
                 packId: effectivePackId ?? null,
                 iteration: iter,
@@ -568,17 +570,17 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                       }
                     }
                   },
-                  onToolError: (toolName, toolErrorArgs, errorMsg, editorIter) => {
+                  onToolError: (toolName, toolErrorArgs, errorMsg, editorIter, editorAssistantContent) => {
                     const lastUserMsg = [...agentMessages].reverse().find(m => m.role === 'user');
                     const recentUserContent = lastUserMsg
                       ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
                       : null;
-                    logFailedToolCall({
+                    logFailedToolCall(ctx.debug, {
                       tool: `editor:${toolName}`,
                       args: toolErrorArgs,
                       reason: 'execution_error',
                       error: errorMsg,
-                      assistantContent: null,
+                      assistantContent: editorAssistantContent ?? null,
                       conversationId: conversationId ?? null,
                       packId: effectivePackId ?? null,
                       iteration: editorIter,
@@ -610,12 +612,12 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                 const recentUserContent = lastUserMsg
                   ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
                   : null;
-                logFailedToolCall({
+                logFailedToolCall(ctx.debug, {
                   tool: tc.name,
                   args: toolArgs,
                   reason: 'error_result',
                   error: editorResult.error || editorResult.summary || 'Editor agent failed',
-                  assistantContent: (result.content ?? '').slice(0, 1000),
+                  assistantContent: (result.content ?? '').slice(0, 5000),
                   conversationId: conversationId ?? null,
                   packId: effectivePackId ?? null,
                   iteration: iter,
@@ -657,14 +659,14 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                 ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
                 : null;
               const errorStr = resultParsed && typeof resultParsed === 'object' && 'error' in resultParsed
-                ? String((resultParsed as any).error).slice(0, 2000)
-                : resultStr.slice(0, 2000);
-              logFailedToolCall({
+                ? String((resultParsed as any).error).slice(0, 5000)
+                : resultStr.slice(0, 5000);
+              logFailedToolCall(ctx.debug, {
                 tool: tc.name,
                 args: toolArgs,
                 reason: 'execution_error',
                 error: errorStr,
-                assistantContent: (result.content ?? '').slice(0, 1000),
+                assistantContent: (result.content ?? '').slice(0, 5000),
                 conversationId: conversationId ?? null,
                 packId: effectivePackId ?? null,
                 iteration: iter,

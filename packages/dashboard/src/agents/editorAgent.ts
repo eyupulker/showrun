@@ -40,29 +40,48 @@ When the exploration context mentions API endpoints, you MUST use network steps:
 NEVER use DOM extraction (\`extract_text\`, \`extract_attribute\`) for data available via API.
 Only use DOM steps when the exploration context explicitly says "no API found" or "DOM-only".
 
-## DSL Step Types Reference
+## DSL Step Types — Required Parameters
 
-| Step Type | Purpose | Key Params |
-|-----------|---------|------------|
-| \`navigate\` | Go to URL | \`url\`, \`waitUntil\` |
-| \`wait_for\` | Wait for element/state | \`target\`, \`url\`, \`loadState\`, \`timeoutMs\` |
-| \`click\` | Click element | \`target\`, \`first\`, \`scope\`, \`near\` |
-| \`fill\` | Type into input | \`target\`, \`value\`, \`clear\` |
-| \`extract_title\` | Extract page title | \`out\` |
-| \`extract_text\` | Extract text from element(s) | \`target\`, \`out\`, \`first\`, \`trim\` |
-| \`extract_attribute\` | Extract attribute value(s) | \`target\`, \`attribute\`, \`out\`, \`first\` |
-| \`select_option\` | Select dropdown option | \`target\`, \`value\`, \`first\` |
-| \`press_key\` | Press keyboard key | \`key\`, \`target\`, \`times\`, \`delayMs\` |
-| \`assert\` | Validate element/URL state | \`target\`, \`visible\`, \`textIncludes\`, \`urlIncludes\` |
-| \`set_var\` | Set template variable | \`name\`, \`value\` |
-| \`sleep\` | Wait fixed duration | \`durationMs\` |
-| \`upload_file\` | Upload file(s) to input | \`target\`, \`files\` |
-| \`frame\` | Switch iframe context | \`frame\`, \`action\` (\`enter\`/\`exit\`) |
-| \`new_tab\` | Open new browser tab | \`url\`, \`saveTabIndexAs\` |
-| \`switch_tab\` | Switch to different tab | \`tab\`, \`closeCurrentTab\` |
-| \`network_find\` | Find captured request | \`where\`, \`pick\`, \`saveAs\`, \`waitForMs\` |
-| \`network_replay\` | Replay request with overrides | \`requestId\`, \`overrides\`, \`auth\`, \`out\`, \`saveAs\`, \`response\` |
-| \`network_extract\` | Extract from response | \`fromVar\`, \`as\`, \`path\`, \`out\` |
+| Step Type | REQUIRED Params | Optional Params |
+|-----------|----------------|-----------------|
+| \`navigate\` | \`url\` | \`waitUntil\` |
+| \`wait_for\` | ONE OF: \`target\`, \`selector\`, \`url\`, \`loadState\` | \`visible\`, \`timeoutMs\` |
+| \`click\` | \`target\` OR \`selector\` | \`first\`, \`scope\`, \`near\` |
+| \`fill\` | (\`target\` OR \`selector\`) + \`value\` | \`first\`, \`clear\` |
+| \`extract_text\` | (\`target\` OR \`selector\`) + \`out\` | \`first\`, \`trim\`, \`default\` |
+| \`extract_attribute\` | (\`target\` OR \`selector\`) + \`attribute\` + \`out\` | \`first\`, \`default\` |
+| \`extract_title\` | \`out\` | — |
+| \`select_option\` | \`target\` + \`value\` | \`first\` |
+| \`press_key\` | \`key\` | \`target\`, \`times\`, \`delayMs\` |
+| \`assert\` | \`target\` OR \`urlIncludes\` | \`visible\`, \`textIncludes\` |
+| \`set_var\` | \`name\` + \`value\` (string/number/boolean only) | — |
+| \`sleep\` | \`durationMs\` | — |
+| \`upload_file\` | \`target\` + \`files\` | — |
+| \`frame\` | \`frame\` + \`action\` (\`enter\`/\`exit\`) | — |
+| \`new_tab\` | \`url\` | \`saveTabIndexAs\` |
+| \`switch_tab\` | \`tab\` | \`closeCurrentTab\` |
+| \`network_find\` | \`where\` + \`saveAs\` | \`pick\`, \`waitForMs\` |
+| \`network_replay\` | \`requestId\` + \`auth\` ("browser_context") + \`out\` + \`response\` ({as: "json"\\|"text"}) | \`overrides\`, \`saveAs\`, \`response.path\` |
+| \`network_extract\` | \`fromVar\` + \`as\` ("json"\\|"text") + \`out\` | \`path\` |
+
+### Target format (NEVER use a plain string):
+✅ \`{ "kind": "css", "selector": ".my-class" }\`
+✅ \`{ "kind": "text", "text": "Click me" }\`
+✅ \`{ "kind": "role", "role": "button", "name": "Submit" }\`
+❌ \`".my-class"\` (string — will fail validation)
+❌ \`{ "selector": ".my-class" }\` (missing kind — will fail)
+
+### Common mistakes that ALWAYS fail:
+- \`saveAs\` on extract steps → use \`out\`
+- \`multiple: true\` → use \`first: false\`
+- \`as: "someVar"\` on network_extract → \`as\` must be "json" or "text", use \`out\` for the var name
+- \`target: "selector-string"\` → must be \`{ kind: "css", selector: "..." }\`
+- \`where: { url: "..." }\` → use \`where: { urlIncludes: "..." }\`
+- \`waitForMs\` on wait_for → use \`timeoutMs\`
+- step as JSON string → must be an object
+- \`out: "vars.something"\` → just use \`out: "something"\` (no "vars." prefix)
+- \`response.saveAs\` → NOT a valid param; use \`saveAs\` at params level for vars, \`out\` for collectibles
+- \`path\` or \`as\` at params level for network_replay → must be INSIDE \`response: { as: "json", path: "..." }\`
 
 ### network_find \`where\` fields (ONLY these are valid):
 - \`urlIncludes\` (string) — URL must contain this substring. Do NOT use \`url\` — it is not a valid field.

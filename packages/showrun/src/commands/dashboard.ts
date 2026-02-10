@@ -37,6 +37,7 @@ export interface DashboardCommandOptions {
   headful: boolean;
   baseRunDir: string;
   workspaceDir?: string;
+  debug: boolean;
 }
 
 export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
@@ -48,6 +49,7 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
     packs: [],
     port: 3333,
     headful: false,
+    debug: false,
     baseRunDir: resolve(projectRoot, './runs-dashboard'),
   };
 
@@ -94,6 +96,9 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
         break;
       case '--headful':
         result.headful = true;
+        break;
+      case '--debug':
+        result.debug = true;
         break;
       case '--baseRunDir':
         if (!next || next.startsWith('--')) {
@@ -166,6 +171,7 @@ Options:
   --host <hostname>      Hostname or IP to bind to (default: 127.0.0.1)
                          WARNING: Only use this if you understand the security implications
   --headful              Run browser in headful mode (default: false)
+  --debug                Enable debug logging (failed tool calls to data/failed-tool-calls.jsonl)
   --baseRunDir <path>    Base directory for run outputs (default: ./runs-dashboard)
   --workspace <path>     Writable directory for JSON pack creation/editing (default: first --packs dir)
 

@@ -204,10 +204,10 @@ export default function VersionPanel({ packId, token }: VersionPanelProps) {
                   fontSize: '10px',
                   padding: '1px 6px',
                   borderRadius: '3px',
-                  backgroundColor: v.source === 'agent' ? 'rgba(139, 92, 246, 0.15)' :
+                  backgroundColor: v.source === 'agent' ? 'rgba(255, 103, 26, 0.15)' :
                                    v.source === 'cli' ? 'rgba(59, 130, 246, 0.15)' :
                                    'rgba(34, 197, 94, 0.15)',
-                  color: v.source === 'agent' ? 'rgb(167, 139, 250)' :
+                  color: v.source === 'agent' ? 'var(--brand-300)' :
                          v.source === 'cli' ? 'var(--accent-blue)' :
                          'var(--accent-green)',
                 }}>

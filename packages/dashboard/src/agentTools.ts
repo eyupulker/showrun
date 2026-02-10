@@ -1205,8 +1205,13 @@ export async function executeAgentTool(
     }
   } catch (err) {
     const rawMessage = err instanceof Error ? err.message : String(err);
-    const parsed = parsePlaywrightError(rawMessage);
-    return wrap(JSON.stringify(parsed));
+    // Only parse Playwright-specific errors (locator.click, page.goto, browser.newContext etc.)
+    // Require a dot after each keyword to avoid false positives (e.g. "browser_context" in hints)
+    if (/(?:locator|page|frame|browser)\.\w+/i.test(rawMessage)) {
+      const parsed = parsePlaywrightError(rawMessage);
+      return wrap(JSON.stringify(parsed));
+    }
+    return wrap(JSON.stringify({ error: rawMessage }));
   }
 }
 

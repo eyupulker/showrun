@@ -142,6 +142,14 @@ Large tool outputs are automatically truncated with metadata:
 - This repository is not thoroughly tested, but that's not an excuse to not write any tests. For any significant feature, write at least a few tests so that we are sure we did not break core functionality.
 - This repository is very young in development. Breaking changes are not that important for now. For now, it needs to work. Do not offer chances for backwards compatibility. No one else is using this right now.
 
+## Changelog
+
+**IMPORTANT: Every implemented change must be documented in `CHANGELOG.md`.**
+- Add a one-line entry at the **top** of the `## Unreleased` section.
+- Use the format: `- [tag] Description` where tag is one of: `added`, `fixed`, `changed`, `removed`.
+- Keep entries concise — one line per change, written from a user/developer perspective.
+- Do NOT bump version numbers. When we decide to release, we will rename `Unreleased` to a version heading manually.
+
 ## Product Roadmap
 
 The project roadmap is maintained in `docs/ROADMAP.md`. This document tracks:

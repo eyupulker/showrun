@@ -80,6 +80,26 @@ function validatePathInAllowedDir(path: string, allowedDir: string): void {
   }
 }
 
+/**
+ * Maps step type to required/optional params hint for validation error messages.
+ */
+function getStepParamsHint(stepType: string): string {
+  const hints: Record<string, string> = {
+    extract_text: 'Required: target (object with kind) OR selector (string), out (string). Optional: first, trim, default.',
+    extract_attribute: 'Required: target OR selector, attribute (string), out (string). Optional: first, default.',
+    extract_title: 'Required: out (string).',
+    network_find: 'Required: where ({urlIncludes?, method?, ...}), saveAs (string). Optional: pick, waitForMs. Note: "url" is NOT valid in where — use "urlIncludes".',
+    network_replay: 'Required: requestId, auth ("browser_context"), out (string), response ({as: "json"|"text"}). Optional: overrides, saveAs, response.path.',
+    network_extract: 'Required: fromVar (string), as ("json"|"text"), out (string). Optional: path (JMESPath).',
+    wait_for: 'Required: at least ONE of target, selector, url, or loadState. Optional: visible, timeoutMs. Note: "waitForMs" is NOT valid.',
+    set_var: 'Required: name (string), value (string|number|boolean). Arrays/objects not allowed.',
+    click: 'Required: target (object with kind) OR selector. Optional: first.',
+    fill: 'Required: target OR selector, value (string). Optional: first, clear.',
+    navigate: 'Required: url (string). Optional: waitUntil.',
+  };
+  return hints[stepType] || '';
+}
+
 export interface TaskPackEditorOptions {
   /**
    * Directories containing task packs (for discovery)
@@ -513,8 +533,10 @@ export async function createTaskPackEditorServer(
         validateJsonTaskPack(tempPack);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
+        const stepType = (step as any)?.type;
+        const hint = stepType ? getStepParamsHint(stepType) : '';
         throw new Error(
-          `Step validation failed. Fix the step params and retry.\nDetails: ${msg}`
+          `Step validation failed:\n${msg}${hint ? `\n\nHint for "${stepType}": ${hint}` : ''}`
         );
       }
 
