@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [removed] Legacy prompt files `AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md`, `TEACH_MODE_SYSTEM_PROMPT.md`, and `output_debug.txt` — only `EXPLORATION_AGENT_SYSTEM_PROMPT.md` is used now
+- [changed] Prompt config simplified: `EXPLORATION_AGENT_PROMPT_PATH` replaces `AUTONOMOUS_EXPLORATION_PROMPT_PATH` and `TEACH_MODE_SYSTEM_PROMPT_PATH`
 - [added] Official brand logo (icon + "showrun" wordmark) in header and welcome screen, replacing text-only gradient
 - [added] `agent.debug` config option (`SHOWRUN_DEBUG` env var) — debug flag can now be set via config.json in addition to `--debug` CLI flag
 - [added] CHANGELOG.md and CLAUDE.md rule requiring changelog entries for every change

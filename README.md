@@ -397,8 +397,7 @@ Each key maps to an environment variable. Values from `config.json` are only app
 | `llm.openai.baseUrl` | `OPENAI_BASE_URL` |
 | `agent.maxBrowserRounds` | `MAX_BROWSER_ROUNDS` |
 | `prompts.teachChatSystemPrompt` | `TEACH_CHAT_SYSTEM_PROMPT` |
-| `prompts.autonomousExplorationPromptPath` | `AUTONOMOUS_EXPLORATION_PROMPT_PATH` |
-| `prompts.teachModeSystemPromptPath` | `TEACH_MODE_SYSTEM_PROMPT_PATH` |
+| `prompts.explorationAgentPromptPath` | `EXPLORATION_AGENT_PROMPT_PATH` |
 
 ### Directory Search Order
 
@@ -413,7 +412,7 @@ When multiple config files are found, they are deep-merged with higher-priority 
 
 ### System Prompts
 
-The `showrun config init` command also copies `AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md` into the config directory. This means the Teach Mode agent prompt is available even when running ShowRun from outside the repo directory.
+The `showrun config init` command also copies `EXPLORATION_AGENT_SYSTEM_PROMPT.md` into the config directory. This means the agent prompt is available even when running ShowRun from outside the repo directory.
 
 ## MCP Server
 

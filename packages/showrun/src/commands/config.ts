@@ -64,7 +64,7 @@ async function cmdConfigInit(args: string[]): Promise<void> {
   }
 
   // Copy system prompt if available and not already in the config dir
-  const promptFilename = 'AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md';
+  const promptFilename = 'EXPLORATION_AGENT_SYSTEM_PROMPT.md';
   const promptDest = join(configDir, promptFilename);
   if (!existsSync(promptDest)) {
     const sourcePath = resolveFilePath(promptFilename);

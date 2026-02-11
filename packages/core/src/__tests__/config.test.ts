@@ -187,9 +187,9 @@ describe('resolveFilePath', () => {
   });
 
   it('finds a file in cwd', () => {
-    // This tests the cwd fallback — the AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md
+    // This tests the cwd fallback — the EXPLORATION_AGENT_SYSTEM_PROMPT.md
     // should be found if it exists in the repo root
-    const promptFile = 'AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md';
+    const promptFile = 'EXPLORATION_AGENT_SYSTEM_PROMPT.md';
     const cwdPath = resolve(process.cwd(), promptFile);
     if (existsSync(cwdPath)) {
       const result = resolveFilePath(promptFile);

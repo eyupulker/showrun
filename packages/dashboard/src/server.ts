@@ -61,39 +61,26 @@ export interface DashboardOptions {
  *
  * Priority:
  *   1. TEACH_CHAT_SYSTEM_PROMPT env var (inline text)
- *   2. resolveFilePath('AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md') — config dirs, cwd, ancestors
- *   3. resolveFilePath('TEACH_MODE_SYSTEM_PROMPT.md') — fallback prompt
+ *   2. EXPLORATION_AGENT_PROMPT_PATH env var (file path)
+ *   3. resolveFilePath('EXPLORATION_AGENT_SYSTEM_PROMPT.md') — config dirs, cwd, ancestors
  *   4. Error message suggesting `showrun config init`
  */
 function loadSystemPrompt(): string {
-  // 1. Env var takes top priority (inline text)
   const envPrompt = process.env.TEACH_CHAT_SYSTEM_PROMPT;
   if (envPrompt) return envPrompt;
 
-  // 2. Search for system prompt via config system
-  // Priority: EXPLORATION_AGENT_SYSTEM_PROMPT.md (two-agent architecture)
-  //         → AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md (legacy single-agent)
-  //         → TEACH_MODE_SYSTEM_PROMPT.md (fallback)
-  const explorationAgentFilename = 'EXPLORATION_AGENT_SYSTEM_PROMPT.md';
-  const legacyExplorationFilename = 'AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md';
-  const teachFilename = 'TEACH_MODE_SYSTEM_PROMPT.md';
+  const promptFilename = 'EXPLORATION_AGENT_SYSTEM_PROMPT.md';
 
-  // Check env var path overrides first (set via .env, config.json, or real env)
-  const explorationEnvPath = process.env.AUTONOMOUS_EXPLORATION_PROMPT_PATH;
-  const teachEnvPath = process.env.TEACH_MODE_SYSTEM_PROMPT_PATH;
-
+  // Check env var path override first
+  const envPath = process.env.EXPLORATION_AGENT_PROMPT_PATH;
   let pathToLoad: string | null = null;
-  if (explorationEnvPath && existsSync(explorationEnvPath)) {
-    pathToLoad = explorationEnvPath;
-  } else if (teachEnvPath && existsSync(teachEnvPath)) {
-    pathToLoad = teachEnvPath;
+  if (envPath && existsSync(envPath)) {
+    pathToLoad = envPath;
   }
 
   // Fall back to config directory / cwd / ancestor discovery
   if (!pathToLoad) {
-    pathToLoad = resolveFilePath(explorationAgentFilename)
-      ?? resolveFilePath(legacyExplorationFilename)
-      ?? resolveFilePath(teachFilename);
+    pathToLoad = resolveFilePath(promptFilename);
   }
 
   if (pathToLoad) {
@@ -101,14 +88,8 @@ function loadSystemPrompt(): string {
       const content = readFileSync(pathToLoad, 'utf-8').trim();
       console.log(`[Dashboard] System prompt loaded from ${pathToLoad}`);
 
-      // Auto-copy to config dir for future use from other directories
-      const loadedFilename = pathToLoad.endsWith(explorationAgentFilename)
-        ? explorationAgentFilename
-        : pathToLoad.endsWith(legacyExplorationFilename)
-        ? legacyExplorationFilename
-        : teachFilename;
       try {
-        ensureSystemPromptInConfigDir(loadedFilename, pathToLoad);
+        ensureSystemPromptInConfigDir(promptFilename, pathToLoad);
       } catch {
         // Non-fatal — prompt is already loaded, copy is just a convenience
       }
@@ -119,7 +100,6 @@ function loadSystemPrompt(): string {
     }
   }
 
-  // 4. Nothing found
   console.error('[Dashboard] ERROR: No system prompt found.');
   console.error('[Dashboard] Run `showrun config init` to set up configuration, or create EXPLORATION_AGENT_SYSTEM_PROMPT.md in the project root.');
   return 'System prompt not configured. Run `showrun config init` or create EXPLORATION_AGENT_SYSTEM_PROMPT.md in the project root.';

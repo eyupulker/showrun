@@ -76,13 +76,12 @@ You need at least one API key (`ANTHROPIC_API_KEY` or `OPENAI_API_KEY`) for Teac
 | Variable | Description | config.json path |
 |----------|-------------|------------------|
 | `TEACH_CHAT_SYSTEM_PROMPT` | Inline system prompt text (highest priority) | `prompts.teachChatSystemPrompt` |
-| `AUTONOMOUS_EXPLORATION_PROMPT_PATH` | Path to custom exploration prompt file | `prompts.autonomousExplorationPromptPath` |
-| `TEACH_MODE_SYSTEM_PROMPT_PATH` | Path to custom teach mode prompt file | `prompts.teachModeSystemPromptPath` |
+| `EXPLORATION_AGENT_PROMPT_PATH` | Path to custom exploration prompt file | `prompts.explorationAgentPromptPath` |
 
 System prompt resolution order:
 1. `TEACH_CHAT_SYSTEM_PROMPT` env var (inline text)
-2. `AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md` found via config dirs, cwd, or ancestors
-3. `TEACH_MODE_SYSTEM_PROMPT.md` (fallback)
+2. `EXPLORATION_AGENT_PROMPT_PATH` env var (file path)
+3. `EXPLORATION_AGENT_SYSTEM_PROMPT.md` found via config dirs, cwd, or ancestors
 
 When running `showrun config init`, the exploration prompt is automatically copied into your config directory so it's available from any working directory.
 

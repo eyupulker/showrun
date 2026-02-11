@@ -35,8 +35,7 @@ export interface ShowRunConfig {
   };
   prompts?: {
     teachChatSystemPrompt?: string;
-    autonomousExplorationPromptPath?: string;
-    teachModeSystemPromptPath?: string;
+    explorationAgentPromptPath?: string;
   };
 }
 
@@ -184,8 +183,7 @@ const CONFIG_TO_ENV: Array<{ path: string[]; envVar: string }> = [
   { path: ['agent', 'maxBrowserRounds'], envVar: 'MAX_BROWSER_ROUNDS' },
   { path: ['agent', 'debug'], envVar: 'SHOWRUN_DEBUG' },
   { path: ['prompts', 'teachChatSystemPrompt'], envVar: 'TEACH_CHAT_SYSTEM_PROMPT' },
-  { path: ['prompts', 'autonomousExplorationPromptPath'], envVar: 'AUTONOMOUS_EXPLORATION_PROMPT_PATH' },
-  { path: ['prompts', 'teachModeSystemPromptPath'], envVar: 'TEACH_MODE_SYSTEM_PROMPT_PATH' },
+  { path: ['prompts', 'explorationAgentPromptPath'], envVar: 'EXPLORATION_AGENT_PROMPT_PATH' },
 ];
 
 function getNestedValue(obj: Record<string, unknown>, path: string[]): unknown {
@@ -315,7 +313,6 @@ export const DEFAULT_CONFIG_TEMPLATE: ShowRunConfig = {
   },
   prompts: {
     teachChatSystemPrompt: '',
-    autonomousExplorationPromptPath: '',
-    teachModeSystemPromptPath: '',
+    explorationAgentPromptPath: '',
   },
 };
