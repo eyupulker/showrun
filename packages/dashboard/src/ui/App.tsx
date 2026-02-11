@@ -6,6 +6,7 @@ import BottomNav, { type NavView } from './BottomNav.js';
 import RunsView from './RunsView.js';
 import MCPServerView from './MCPServerView.js';
 import PacksView from './PacksView.js';
+import { ShowRunLogo } from './ShowRunLogo.js';
 
 interface Pack {
   id: string;
@@ -417,7 +418,7 @@ function App() {
               </svg>
             </button>
           )}
-          <div className="header-logo">ShowRun</div>
+          <div className="header-logo"><ShowRunLogo size="md" /></div>
         </div>
 
         {/* Main content */}

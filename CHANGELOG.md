@@ -10,6 +10,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] Official brand logo (icon + "showrun" wordmark) in header and welcome screen, replacing text-only gradient
 - [added] `agent.debug` config option (`SHOWRUN_DEBUG` env var) — debug flag can now be set via config.json in addition to `--debug` CLI flag
 - [added] CHANGELOG.md and CLAUDE.md rule requiring changelog entries for every change
 - [added] `--debug` flag for dashboard — gates failed tool call logging behind a flag instead of always writing to disk
