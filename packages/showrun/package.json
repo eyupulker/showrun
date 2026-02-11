@@ -1,6 +1,6 @@
 {
   "name": "showrun",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Task Pack framework for deterministic browser automations - single command dashboard",
   "type": "module",
   "main": "./dist/cli.js",
@@ -50,7 +50,7 @@
     "ai-agents"
   ],
   "license": "MIT",
-  "author": "ShowRun",
+  "author": "ShowRun <developers@showrun.co>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/useshowrun/showrun.git",

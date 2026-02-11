@@ -1,6 +1,6 @@
 {
   "name": "@showrun/taskpack-editor-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for editing JSON Task Packs",
   "type": "module",
   "main": "./dist/index.js",
@@ -29,7 +29,7 @@
     "typescript": "^5.3.3"
   },
   "license": "MIT",
-  "author": "ShowRun",
+  "author": "ShowRun <developers@showrun.co>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/useshowrun/showrun.git",

@@ -1,6 +1,6 @@
 {
   "name": "@showrun/mcp-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "MCP server for Task Pack framework",
   "type": "module",
   "main": "./dist/index.js",
@@ -32,7 +32,7 @@
     "vitest": "^3.0.0"
   },
   "license": "MIT",
-  "author": "ShowRun",
+  "author": "ShowRun <developers@showrun.co>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/useshowrun/showrun.git",

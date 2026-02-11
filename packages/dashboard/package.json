@@ -1,6 +1,6 @@
 {
   "name": "@showrun/dashboard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Dashboard for running and observing Task Packs in real time",
   "type": "module",
   "main": "./dist/index.js",
@@ -53,7 +53,7 @@
     "vite": "^6.0.7"
   },
   "license": "MIT",
-  "author": "ShowRun",
+  "author": "ShowRun <developers@showrun.co>",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/useshowrun/showrun.git",

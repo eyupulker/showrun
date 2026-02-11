@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+## 0.1.1 — 2026-02-11
+
 - [added] Full conversation transcript logging — saves agent messages, tool traces, and flow state to `conversation_transcripts` table (gated behind `--transcript-logging` / `SHOWRUN_TRANSCRIPT_LOGGING`)
 - [added] `agent.transcriptLogging` config option with CLI flag `--transcript-logging` and env var `SHOWRUN_TRANSCRIPT_LOGGING`
 - [fixed] Capture thinking output in saved conversation transcripts (was only streamed to client, not persisted)
