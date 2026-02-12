@@ -10,6 +10,17 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [fixed] Auto-detect existing `.browser-profile/` in pack directory and use it even when `persistence` is not explicitly configured
+- [fixed] MCP server (stdio and HTTP) now passes `packPath` so Camoufox uses the pack's browser profile
+- [fixed] `editor_run_pack` now passes `profileId` and `packPath` so Camoufox reuses the pack's persistent browser profile instead of launching an ephemeral instance
+- [fixed] HTTP-only snapshot replay now uses Nunjucks for template resolution (supports filters like `| urlencode`)
+- [fixed] HTTP replay hangs due to stale `content-length` header from snapshot (now auto-removed, Node `fetch()` sets it correctly)
+- [fixed] HTTP replay requests have a 30s timeout via AbortController (prevents hanging on unresponsive servers)
+- [fixed] Artifact save crash in HTTP mode when flow errors (`page` is null)
+- [added] Request snapshots — HTTP-first execution for API-only flows (no browser needed)
+- [added] Staleness detection for request snapshots (TTL + response validation)
+- [added] Automatic snapshot capture after successful browser runs with `network_replay` steps
+
 ## 0.1.1a — 2026-02-12
 
 - [fixed] `npx showrun` from git clone auto-builds if dist is missing (no more manual `pnpm build` required)
