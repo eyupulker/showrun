@@ -10,6 +10,10 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+## 0.1.1a — 2026-02-12
+
+- [fixed] `npx showrun` from git clone auto-builds if dist is missing (no more manual `pnpm build` required)
+
 ## 0.1.1 — 2026-02-11
 
 - [changed] Updated package.json description to align with README
