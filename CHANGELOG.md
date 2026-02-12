@@ -10,6 +10,14 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [changed] Consolidated duplicated MCP server tool registration into shared `toolRegistration.ts` module
+- [added] Pluggable result store for persisting MCP run outputs — per-pack `results.db` with SQLite backend
+- [added] `showrun_query_results` MCP tool for querying/filtering stored results with JMESPath
+- [added] `showrun_list_results` MCP tool for listing stored results across packs
+- [added] Auto-store after successful task pack runs; large results are summarized with a key for follow-up queries
+- [added] `--no-result-store` flag for `showrun serve` to disable result storage
+- [added] `InMemoryResultStore` for testing and ephemeral usage
+- [fixed] Close Exploration Agent's browser session before Editor Agent starts — prevents `.browser-profile` lock conflict when `editor_run_pack` tries to launch a browser
 - [fixed] Auto-detect existing `.browser-profile/` in pack directory and use it even when `persistence` is not explicitly configured
 - [fixed] MCP server (stdio and HTTP) now passes `packPath` so Camoufox uses the pack's browser profile
 - [fixed] `editor_run_pack` now passes `profileId` and `packPath` so Camoufox reuses the pack's persistent browser profile instead of launching an ephemeral instance
@@ -20,6 +28,9 @@ Tags: `added`, `fixed`, `changed`, `removed`
 - [added] Request snapshots — HTTP-first execution for API-only flows (no browser needed)
 - [added] Staleness detection for request snapshots (TTL + response validation)
 - [added] Automatic snapshot capture after successful browser runs with `network_replay` steps
+- [added] `install.sh` bootstrap script for `curl | bash` one-line install (platform checks, Node.js/nvm detection, npm install, Camoufox fetch, config init)
+- [changed] `bin/showrun.js` wrapper auto-builds on first run — ensures pnpm, runs `pnpm install && pnpm build` if dist is missing (works for both git clone and npm install -g)
+- [added] `showrun uninstall` command to clean up Camoufox data and config directory
 
 ## 0.1.1a — 2026-02-12
 

@@ -29,6 +29,8 @@ function findUiPath(): string {
 
 import { discoverPacks, ConcurrencyLimiter } from '@showrun/mcp-server';
 import { ensureDir, resolveFilePath, ensureSystemPromptInConfigDir } from '@showrun/core';
+import type { ResultStoreProvider } from '@showrun/core';
+import { SQLiteResultStore } from '@showrun/harness';
 import { RunManager } from './runManager.js';
 import { initDatabase } from './db.js';
 import { createLlmProvider } from './llm/index.js';
@@ -166,12 +168,27 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   const runManager = new RunManager();
   const concurrencyLimiter = new ConcurrencyLimiter(1);
 
+  // Create per-pack result stores (keyed by packId)
+  const resultStores = new Map<string, ResultStoreProvider>();
+  for (const { pack, path: packDir } of discoveredPacks) {
+    try {
+      const store = new SQLiteResultStore(resolve(packDir, 'results.db'));
+      resultStores.set(pack.metadata.id, store);
+    } catch (err) {
+      console.warn(`[Dashboard] Failed to init result store for ${pack.metadata.id}: ${err}`);
+    }
+  }
+  if (resultStores.size > 0) {
+    console.log(`[Dashboard] Result stores initialized for ${resultStores.size} pack(s)`);
+  }
+
   // Create TaskPack Editor wrapper
   const taskPackEditor = new TaskPackEditorWrapper(
     packDirs,
     resolvedWorkspaceDir || packDirs[0],
     resolvedBaseRunDir,
-    headful
+    headful,
+    resultStores,
   );
 
   // Initialize LLM provider for Teach Mode (lazy, only if OPENAI_API_KEY is set)
@@ -262,6 +279,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
       runIdMap: new Map(),
     },
     io,
+    resultStores,
     taskPackEditor,
     llmProvider,
     systemPrompt,

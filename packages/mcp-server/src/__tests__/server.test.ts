@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
-import { inputSchemaToZodSchema } from '../server.js';
+import { inputSchemaToZodSchema } from '../toolRegistration.js';
 import type { InputSchema } from '@showrun/core';
 
 describe('inputSchemaToZodSchema', () => {

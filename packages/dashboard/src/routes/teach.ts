@@ -10,8 +10,11 @@ import {
   MAIN_AGENT_TOOL_DEFINITIONS,
   EXPLORATION_AGENT_TOOLS,
   executeAgentTool,
+  getConversationBrowserSession,
+  setConversationBrowserSession,
   type AgentToolContext,
 } from '../agentTools.js';
+import { closeSession as closeBrowserSession } from '../browserInspector.js';
 import { TaskPackEditorWrapper } from '../mcpWrappers.js';
 import { summarizeIfNeeded, estimateTotalTokens, forceSummarize, type AgentMessage } from '../contextManager.js';
 import { createLlmProvider } from '../llm/index.js';
@@ -583,6 +586,21 @@ export function createTeachRouter(ctx: DashboardContext): Router {
 
             // Special handling: agent_build_flow invokes the Editor Agent
             if (tc.name === 'agent_build_flow') {
+              // Close the Exploration Agent's browser session before the Editor Agent
+              // tries to launch its own — they share the same .browser-profile directory
+              // and Camoufox/Chromium doesn't allow two sessions on the same profile.
+              if (conversationId) {
+                const browserSessionId = getConversationBrowserSession(conversationId);
+                if (browserSessionId) {
+                  try {
+                    await closeBrowserSession(browserSessionId);
+                  } catch (err) {
+                    console.error(`[Teach] Failed to close exploration browser session: ${err}`);
+                  }
+                  setConversationBrowserSession(conversationId, null);
+                }
+              }
+
               let editorResult: EditorAgentResult;
               try {
                 editorResult = await runEditorAgent({

@@ -37,6 +37,8 @@ import {
   printMcpHelp,
   cmdConfig,
   printConfigHelp,
+  cmdUninstall,
+  printUninstallHelp,
 } from './commands/index.js';
 
 function printHelp(): void {
@@ -61,6 +63,7 @@ Commands:
   mcp <subcommand>        MCP server utilities
     browser-inspector     Browser inspection MCP server
     taskpack-editor       Pack editor MCP server
+  uninstall               Remove ShowRun and clean up data
 
 Options:
   --help, -h              Show help for a command
@@ -110,6 +113,9 @@ async function main(): Promise<void> {
       case 'mcp':
         printMcpHelp();
         break;
+      case 'uninstall':
+        printUninstallHelp();
+        break;
       default:
         printHelp();
     }
@@ -135,6 +141,9 @@ async function main(): Promise<void> {
         break;
       case 'mcp':
         await cmdMcp(commandArgs);
+        break;
+      case 'uninstall':
+        await cmdUninstall(commandArgs);
         break;
       default:
         console.error(`Unknown command: ${command}. Use --help for usage.`);

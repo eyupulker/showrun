@@ -14,6 +14,9 @@ export * from './config.js';
 export * from './requestSnapshot.js';
 export * from './httpReplay.js';
 
+// Storage exports
+export * from './storage/index.js';
+
 // DSL exports
 export * from './dsl/types.js';
 export * from './dsl/builders.js';

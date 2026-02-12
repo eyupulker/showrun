@@ -4,9 +4,11 @@ import { createTokenChecker } from '../helpers/auth.js';
 import {
   discoverPacks,
   createMCPServerOverHTTP,
+  packIdToToolName,
   type MCPRunStartInfo,
   type MCPRunCompleteInfo,
 } from '@showrun/mcp-server';
+import type { ResultStoreProvider } from '@showrun/core';
 import type { RunInfo } from '../runManager.js';
 
 const MCP_DEFAULT_PORT = 3340;
@@ -47,6 +49,20 @@ export function createMcpRouter(ctx: DashboardContext): Router {
       return res.status(400).json({ error: 'No valid pack IDs found' });
     }
     const port = typeof requestedPort === 'number' && requestedPort > 0 ? requestedPort : MCP_DEFAULT_PORT;
+
+    // Re-key result stores from packId → toolName for the MCP server
+    let mcpResultStores: Map<string, ResultStoreProvider> | undefined;
+    if (ctx.resultStores.size > 0) {
+      mcpResultStores = new Map();
+      for (const dp of selectedPacks) {
+        const store = ctx.resultStores.get(dp.pack.metadata.id);
+        if (store) {
+          mcpResultStores.set(dp.toolName, store);
+        }
+      }
+      if (mcpResultStores.size === 0) mcpResultStores = undefined;
+    }
+
     try {
       const handle = await createMCPServerOverHTTP({
         packs: selectedPacks,
@@ -55,6 +71,7 @@ export function createMcpRouter(ctx: DashboardContext): Router {
         headful: ctx.headful,
         port,
         host: '127.0.0.1',
+        resultStores: mcpResultStores,
         // Track MCP runs in the dashboard database
         onRunStart: (info: MCPRunStartInfo) => {
           const run = ctx.runManager.addRunAndGet(info.packId, info.packName, 'mcp');

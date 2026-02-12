@@ -1,5 +1,5 @@
 import type { Server as SocketIOServer } from 'socket.io';
-import type { TaskPack } from '@showrun/core';
+import type { TaskPack, ResultStoreProvider } from '@showrun/core';
 import type { MCPServerHTTPHandle, ConcurrencyLimiter } from '@showrun/mcp-server';
 import type { RunManager } from '../runManager.js';
 import type { TaskPackEditorWrapper } from '../mcpWrappers.js';
@@ -49,6 +49,9 @@ export interface DashboardContext {
 
   // Socket.IO for real-time updates
   io: SocketIOServer;
+
+  // Result stores (keyed by packId)
+  resultStores: Map<string, ResultStoreProvider>;
 
   // Teach mode
   taskPackEditor: TaskPackEditorWrapper;

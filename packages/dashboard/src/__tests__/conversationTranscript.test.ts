@@ -100,6 +100,7 @@ function buildContext(overrides: Partial<DashboardContext>): DashboardContext {
       applyFlowPatch: vi.fn(),
       validateFlow: vi.fn().mockResolvedValue({ ok: true, errors: [], warnings: [] }),
     } as any,
+    resultStores: new Map(),
     llmProvider: createMockLlmProvider(),
     systemPrompt: 'You are a test agent.',
     pendingSecretsRequests: new Map(),

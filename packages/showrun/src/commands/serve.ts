@@ -2,8 +2,10 @@
  * showrun serve - Start MCP server for AI agents
  */
 
-import { resolve } from 'path';
+import { resolve, join } from 'path';
 import { discoverPacks, createMCPServer, createMCPServerOverHTTP } from '@showrun/mcp-server';
+import { SQLiteResultStore } from '@showrun/harness';
+import type { ResultStoreProvider } from '@showrun/core';
 
 export interface ServeCommandOptions {
   packs: string[];
@@ -13,6 +15,7 @@ export interface ServeCommandOptions {
   http: boolean;
   port: number;
   host: string;
+  noResultStore: boolean;
 }
 
 export function parseServeArgs(args: string[]): ServeCommandOptions {
@@ -24,6 +27,7 @@ export function parseServeArgs(args: string[]): ServeCommandOptions {
   let http = false;
   let port = 3000;
   let host = '127.0.0.1';
+  let noResultStore = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -58,6 +62,8 @@ export function parseServeArgs(args: string[]): ServeCommandOptions {
     } else if (arg === '--host' && next) {
       host = next;
       i++;
+    } else if (arg === '--no-result-store') {
+      noResultStore = true;
     }
   }
 
@@ -82,6 +88,7 @@ export function parseServeArgs(args: string[]): ServeCommandOptions {
     http,
     port,
     host,
+    noResultStore,
   };
 }
 
@@ -107,6 +114,25 @@ export async function cmdServe(args: string[]): Promise<void> {
       console.error(`[MCP Server]   - ${toolName} (${pack.metadata.id} v${pack.metadata.version})`);
     }
 
+    // Initialize per-pack result stores
+    let resultStores: Map<string, ResultStoreProvider> | undefined;
+
+    if (!options.noResultStore) {
+      resultStores = new Map();
+      for (const { toolName, path: packDir } of discoveredPacks) {
+        const dbPath = join(packDir, 'results.db');
+        try {
+          const store = new SQLiteResultStore(dbPath);
+          resultStores.set(toolName, store);
+          console.error(`[MCP Server] Result store initialized: ${dbPath}`);
+        } catch (err) {
+          console.error(`[MCP Server] Warning: Failed to initialize result store at ${dbPath}: ${err}`);
+        }
+      }
+    } else {
+      console.error('[MCP Server] Result stores disabled (--no-result-store)');
+    }
+
     // Warn if headful requested but no DISPLAY
     if (options.headful && !process.env.DISPLAY) {
       console.error(
@@ -124,22 +150,21 @@ export async function cmdServe(args: string[]): Promise<void> {
         headful: options.headful,
         port: options.port,
         host: options.host,
+        resultStores,
       });
 
       console.error(`[MCP Server] HTTP server listening at ${handle.url}`);
 
       // Handle graceful shutdown
-      process.on('SIGINT', async () => {
+      const shutdown = async () => {
         console.error('[MCP Server] Shutting down...');
         await handle.close();
+        // close() on the handle already closes result stores for HTTP
         process.exit(0);
-      });
+      };
 
-      process.on('SIGTERM', async () => {
-        console.error('[MCP Server] Shutting down...');
-        await handle.close();
-        process.exit(0);
-      });
+      process.on('SIGINT', shutdown);
+      process.on('SIGTERM', shutdown);
     } else {
       // Create and start stdio MCP server
       await createMCPServer({
@@ -147,7 +172,21 @@ export async function cmdServe(args: string[]): Promise<void> {
         baseRunDir: options.baseRunDir,
         concurrency: options.concurrency,
         headful: options.headful,
+        resultStores,
       });
+
+      // Handle graceful shutdown for stdio
+      const shutdown = async () => {
+        if (resultStores) {
+          for (const [, store] of resultStores) {
+            try { await store.close?.(); } catch { /* ignore */ }
+          }
+        }
+        process.exit(0);
+      };
+
+      process.on('SIGINT', shutdown);
+      process.on('SIGTERM', shutdown);
     }
 
     // Server runs indefinitely
@@ -173,10 +212,12 @@ Options:
   --http                 Use HTTP transport instead of stdio
   --port <port>          HTTP server port (default: 3000, requires --http)
   --host <host>          HTTP server host (default: 127.0.0.1, requires --http)
+  --no-result-store      Disable automatic result storage
 
 Examples:
   showrun serve --packs ./taskpacks
   showrun serve --packs ./taskpacks --http --port 3001
   showrun serve --packs ./taskpacks,./other-packs --concurrency 2
+  showrun serve --packs ./taskpacks --no-result-store
 `);
 }

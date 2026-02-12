@@ -923,6 +923,23 @@ export async function executeAgentTool(
         if (!packId) throw new Error('No pack linked to this conversation');
         const result = await taskPackEditor.runPack(packId, inputs);
         const fullJson = JSON.stringify(result, null, 2);
+
+        // For large results with a stored key, return a summary with the key
+        // instead of blindly truncating (which would cut off _resultKey at the end)
+        if (result._resultKey && fullJson.length > MAX_TOOL_OUTPUT_CHARS) {
+          const collectiblesPreview = JSON.stringify(result.collectibles, null, 2).slice(0, 2000);
+          const summary = {
+            success: result.success,
+            meta: result.meta,
+            _resultKey: result._resultKey,
+            _stored: true,
+            _hint: `Result stored with key="${result._resultKey}". Use showrun_query_results with pack_tool_name and this key to retrieve, filter, or paginate.`,
+            _collectiblesPreview: collectiblesPreview + '\n... (truncated)',
+            _totalChars: fullJson.length,
+          };
+          return wrap(JSON.stringify(summary, null, 2));
+        }
+
         return wrap(truncateToolOutput(fullJson, 'run_pack result'));
       }
       // Browser tools - sessionId is auto-injected via effectiveArgs

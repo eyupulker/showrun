@@ -1,32 +1,15 @@
 import { createServer, IncomingMessage } from 'http';
 import { mkdirSync } from 'fs';
-import { join } from 'path';
 import { randomUUID } from 'crypto';
-import * as z from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { TaskPack, InputSchema } from '@showrun/core';
-import { runTaskPack } from '@showrun/core';
-import { JSONLLogger } from '@showrun/harness';
+import type { ResultStoreProvider } from '@showrun/core';
 import type { DiscoveredPack } from './packDiscovery.js';
 import { ConcurrencyLimiter } from './concurrency.js';
+import { registerPackTools } from './toolRegistration.js';
+import type { MCPRunStartInfo, MCPRunCompleteInfo } from './toolRegistration.js';
 
-export interface MCPRunStartInfo {
-  packId: string;
-  packName: string;
-  runId: string;
-  inputs: Record<string, unknown>;
-  runDir: string;
-}
-
-export interface MCPRunCompleteInfo {
-  packId: string;
-  runId: string;
-  success: boolean;
-  error?: string;
-  collectibles?: Record<string, unknown>;
-  durationMs?: number;
-}
+export type { MCPRunStartInfo, MCPRunCompleteInfo } from './toolRegistration.js';
 
 export interface MCPServerHTTPOptions {
   packs: DiscoveredPack[];
@@ -39,6 +22,11 @@ export interface MCPServerHTTPOptions {
   onRunStart?: (info: MCPRunStartInfo) => void;
   /** Called when a run completes (for tracking/logging) */
   onRunComplete?: (info: MCPRunCompleteInfo) => void;
+  /**
+   * Per-pack result stores, keyed by tool name.
+   * When provided, results are auto-stored and query/list tools registered.
+   */
+  resultStores?: Map<string, ResultStoreProvider>;
 }
 
 interface ClientSession {
@@ -71,30 +59,6 @@ function parseCookies(req: IncomingMessage): Record<string, string> {
   return cookies;
 }
 
-function inputSchemaToZodSchema(inputs: InputSchema): z.ZodRawShape {
-  const shape: z.ZodRawShape = {};
-  for (const [fieldName, fieldDef] of Object.entries(inputs)) {
-    let zodType: z.ZodTypeAny;
-    switch (fieldDef.type) {
-      case 'string':
-        zodType = z.string();
-        break;
-      case 'number':
-        zodType = z.number();
-        break;
-      case 'boolean':
-        zodType = z.boolean();
-        break;
-      default:
-        zodType = z.string();
-    }
-    if (fieldDef.description) zodType = zodType.describe(fieldDef.description);
-    if (!fieldDef.required) zodType = zodType.optional();
-    shape[fieldName] = zodType;
-  }
-  return shape;
-}
-
 export interface MCPServerHTTPHandle {
   port: number;
   url: string;
@@ -113,7 +77,7 @@ export interface MCPServerHTTPHandle {
 export async function createMCPServerOverHTTP(
   options: MCPServerHTTPOptions
 ): Promise<MCPServerHTTPHandle> {
-  const { packs, baseRunDir, concurrency, headful, port, host = '127.0.0.1', onRunStart, onRunComplete } = options;
+  const { packs, baseRunDir, concurrency, headful, port, host = '127.0.0.1', onRunStart, onRunComplete, resultStores } = options;
 
   mkdirSync(baseRunDir, { recursive: true });
   const limiter = new ConcurrencyLimiter(concurrency);
@@ -130,82 +94,16 @@ export async function createMCPServerOverHTTP(
       version: '0.1.0',
     });
 
-    for (const { pack, toolName, path: packDir } of packs) {
-      const inputSchema = inputSchemaToZodSchema(pack.inputs);
-      server.registerTool(
-        toolName,
-        {
-          title: pack.metadata.name,
-          description: `${pack.metadata.description || pack.metadata.name} (v${pack.metadata.version})`,
-          inputSchema,
-        },
-        async (inputs: Record<string, unknown>) => {
-          const runId = randomUUID();
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          const runDir = join(baseRunDir, `${toolName}-${timestamp}-${runId.slice(0, 8)}`);
-          return await limiter.execute(async () => {
-            const logger = new JSONLLogger(runDir);
-            const startTime = Date.now();
-
-            // Notify run start
-            onRunStart?.({
-              packId: pack.metadata.id,
-              packName: pack.metadata.name,
-              runId,
-              inputs,
-              runDir,
-            });
-
-            try {
-              const runResult = await runTaskPack(pack, inputs, {
-                runDir,
-                logger,
-                headless: !headful,
-                sessionId: clientSessionId, // Use client's session ID for once-cache
-                profileId: pack.metadata.id,
-                packPath: packDir,
-                cacheDir: packDir,
-              });
-              const durationMs = Date.now() - startTime;
-
-              // Notify run complete (success)
-              onRunComplete?.({
-                packId: pack.metadata.id,
-                runId,
-                success: true,
-                collectibles: runResult.collectibles,
-                durationMs,
-              });
-
-              return {
-                content: [
-                  { type: 'text' as const, text: JSON.stringify(runResult.collectibles, null, 2) },
-                ],
-              };
-            } catch (error) {
-              const durationMs = Date.now() - startTime;
-              const errorMessage = error instanceof Error ? error.message : String(error);
-
-              // Notify run complete (failure)
-              onRunComplete?.({
-                packId: pack.metadata.id,
-                runId,
-                success: false,
-                error: errorMessage,
-                durationMs,
-              });
-
-              return {
-                content: [
-                  { type: 'text' as const, text: JSON.stringify({ error: errorMessage }, null, 2) },
-                ],
-                isError: true,
-              };
-            }
-          });
-        }
-      );
-    }
+    registerPackTools(server, {
+      packs,
+      baseRunDir,
+      limiter,
+      headful,
+      sessionId: clientSessionId,
+      resultStores,
+      onRunStart,
+      onRunComplete,
+    });
 
     return server;
   }
@@ -290,6 +188,10 @@ export async function createMCPServerOverHTTP(
   // Start cleanup interval
   const cleanupInterval = setInterval(cleanupInactiveSessions, CLEANUP_INTERVAL_MS);
 
+  if (resultStores && resultStores.size > 0) {
+    console.error(`[MCP Server] Result stores enabled for ${resultStores.size} pack(s)`);
+  }
+
   const httpServer = createServer(async (req, res) => {
     try {
       // Get session ID from header or cookie, or generate new one
@@ -333,8 +235,14 @@ export async function createMCPServerOverHTTP(
         port: actualPort,
         url,
         close: () =>
-          new Promise<void>((closeResolve) => {
+          new Promise<void>(async (closeResolve) => {
             clearInterval(cleanupInterval);
+            // Close all result stores
+            if (resultStores) {
+              for (const [, store] of resultStores) {
+                try { await store.close?.(); } catch { /* ignore */ }
+              }
+            }
             sessions.clear();
             httpServer.close(() => closeResolve());
           }),

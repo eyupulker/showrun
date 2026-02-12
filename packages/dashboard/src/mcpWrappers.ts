@@ -15,7 +15,9 @@ import {
   ensureDir,
   writeTaskPackManifest,
   sanitizePackId,
+  generateResultKey,
 } from '@showrun/core';
+import type { ResultStoreProvider, CollectibleSchemaField } from '@showrun/core';
 import { discoverPacks } from '@showrun/mcp-server';
 import { JSONLLogger } from '@showrun/harness';
 import { randomBytes } from 'crypto';
@@ -47,6 +49,8 @@ export interface RunPackResult {
    * These help AI agents understand why data extraction may have failed.
    */
   _hints?: string[];
+  /** Key for retrieving stored result via showrun_query_results */
+  _resultKey?: string;
 }
 
 /**
@@ -77,7 +81,8 @@ export class TaskPackEditorWrapper {
     private packDirs: string[],
     private workspaceDir: string,
     private baseRunDir: string,
-    private headful: boolean = false
+    private headful: boolean = false,
+    private resultStores?: Map<string, ResultStoreProvider>,
   ) {}
 
   async listPacks() {
@@ -383,6 +388,7 @@ export class TaskPackEditorWrapper {
     const runId = randomBytes(16).toString('hex');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const runDir = resolve(this.baseRunDir, `${packId}-${timestamp}-${runId.slice(0, 8)}`);
+    const ranAt = new Date().toISOString();
 
     const logger = new JSONLLogger(runDir);
 
@@ -395,6 +401,31 @@ export class TaskPackEditorWrapper {
         packPath: packInfo.path,
       });
 
+      // Auto-store result if a store exists for this pack
+      const store = this.resultStores?.get(packId);
+      const resultKey = store ? generateResultKey(packId, inputs) : undefined;
+      if (store && resultKey) {
+        const schema: CollectibleSchemaField[] = pack.collectibles.map((c) => ({
+          name: c.name,
+          type: c.type,
+          description: c.description,
+        }));
+        store.store({
+          key: resultKey,
+          packId,
+          toolName: packInfo.toolName,
+          inputs,
+          collectibles: result.collectibles,
+          meta: result.meta,
+          collectibleSchema: schema,
+          storedAt: new Date().toISOString(),
+          ranAt,
+          version: 1,
+        }).catch((err) => {
+          console.error(`[Dashboard] Failed to store result for ${packId}: ${err}`);
+        });
+      }
+
       const packResult: RunPackResult = {
         success: true,
         collectibles: result.collectibles,
@@ -404,6 +435,11 @@ export class TaskPackEditorWrapper {
       // Propagate diagnostic hints if present
       if (result._hints && result._hints.length > 0) {
         packResult._hints = result._hints;
+      }
+
+      // Include result key so the caller knows how to query stored data
+      if (resultKey) {
+        packResult._resultKey = resultKey;
       }
 
       return packResult;
