@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import type { Socket } from 'socket.io-client';
+import { FixedSizeList as List } from 'react-window';
 
 interface Run {
   runId: string;
@@ -35,6 +36,37 @@ interface RunsViewProps {
   socket: Socket;
 }
 
+const RunItem = React.memo(({ run, isSelected, onClick, formatDate, formatDuration, getSourceLabel }: {
+  run: Run;
+  isSelected: boolean;
+  onClick: () => void;
+  formatDate: (ts: number) => string;
+  formatDuration: (ms?: number) => string;
+  getSourceLabel: (source?: string) => string;
+}) => (
+  <div
+    className={`run-item ${isSelected ? 'selected' : ''}`}
+    onClick={onClick}
+    style={{ marginBottom: '12px' }}
+  >
+    <div className="run-item-header">
+      <h3>{run.packName}</h3>
+      <span className={`status-badge ${run.status}`}>{run.status}</span>
+    </div>
+    <div className="run-item-meta">
+      <span>{formatDate(run.createdAt)}</span>
+      <span style={{ margin: '0 8px' }}>|</span>
+      <span>{formatDuration(run.durationMs)}</span>
+      {run.source && (
+        <>
+          <span style={{ margin: '0 8px' }}>|</span>
+          <span style={{ color: 'var(--accent-orange)' }}>{getSourceLabel(run.source)}</span>
+        </>
+      )}
+    </div>
+  </div>
+));
+
 function RunsView({ runs, socket }: RunsViewProps) {
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -56,17 +88,17 @@ function RunsView({ runs, socket }: RunsViewProps) {
     };
   }, [selectedRun, socket]);
 
-  const formatDate = (timestamp: number) => {
+  const formatDate = useCallback((timestamp: number) => {
     return new Date(timestamp).toLocaleString();
-  };
+  }, []);
 
-  const formatDuration = (ms?: number) => {
+  const formatDuration = useCallback((ms?: number) => {
     if (!ms) return 'N/A';
     if (ms < 1000) return `${ms}ms`;
     return `${(ms / 1000).toFixed(2)}s`;
-  };
+  }, []);
 
-  const getSourceLabel = (source?: string) => {
+  const getSourceLabel = useCallback((source?: string) => {
     switch (source) {
       case 'dashboard':
         return 'Dashboard';
@@ -79,11 +111,13 @@ function RunsView({ runs, socket }: RunsViewProps) {
       default:
         return 'Unknown';
     }
-  };
+  }, []);
 
   // Filter runs by source
-  const filteredRuns =
-    sourceFilter === 'all' ? runs : runs.filter((r) => r.source === sourceFilter);
+  const filteredRuns = useMemo(() =>
+    sourceFilter === 'all' ? runs : runs.filter((r) => r.source === sourceFilter),
+    [runs, sourceFilter]
+  );
 
   return (
     <div>
@@ -103,7 +137,7 @@ function RunsView({ runs, socket }: RunsViewProps) {
           </select>
         </div>
 
-        <div className="runs-list">
+        <div className="runs-list" style={{ height: '400px' }}>
           {filteredRuns.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-title">No runs yet</div>
@@ -112,29 +146,25 @@ function RunsView({ runs, socket }: RunsViewProps) {
               </div>
             </div>
           ) : (
-            filteredRuns.map((run) => (
-              <div
-                key={run.runId}
-                className={`run-item ${selectedRun?.runId === run.runId ? 'selected' : ''}`}
-                onClick={() => setSelectedRun(run)}
-              >
-                <div className="run-item-header">
-                  <h3>{run.packName}</h3>
-                  <span className={`status-badge ${run.status}`}>{run.status}</span>
+            <List
+              height={400}
+              itemCount={filteredRuns.length}
+              itemSize={90}
+              width="100%"
+            >
+              {({ index, style }) => (
+                <div style={style}>
+                  <RunItem
+                    run={filteredRuns[index]}
+                    isSelected={selectedRun?.runId === filteredRuns[index].runId}
+                    onClick={() => setSelectedRun(filteredRuns[index])}
+                    formatDate={formatDate}
+                    formatDuration={formatDuration}
+                    getSourceLabel={getSourceLabel}
+                  />
                 </div>
-                <div className="run-item-meta">
-                  <span>{formatDate(run.createdAt)}</span>
-                  <span style={{ margin: '0 8px' }}>|</span>
-                  <span>{formatDuration(run.durationMs)}</span>
-                  {run.source && (
-                    <>
-                      <span style={{ margin: '0 8px' }}>|</span>
-                      <span style={{ color: 'var(--accent-orange)' }}>{getSourceLabel(run.source)}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            ))
+              )}
+            </List>
           )}
         </div>
       </div>
@@ -231,28 +261,40 @@ function RunsView({ runs, socket }: RunsViewProps) {
 
           <div className="run-detail-section">
             <h3>Live Events</h3>
-            <div className="events-stream">
+            <div className="events-stream" style={{ height: '400px', padding: 0 }}>
               {events.length === 0 ? (
-                <div className="event-line info">
+                <div className="event-line info" style={{ padding: '16px' }}>
                   {selectedRun.status === 'running'
                     ? 'Waiting for events...'
                     : 'No events captured'}
                 </div>
               ) : (
-                events.map((event, idx) => (
-                  <div
-                    key={idx}
-                    className={`event-line ${
-                      event.type === 'error'
-                        ? 'error'
-                        : event.type === 'run_finished' && event.data.success
-                        ? 'success'
-                        : 'info'
-                    }`}
-                  >
-                    [{event.timestamp}] {event.type}: {JSON.stringify(event.data)}
-                  </div>
-                ))
+                <List
+                  height={400}
+                  itemCount={events.length}
+                  itemSize={25}
+                  width="100%"
+                >
+                  {({ index, style }) => {
+                    const event = events[index];
+                    return (
+                      <div
+                        style={style}
+                        className={`event-line ${
+                          event.type === 'error'
+                            ? 'error'
+                            : event.type === 'run_finished' && event.data.success
+                            ? 'success'
+                            : 'info'
+                        }`}
+                      >
+                        <div style={{ padding: '0 16px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          [{event.timestamp}] {event.type}: {JSON.stringify(event.data)}
+                        </div>
+                      </div>
+                    );
+                  }}
+                </List>
               )}
             </div>
           </div>

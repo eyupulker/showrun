@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import Sidebar, { type Conversation } from './Sidebar.js';
-import ChatView, { type Message } from './ChatView.js';
+import { type Message } from './ChatView.js';
 import BottomNav, { type NavView } from './BottomNav.js';
-import RunsView from './RunsView.js';
-import MCPServerView from './MCPServerView.js';
-import PacksView from './PacksView.js';
 import { ShowRunLogo } from './ShowRunLogo.js';
+
+const ChatView = React.lazy(() => import('./ChatView.js'));
+const RunsView = React.lazy(() => import('./RunsView.js'));
+const MCPServerView = React.lazy(() => import('./MCPServerView.js'));
+const PacksView = React.lazy(() => import('./PacksView.js'));
 
 interface Pack {
   id: string;
@@ -51,6 +53,14 @@ interface ConversationWithMessages extends Conversation {
   messages?: Message[];
 }
 
+function debounce<T extends (...args: any[]) => void>(fn: T, delay: number) {
+  let timeoutId: ReturnType<typeof setTimeout>;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  };
+}
+
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -89,13 +99,17 @@ function App() {
           console.log('Socket disconnected');
         });
 
-        newSocket.on('runs:list', (runsList: Run[]) => {
+        const debouncedSetRuns = debounce((runsList: Run[]) => {
           setRuns(runsList);
-        });
+        }, 200);
 
-        newSocket.on('conversations:updated', (convList: Conversation[]) => {
+        const debouncedSetConversations = debounce((convList: Conversation[]) => {
           setConversations(convList);
-        });
+        }, 200);
+
+        newSocket.on('runs:list', debouncedSetRuns);
+
+        newSocket.on('conversations:updated', debouncedSetConversations);
 
         newSocket.on('packs:updated', () => {
           fetch('/api/packs')
@@ -196,7 +210,7 @@ function App() {
     }
   }, [conversations, selectedConversationId]);
 
-  const handleNewChat = async () => {
+  const handleNewChat = useCallback(async () => {
     if (!config) return;
 
     try {
@@ -226,9 +240,9 @@ function App() {
     } catch (err) {
       console.error('Failed to create conversation:', err);
     }
-  };
+  }, [config]);
 
-  const handleEditTitle = async (id: string, title: string) => {
+  const handleEditTitle = useCallback(async (id: string, title: string) => {
     if (!config) return;
 
     try {
@@ -253,9 +267,9 @@ function App() {
     } catch (err) {
       console.error('Failed to update title:', err);
     }
-  };
+  }, [config, selectedConversation]);
 
-  const handleDeleteConversation = async (id: string) => {
+  const handleDeleteConversation = useCallback(async (id: string) => {
     if (!config) return;
 
     try {
@@ -276,9 +290,9 @@ function App() {
     } catch (err) {
       console.error('Failed to delete conversation:', err);
     }
-  };
+  }, [config, selectedConversationId]);
 
-  const handleNewChatWithPack = async (packId: string) => {
+  const handleNewChatWithPack = useCallback(async (packId: string) => {
     if (!config) return;
 
     try {
@@ -303,15 +317,20 @@ function App() {
     } catch (err) {
       console.error('Failed to create conversation with pack:', err);
     }
-  };
+  }, [config]);
 
-  const handleConversationUpdate = (updates: Partial<Conversation>) => {
+  const handleConversationUpdate = useCallback((updates: Partial<Conversation>) => {
     if (!selectedConversation) return;
     setSelectedConversation((prev) => (prev ? { ...prev, ...updates } : null));
     setConversations((prev) =>
       prev.map((c) => (c.id === selectedConversation.id ? { ...c, ...updates } : c))
     );
-  };
+  }, [selectedConversation]);
+
+  const readyConversations = useMemo(() =>
+    conversations.filter(c => c.status === 'ready'),
+    [conversations]
+  );
 
   if (error) {
     return (
@@ -337,47 +356,60 @@ function App() {
 
   // Render based on active view
   const renderMainContent = () => {
-    switch (activeView) {
-      case 'chat':
-        return (
-          <ChatView
-            conversation={selectedConversation}
-            token={config.token}
-            packs={packs}
-            onConversationUpdate={handleConversationUpdate}
-            onCreateConversationWithPack={handleNewChatWithPack}
-          />
-        );
-      case 'runs':
-        return (
-          <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
-            <RunsView runs={runs} socket={socket} />
+    return (
+      <React.Suspense fallback={
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="loading">
+            <span className="spinner" style={{ width: '24px', height: '24px', marginBottom: '16px' }} />
+            <div>Loading view...</div>
           </div>
-        );
-      case 'mcp':
-        return (
-          <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
-            <MCPServerView
-              packs={packs}
-              token={config.token}
-              conversations={conversations.filter(c => c.status === 'ready')}
-            />
-          </div>
-        );
-      case 'packs':
-        return (
-          <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
-            <PacksView
-              packs={packs}
-              socket={socket}
-              token={config.token}
-              onRun={() => setActiveView('runs')}
-            />
-          </div>
-        );
-      default:
-        return null;
-    }
+        </div>
+      }>
+        {(() => {
+          switch (activeView) {
+            case 'chat':
+              return (
+                <ChatView
+                  conversation={selectedConversation}
+                  token={config.token}
+                  packs={packs}
+                  onConversationUpdate={handleConversationUpdate}
+                  onCreateConversationWithPack={handleNewChatWithPack}
+                />
+              );
+            case 'runs':
+              return (
+                <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
+                  <RunsView runs={runs} socket={socket} />
+                </div>
+              );
+            case 'mcp':
+              return (
+                <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
+                  <MCPServerView
+                    packs={packs}
+                    token={config.token}
+                    conversations={readyConversations}
+                  />
+                </div>
+              );
+            case 'packs':
+              return (
+                <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
+                  <PacksView
+                    packs={packs}
+                    socket={socket}
+                    token={config.token}
+                    onRun={() => setActiveView('runs')}
+                  />
+                </div>
+              );
+            default:
+              return null;
+          }
+        })()}
+      </React.Suspense>
+    );
   };
 
   return (

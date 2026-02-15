@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { FixedSizeList as List } from 'react-window';
 import MessageBubble, { type ToolCall } from './MessageBubble.js';
 import ChatInput from './ChatInput.js';
 import SecretsPanel from './SecretsPanel.js';
@@ -141,7 +142,7 @@ export default function ChatView({
     }
   }, [sessionId]);
 
-  const apiCall = async (endpoint: string, options: RequestInit = {}) => {
+  const apiCall = useCallback(async (endpoint: string, options: RequestInit = {}) => {
     const response = await fetch(endpoint, {
       ...options,
       headers: {
@@ -157,18 +158,18 @@ export default function ChatView({
     }
 
     return response.json();
-  };
+  }, [token]);
 
-  const loadMessages = async (conversationId: string) => {
+  const loadMessages = useCallback(async (conversationId: string) => {
     try {
       const data = await apiCall(`/api/conversations/${conversationId}/messages`);
       setMessages(data);
     } catch (err) {
       console.error('Failed to load messages:', err);
     }
-  };
+  }, [apiCall]);
 
-  const loadNetworkRequests = async () => {
+  const loadNetworkRequests = useCallback(async () => {
     if (!sessionId) return;
     setNetworkLoading(true);
     try {
@@ -182,9 +183,9 @@ export default function ChatView({
     } finally {
       setNetworkLoading(false);
     }
-  };
+  }, [apiCall, sessionId]);
 
-  const handleStartSession = async () => {
+  const handleStartSession = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -205,9 +206,9 @@ export default function ChatView({
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [apiCall]);
 
-  const addSystemMessage = (content: string) => {
+  const addSystemMessage = useCallback((content: string) => {
     const msg: Message = {
       id: `sys-${Date.now()}`,
       role: 'system',
@@ -215,9 +216,9 @@ export default function ChatView({
       createdAt: Date.now(),
     };
     setMessages((prev) => [...prev, msg]);
-  };
+  }, []);
 
-  const handleSend = async () => {
+  const handleSend = useCallback(async () => {
     const text = inputValue.trim();
     if (!text || isLoading || !conversation) return;
 
@@ -541,20 +542,33 @@ export default function ChatView({
       streamingContentRef.current = '';
       toolTraceRef.current = [];
     }
-  };
+  }, [
+    inputValue,
+    isLoading,
+    conversation,
+    messages,
+    token,
+    sessionId,
+    toolTrace,
+    streamingThinking,
+    activeToolExecution,
+    apiCall,
+    addSystemMessage,
+    onCreateConversationWithPack
+  ]);
 
-  const handleStop = () => {
+  const handleStop = useCallback(() => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
-  };
+  }, []);
 
-  const useRequestId = (requestId: string) => {
+  const useRequestId = useCallback((requestId: string) => {
     setInputValue(`Use request ${requestId}`);
-  };
+  }, []);
 
-  const handleExportConversation = async () => {
+  const handleExportConversation = useCallback(async () => {
     if (!conversation) return;
     try {
       const response = await fetch(`/api/conversations/${conversation.id}/export?format=download`, {
@@ -586,9 +600,9 @@ export default function ChatView({
       console.error('Export failed:', err);
       setError(err instanceof Error ? err.message : 'Export failed');
     }
-  };
+  }, [conversation, token]);
 
-  const handleRunPack = async () => {
+  const handleRunPack = useCallback(async () => {
     if (!conversation?.packId) return;
     try {
       setError(null);
@@ -604,7 +618,7 @@ export default function ChatView({
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
-  };
+  }, [apiCall, conversation?.id, conversation?.packId]);
 
   if (!conversation) {
     return (
@@ -822,30 +836,42 @@ export default function ChatView({
                   {networkLoading ? '...' : 'Refresh'}
                 </button>
               </div>
-              <div style={{ flex: 1, overflow: 'auto' }}>
+              <div style={{ flex: 1, overflow: 'hidden' }}>
                 {networkRequests.length === 0 && !networkLoading && (
                   <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
                     No requests yet
                   </div>
                 )}
-                {networkRequests.map((req) => (
-                  <div key={req.id} className="network-item">
-                    <span className="network-method">{req.method}</span>
-                    {req.status != null && (
-                      <span className={`network-status ${req.status >= 400 ? 'error' : 'success'}`}>
-                        {req.status}
-                      </span>
-                    )}
-                    <span className="network-url" title={req.url}>{req.url}</span>
-                    <button
-                      className="btn-secondary"
-                      style={{ padding: '2px 8px', fontSize: '11px' }}
-                      onClick={() => useRequestId(req.id)}
-                    >
-                      Use
-                    </button>
-                  </div>
-                ))}
+                {networkRequests.length > 0 && (
+                  <List
+                    height={600} // Approximate height, flex: 1 will likely constrain it
+                    itemCount={networkRequests.length}
+                    itemSize={40}
+                    width="100%"
+                  >
+                    {({ index, style }) => {
+                      const req = networkRequests[index];
+                      return (
+                        <div style={style} className="network-item">
+                          <span className="network-method">{req.method}</span>
+                          {req.status != null && (
+                            <span className={`network-status ${req.status >= 400 ? 'error' : 'success'}`}>
+                              {req.status}
+                            </span>
+                          )}
+                          <span className="network-url" title={req.url}>{req.url}</span>
+                          <button
+                            className="btn-secondary"
+                            style={{ padding: '2px 8px', fontSize: '11px' }}
+                            onClick={() => useRequestId(req.id)}
+                          >
+                            Use
+                          </button>
+                        </div>
+                      );
+                    }}
+                  </List>
+                )}
               </div>
             </div>
           )}
