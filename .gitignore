@@ -20,6 +20,9 @@ runs-dashboard/
 .secrets.json
 .showrun/
 
+# Agentic workflow local cache
+.github/aw/
+
 # Logs and debug
 *.log
 pnpm-debug.log*
