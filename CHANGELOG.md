@@ -10,7 +10,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
-- [added] GitHub Actions caching for faster CI builds (node_modules, pnpm store, and TypeScript build info)
+- [added] GitHub Actions caching for faster CI builds (node_modules, pnpm store, and TypeScript build info) and enabled TypeScript incremental builds via updated tsconfig options (`incremental`, `composite`, `tsBuildInfoFile`)
 - [fixed] Auto-detect existing `.browser-profile/` in pack directory and use it even when `persistence` is not explicitly configured
 - [fixed] MCP server (stdio and HTTP) now passes `packPath` so Camoufox uses the pack's browser profile
 - [fixed] `editor_run_pack` now passes `profileId` and `packPath` so Camoufox reuses the pack's persistent browser profile instead of launching an ephemeral instance

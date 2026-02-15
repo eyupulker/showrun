@@ -27,32 +27,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-
-
-      - name: Cache node_modules
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            **/node_modules
-          key: ${{ runner.os }}-node-modules-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-node-modules-
-
+          cache: 'pnpm'
       - name: Cache TypeScript build info
         uses: actions/cache@v4
         with:
           path: |
             **/dist/.tsbuildinfo
             **/*.tsbuildinfo
-          key: ${{ runner.os }}-tsbuildinfo-${{ github.sha }}
+          key: ${{ runner.os }}-tsbuildinfo-${{ hashFiles('**/*.ts', 'tsconfig.json', '**/tsconfig.json') }}
           restore-keys: |
             ${{ runner.os }}-tsbuildinfo-
 
