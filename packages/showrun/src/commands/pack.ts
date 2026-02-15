@@ -292,7 +292,7 @@ export async function cmdPackSetMeta(args: string[]): Promise<void> {
     ...existing,
     ...meta,
     // Ensure kind is preserved for json-dsl packs
-    kind: existing.kind === 'json-dsl' ? 'json-dsl' : meta.kind,
+    kind: (existing.kind === 'json-dsl' ? 'json-dsl' : meta.kind) as 'json-dsl',
   };
 
   // Validate required fields

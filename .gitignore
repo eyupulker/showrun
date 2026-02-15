@@ -8,6 +8,7 @@ dist/
 **/src/**/*.d.ts.map
 **/src/**/*.js.map
 *.tsbuildinfo
+dist/.tsbuildinfo
 
 # Run artifacts
 runs/
