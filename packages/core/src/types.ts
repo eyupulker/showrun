@@ -234,7 +234,9 @@ export type LogEvent =
   | { type: 'auth_recovery_finished'; data: { recoveryAttempt: number; success: boolean } }
   | { type: 'auth_recovery_exhausted'; data: { url: string; status: number; maxRecoveries: number } }
   | { type: 'run_finished'; data: { success: boolean; durationMs: number } }
-  | { type: 'error'; data: { error: string; stepId?: string; type?: string; label?: string } };
+  | { type: 'error'; data: { error: string; stepId?: string; type?: string; label?: string } }
+  | { type: 'info'; data: { message: string; stepId?: string; type?: string; label?: string } }
+  | { type: 'warn'; data: { message: string; stepId?: string; type?: string; label?: string } };
 
 /**
  * Artifact manager for saving screenshots and HTML snapshots

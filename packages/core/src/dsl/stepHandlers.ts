@@ -27,6 +27,7 @@ import { resolveTemplate } from './templating.js';
 import { resolveTargetWithFallback, selectorToTarget } from './target.js';
 import type { AuthFailureMonitor } from '../authResilience.js';
 import { search as jmesSearch, type JSONValue } from '@jmespath-community/jmespath';
+import type { Logger } from '../types.js';
 import type { SnapshotFile } from '../requestSnapshot.js';
 import { replayFromSnapshot } from '../httpReplay.js';
 import { validateResponse } from '../requestSnapshot.js';
@@ -36,6 +37,7 @@ import { validateResponse } from '../requestSnapshot.js';
  */
 export interface StepContext {
   page: Page;
+  logger: Logger;
   collectibles: Record<string, unknown>;
   vars: Record<string, unknown>;
   inputs: Record<string, unknown>;
@@ -117,7 +119,14 @@ async function executeExtractText(
 
   // Log matched target for diagnostics (if hint provided, include it)
   if (step.params.hint) {
-    console.log(`[ExtractText:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    ctx.logger.log({
+      type: 'info',
+      data: {
+        stepId: step.id,
+        type: step.type,
+        message: `[ExtractText:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`,
+      },
+    });
   }
 
   const count = matchedCount;
@@ -175,7 +184,14 @@ async function executeWaitFor(
 
     // Log matched target for diagnostics
     if (step.params.hint) {
-      console.log(`[WaitFor:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+      ctx.logger.log({
+        type: 'info',
+        data: {
+          stepId: step.id,
+          type: step.type,
+          message: `[WaitFor:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`,
+        },
+      });
     }
 
     if (step.params.visible ?? true) {
@@ -230,7 +246,14 @@ async function executeClick(
 
   // Log matched target for diagnostics
   if (step.params.hint) {
-    console.log(`[Click:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    ctx.logger.log({
+      type: 'info',
+      data: {
+        stepId: step.id,
+        type: step.type,
+        message: `[Click:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`,
+      },
+    });
   }
 
   const target = step.params.first ?? true ? locator.first() : locator;
@@ -265,7 +288,14 @@ async function executeFill(
 
   // Log matched target for diagnostics
   if (step.params.hint) {
-    console.log(`[Fill:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    ctx.logger.log({
+      type: 'info',
+      data: {
+        stepId: step.id,
+        type: step.type,
+        message: `[Fill:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`,
+      },
+    });
   }
 
   const target = step.params.first ?? true ? locator.first() : locator;
@@ -302,7 +332,14 @@ async function executeExtractAttribute(
 
   // Log matched target for diagnostics
   if (step.params.hint) {
-    console.log(`[ExtractAttribute:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    ctx.logger.log({
+      type: 'info',
+      data: {
+        stepId: step.id,
+        type: step.type,
+        message: `[ExtractAttribute:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`,
+      },
+    });
   }
 
   const count = matchedCount;
@@ -348,7 +385,14 @@ async function executeAssert(
 
     // Log matched target for diagnostics
     if (step.params.hint) {
-      console.log(`[Assert:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+      ctx.logger.log({
+        type: 'info',
+        data: {
+          stepId: step.id,
+          type: step.type,
+          message: `[Assert:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`,
+        },
+      });
     }
 
     if (matchedCount === 0) {
@@ -565,7 +609,14 @@ async function executeNetworkFind(
       : `\n\nNo requests captured (0 total). The request may not have been triggered yet.`;
 
     const msg = `network_find: no request matched (where: ${JSON.stringify(where)}, pick: ${pick})${waitForMs > 0 ? ` within ${waitForMs}ms` : ''}. Ensure the request is triggered before this step (e.g. by navigation or a prior interaction), or increase waitForMs.${debugInfo}`;
-    console.warn(`[${step.id}] ${msg}`);
+    ctx.logger.log({
+      type: 'warn',
+      data: {
+        stepId: step.id,
+        type: step.type,
+        message: `[${step.id}] ${msg}`,
+      },
+    });
     throw new Error(msg);
   }
   ctx.vars[step.params.saveAs] = requestId;
@@ -753,7 +804,14 @@ async function executeSelectOption(
 
   // Log matched target for diagnostics
   if (step.params.hint) {
-    console.log(`[SelectOption:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    ctx.logger.log({
+      type: 'info',
+      data: {
+        stepId: step.id,
+        type: step.type,
+        message: `[SelectOption:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`,
+      },
+    });
   }
 
   const target = step.params.first ?? true ? locator.first() : locator;
@@ -795,7 +853,14 @@ async function executePressKey(
     );
 
     if (step.params.hint) {
-      console.log(`[PressKey:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+      ctx.logger.log({
+        type: 'info',
+        data: {
+          stepId: step.id,
+          type: step.type,
+          message: `[PressKey:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`,
+        },
+      });
     }
 
     await locator.first().focus();
@@ -835,7 +900,14 @@ async function executeUploadFile(
   );
 
   if (step.params.hint) {
-    console.log(`[UploadFile:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    ctx.logger.log({
+      type: 'info',
+      data: {
+        stepId: step.id,
+        type: step.type,
+        message: `[UploadFile:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`,
+      },
+    });
   }
 
   const target = step.params.first ?? true ? locator.first() : locator;

@@ -157,6 +157,7 @@ export async function runFlow(
 
   const stepContext: StepContext = {
     page: ctx.page,
+    logger: ctx.logger,
     collectibles,
     vars,
     inputs,
@@ -264,10 +265,14 @@ export async function runFlow(
           }
         } catch (conditionError) {
           // Log condition evaluation error but continue with step execution
-          console.warn(
-            `[interpreter] Error evaluating skip_if for step ${step.id}:`,
-            conditionError
-          );
+          ctx.logger.log({
+            type: 'warn',
+            data: {
+              stepId: step.id,
+              type: step.type,
+              message: `[interpreter] Error evaluating skip_if for step ${step.id}: ${conditionError instanceof Error ? conditionError.message : String(conditionError)}`,
+            },
+          });
         }
       }
 
@@ -520,7 +525,14 @@ export async function runFlow(
             await ctx.artifacts.saveHTML(`error-${step.id}`, html);
           } catch (artifactError) {
             // Ignore artifact save errors, but log them
-            console.error('Failed to save artifacts:', artifactError);
+            ctx.logger.log({
+              type: 'error',
+              data: {
+                stepId: step.id,
+                type: step.type,
+                error: `Failed to save artifacts: ${artifactError instanceof Error ? artifactError.message : String(artifactError)}`,
+              },
+            });
           }
         }
 

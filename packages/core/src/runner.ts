@@ -93,10 +93,13 @@ export async function runTaskPack(
   const headless = requestedHeadless || !hasDisplay;
 
   if (!requestedHeadless && !hasDisplay) {
-    console.error(
-      '[Warning] Headful mode requested but no DISPLAY environment variable found. ' +
-      'Falling back to headless mode. Set DISPLAY or use xvfb-run to enable headful mode.'
-    );
+    logger.log({
+      type: 'warn',
+      data: {
+        message: '[Warning] Headful mode requested but no DISPLAY environment variable found. ' +
+        'Falling back to headless mode. Set DISPLAY or use xvfb-run to enable headful mode.'
+      }
+    });
   }
 
   const startTime = Date.now();
@@ -136,7 +139,10 @@ export async function runTaskPack(
     } catch (httpError) {
       // HTTP-only execution failed — fall through to browser mode
       const reason = httpError instanceof Error ? httpError.message : String(httpError);
-      console.log(`[runner] HTTP-only mode failed (${reason}), falling back to browser mode`);
+      logger.log({
+        type: 'info',
+        data: { message: `[runner] HTTP-only mode failed (${reason}), falling back to browser mode` }
+      });
     }
   }
 
@@ -230,9 +236,12 @@ export async function runTaskPack(
     // Capture snapshots for network_replay steps after successful browser run
     if (packPath && networkCapture) {
       try {
-        captureSnapshots(taskPack, flowResult, networkCapture, packPath);
+        captureSnapshots(taskPack, flowResult, networkCapture, packPath, logger);
       } catch (snapErr) {
-        console.warn(`[runner] Failed to capture snapshots: ${snapErr instanceof Error ? snapErr.message : String(snapErr)}`);
+        logger.log({
+          type: 'warn',
+          data: { message: `[runner] Failed to capture snapshots: ${snapErr instanceof Error ? snapErr.message : String(snapErr)}` }
+        });
       }
     }
 
@@ -282,7 +291,10 @@ export async function runTaskPack(
         }
       } catch (artifactError) {
         // Ignore artifact save errors
-        console.error('Failed to save artifacts:', artifactError);
+        logger.log({
+          type: 'error',
+          data: { error: `Failed to save artifacts: ${artifactError instanceof Error ? artifactError.message : String(artifactError)}` }
+        });
       }
     }
 
@@ -331,7 +343,10 @@ async function runHttpOnly(
   logger: Logger,
   options: RunTaskPackOptions,
 ): Promise<RunResult> {
-  console.log(`[runner] Running in HTTP-only mode (${Object.keys(snapshots.snapshots).length} snapshots)`);
+  logger.log({
+    type: 'info',
+    data: { message: `[runner] Running in HTTP-only mode (${Object.keys(snapshots.snapshots).length} snapshots)` }
+  });
 
   // Build a minimal RunContext that doesn't require a browser.
   // In HTTP mode the interpreter skips all DOM steps, so page/browser are never accessed.
@@ -405,6 +420,7 @@ function captureSnapshots(
   flowResult: import('./dsl/types.js').RunFlowResult,
   networkCapture: NetworkCaptureApi,
   packPath: string,
+  logger: Logger,
 ): void {
   const replaySteps = taskPack.flow.filter((s) => s.type === 'network_replay');
   if (replaySteps.length === 0) return;
@@ -483,8 +499,9 @@ function captureSnapshots(
       snapshots: { ...existing.snapshots, ...newSnapshots },
     };
     writeSnapshots(packPath, merged);
-    console.log(
-      `[runner] Captured ${Object.keys(newSnapshots).length} snapshot(s) → snapshots.json`,
-    );
+    logger.log({
+      type: 'info',
+      data: { message: `[runner] Captured ${Object.keys(newSnapshots).length} snapshot(s) → snapshots.json` }
+    });
   }
 }
