@@ -28,13 +28,14 @@ jobs:
         with:
           node-version: 20
           cache: 'pnpm'
+
       - name: Cache TypeScript build info
         uses: actions/cache@v4
         with:
           path: |
             **/dist/.tsbuildinfo
             **/*.tsbuildinfo
-          key: ${{ runner.os }}-tsbuildinfo-${{ hashFiles('**/*.ts', 'tsconfig.json', '**/tsconfig.json') }}
+          key: ${{ runner.os }}-tsbuildinfo-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-tsbuildinfo-
 
