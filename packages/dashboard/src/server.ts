@@ -214,7 +214,23 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
 
   // Create Express app
   const app = express();
-  app.use(cors());
+
+  // Configure CORS origins
+  const allowedOrigins = [
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ];
+  if (host && host !== '0.0.0.0' && host !== 'localhost' && host !== '127.0.0.1') {
+    allowedOrigins.push(`http://${host}:${port}`);
+  }
+
+  app.use(
+    cors({
+      origin: allowedOrigins,
+    })
+  );
   app.use(express.json());
 
   // Serve static UI files (built by Vite)
@@ -227,7 +243,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   // Create Socket.IO server with CORS
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: '*', // In production, restrict this
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
     },
   });
