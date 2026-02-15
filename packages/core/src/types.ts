@@ -45,6 +45,11 @@ export interface BrowserSettings {
    * - 'profile': Persist in pack's .browser-profile/ directory
    */
   persistence?: BrowserPersistence;
+  /**
+   * Screenshot quality for compressed formats (WebP, JPEG).
+   * 0-100. Default: 80.
+   */
+  screenshotQuality?: number;
 }
 
 /**

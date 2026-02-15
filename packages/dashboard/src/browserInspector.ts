@@ -457,7 +457,8 @@ const SCREENSHOT_MAX_WIDTH = 1280;
 const SCREENSHOT_MAX_BASE64_BYTES = 3_000_000; // ~4MB base64 cap
 
 export async function takeScreenshot(
-  sessionId: string
+  sessionId: string,
+  quality?: number
 ): Promise<{ imageBase64: string; mimeType: string; url: string; timestamp: number }> {
   const session = sessions.get(sessionId);
   if (!session) {
@@ -472,13 +473,27 @@ export async function takeScreenshot(
     // ignore viewport errors
   }
 
+  // Use configured quality or default to 80
+  const screenshotQuality = quality ?? parseInt(process.env.SCREENSHOT_QUALITY || '80', 10);
+
   let imageBuffer: Buffer;
   let mimeType: string;
-  imageBuffer = await page.screenshot({ type: 'png' });
-  mimeType = 'image/png';
+
+  try {
+    // Prefer WebP for better compression (Chromium only)
+    imageBuffer = await page.screenshot({ type: 'webp' as any, quality: screenshotQuality });
+    mimeType = 'image/webp';
+  } catch (e) {
+    // Fallback to JPEG (universally supported)
+    imageBuffer = await page.screenshot({ type: 'jpeg', quality: screenshotQuality });
+    mimeType = 'image/jpeg';
+  }
+
   let imageBase64 = imageBuffer.toString('base64');
+
+  // Fallback to lower quality JPEG only if payload is still too large
   if (imageBase64.length > SCREENSHOT_MAX_BASE64_BYTES) {
-    imageBuffer = await page.screenshot({ type: 'jpeg', quality: 0.82 });
+    imageBuffer = await page.screenshot({ type: 'jpeg', quality: Math.max(screenshotQuality - 20, 30) });
     mimeType = 'image/jpeg';
     imageBase64 = imageBuffer.toString('base64');
   }

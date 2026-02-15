@@ -50,6 +50,11 @@ export interface RunTaskPackOptions {
    * Pre-loaded secrets (if not provided, will be loaded from packPath)
    */
   secrets?: Record<string, string>;
+  /**
+   * Screenshot quality for compressed formats (WebP, JPEG).
+   * 0-100. Default: 80.
+   */
+  screenshotQuality?: number;
 }
 
 /**
@@ -187,7 +192,8 @@ export async function runTaskPack(
       browserProxy,
       logger,
       artifactsDir,
-      networkCapture
+      networkCapture,
+      options.screenshotQuality ?? taskPack.browser?.screenshotQuality
     );
 
     // Execute declarative DSL flow
@@ -274,8 +280,14 @@ export async function runTaskPack(
           await runContext.artifacts.saveHTML('error', html);
         } else {
           // Fallback: save artifacts directly if runContext wasn't created
-          const screenshotPath = join(artifactsDir, 'error.png');
-          await page.screenshot({ path: screenshotPath, fullPage: true });
+          let screenshotPath = join(artifactsDir, 'error.webp');
+          const quality = options.screenshotQuality ?? taskPack.browser?.screenshotQuality ?? 80;
+          try {
+            await page.screenshot({ path: screenshotPath, type: 'webp' as any, quality, fullPage: true });
+          } catch (e) {
+            screenshotPath = join(artifactsDir, 'error.jpg');
+            await page.screenshot({ path: screenshotPath, type: 'jpeg', quality, fullPage: true });
+          }
           const html = await page.content();
           const htmlPath = join(artifactsDir, 'error.html');
           writeFileSync(htmlPath, html, 'utf-8');
