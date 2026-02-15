@@ -6,7 +6,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { readFile, access } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { resolveTemplate } from './dsl/templating.js';
 import type { VariableContext } from './dsl/types.js';
@@ -254,12 +254,6 @@ export function loadSnapshots(packPath: string): SnapshotFile | null {
 export async function loadSnapshotsAsync(packPath: string): Promise<SnapshotFile | null> {
   const filePath = join(packPath, SNAPSHOTS_FILENAME);
   try {
-    await access(filePath);
-  } catch {
-    return null;
-  }
-
-  try {
     const content = await readFile(filePath, 'utf-8');
     const data = JSON.parse(content) as SnapshotFile;
     if (data.version !== 1) {
@@ -268,6 +262,9 @@ export async function loadSnapshotsAsync(packPath: string): Promise<SnapshotFile
     }
     return data;
   } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
+      return null;
+    }
     console.warn(
       `[requestSnapshot] Failed to load snapshots.json: ${err instanceof Error ? err.message : String(err)}`,
     );

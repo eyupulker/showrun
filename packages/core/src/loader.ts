@@ -1,5 +1,5 @@
 import { readFileSync, existsSync } from 'fs';
-import { readFile, access } from 'fs/promises';
+import { readFile } from 'fs/promises';
 import { join } from 'path';
 import type { TaskPack, TaskPackManifest, InputSchema, CollectibleDefinition, SecretDefinition } from './types.js';
 import type { DslStep } from './dsl/types.js';
@@ -58,17 +58,14 @@ export class TaskPackLoader {
   static async loadManifestAsync(packPath: string): Promise<TaskPackManifest> {
     const manifestPath = join(packPath, 'taskpack.json');
 
-    try {
-      await access(manifestPath);
-    } catch {
-      throw new Error(`Task pack manifest not found: ${manifestPath}`);
-    }
-
     let manifest: TaskPackManifest;
     try {
       const content = await readFile(manifestPath, 'utf-8');
       manifest = JSON.parse(content);
     } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        throw new Error(`Task pack manifest not found: ${manifestPath}`);
+      }
       throw new Error(`Failed to parse taskpack.json: ${error instanceof Error ? error.message : String(error)}`);
     }
 
@@ -92,12 +89,6 @@ export class TaskPackLoader {
     const manifest = await this.loadManifestAsync(packPath);
 
     const flowPath = join(packPath, 'flow.json');
-    try {
-      await access(flowPath);
-    } catch {
-      throw new Error(`flow.json not found for json-dsl pack: ${flowPath}`);
-    }
-
     let flowData: {
       inputs?: InputSchema;
       collectibles?: CollectibleDefinition[];
@@ -108,6 +99,9 @@ export class TaskPackLoader {
       const content = await readFile(flowPath, 'utf-8');
       flowData = JSON.parse(content);
     } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        throw new Error(`flow.json not found for json-dsl pack: ${flowPath}`);
+      }
       throw new Error(`Failed to parse flow.json: ${error instanceof Error ? error.message : String(error)}`);
     }
 
@@ -170,12 +164,6 @@ export class TaskPackLoader {
     const secretsPath = join(packPath, '.secrets.json');
 
     try {
-      await access(secretsPath);
-    } catch {
-      return {};
-    }
-
-    try {
       const content = await readFile(secretsPath, 'utf-8');
       const secretsFile = JSON.parse(content) as SecretsFile;
 
@@ -187,6 +175,9 @@ export class TaskPackLoader {
 
       return secretsFile.secrets || {};
     } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+        return {};
+      }
       console.warn(`[TaskPackLoader] Failed to load secrets from ${secretsPath}: ${error instanceof Error ? error.message : String(error)}`);
       return {};
     }

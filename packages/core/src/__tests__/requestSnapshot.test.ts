@@ -1,12 +1,22 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   isSnapshotStale,
   validateResponse,
   applyOverrides,
   extractTopLevelKeys,
   detectSensitiveHeaders,
+  loadSnapshotsAsync,
   type RequestSnapshot,
 } from '../requestSnapshot.js';
+import { readFile } from 'fs/promises';
+
+vi.mock('fs/promises', async () => {
+  const actual = await vi.importActual('fs/promises');
+  return {
+    ...actual as any,
+    readFile: vi.fn(),
+  };
+});
 
 function makeSnapshot(overrides?: Partial<RequestSnapshot>): RequestSnapshot {
   return {
@@ -361,5 +371,61 @@ describe('detectSensitiveHeaders', () => {
       accept: '*/*',
     });
     expect(result).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// loadSnapshotsAsync
+// ---------------------------------------------------------------------------
+
+describe('loadSnapshotsAsync', () => {
+  it('returns null if snapshots.json is missing', async () => {
+    const error = new Error('File not found');
+    (error as any).code = 'ENOENT';
+    vi.mocked(readFile).mockRejectedValueOnce(error);
+
+    const result = await loadSnapshotsAsync('fake-path');
+    expect(result).toBeNull();
+  });
+
+  it('returns null and warns if version is unsupported', async () => {
+    const content = JSON.stringify({ version: 2, snapshots: {} });
+    vi.mocked(readFile).mockResolvedValueOnce(content);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = await loadSnapshotsAsync('fake-path');
+    expect(result).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Unsupported snapshot version'));
+    warnSpy.mockRestore();
+  });
+
+  it('returns null and warns if JSON is invalid', async () => {
+    vi.mocked(readFile).mockResolvedValueOnce('not-json');
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = await loadSnapshotsAsync('fake-path');
+    expect(result).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to load snapshots.json'));
+    warnSpy.mockRestore();
+  });
+
+  it('returns data if snapshots.json is valid', async () => {
+    const data = { version: 1, snapshots: { step1: makeSnapshot() } };
+    vi.mocked(readFile).mockResolvedValueOnce(JSON.stringify(data));
+
+    const result = await loadSnapshotsAsync('fake-path');
+    expect(result).toEqual(data);
+  });
+
+  it('returns null and warns on permission error', async () => {
+    const error = new Error('Permission denied');
+    (error as any).code = 'EACCES';
+    vi.mocked(readFile).mockRejectedValueOnce(error);
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const result = await loadSnapshotsAsync('fake-path');
+    expect(result).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('Failed to load snapshots.json'));
+    warnSpy.mockRestore();
   });
 });
