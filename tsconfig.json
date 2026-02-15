@@ -10,7 +10,10 @@
     "forceConsistentCasingInFileNames": true,
     "declaration": true,
     "declarationMap": true,
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "incremental": true,
+    "composite": true,
+    "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
   "exclude": ["node_modules", "dist", "runs", "**/*.js", "**/*.d.ts", "**/ui/**"]
 }
