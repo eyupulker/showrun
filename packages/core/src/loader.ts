@@ -3,7 +3,7 @@ import { readFile, access } from 'fs/promises';
 import { join } from 'path';
 import type { TaskPack, TaskPackManifest, InputSchema, CollectibleDefinition, SecretDefinition } from './types.js';
 import type { DslStep } from './dsl/types.js';
-import { loadSnapshots, loadSnapshotsAsync } from './requestSnapshot.js';
+import { loadSnapshotsAsync } from './requestSnapshot.js';
 
 /**
  * Structure of the .secrets.json file
