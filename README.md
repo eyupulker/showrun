@@ -313,6 +313,29 @@ pnpm dev
 
 Runs the harness in dev mode (requires building first or using ts-node).
 
+### Testing
+
+```bash
+# Run all unit tests
+pnpm test:unit
+
+# Run tests with coverage reporting
+pnpm test:coverage
+```
+
+Coverage reports are generated in multiple formats:
+- **HTML Report**: Open `coverage/index.html` in a browser for interactive visualization
+- **JSON Report**: `coverage/coverage-final.json` for programmatic analysis
+- **JSON Summary**: `coverage/coverage-summary.json` for quick overview
+- **Console Output**: Text summary printed to terminal
+
+Coverage thresholds are configured per package in `vitest.config.ts`:
+- **Core**: 80% (critical business logic)
+- **Dashboard**: 70% (UI layer)
+- **MCP Servers**: 70%
+- **Harness**: 75%
+- **CLI**: 60%
+
 ## Dashboard & Teach Mode
 
 The dashboard is a web UI to run Task Packs, view runs and events, and edit flows with **Teach Mode** (AI-assisted step proposal using an LLM and browser MCP).

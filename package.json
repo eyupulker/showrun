@@ -12,6 +12,7 @@
     "dev": "pnpm build && pnpm test:example",
     "test:example": "node packages/showrun/dist/cli.js run ./taskpacks/example-json --inputs '{}'",
     "test:unit": "pnpm -r test",
+    "test:coverage": "vitest run --coverage",
     "dashboard": "node packages/showrun/dist/cli.js dashboard"
   },
   "workspaces": [
@@ -20,7 +21,9 @@
   ],
   "devDependencies": {
     "@types/node": "^20.11.0",
-    "typescript": "^5.3.3"
+    "@vitest/coverage-v8": "^3.2.4",
+    "typescript": "^5.3.3",
+    "vitest": "^3.2.4"
   },
   "license": "MIT",
   "author": "ShowRun <developers@showrun.co>",
