@@ -39,6 +39,8 @@ import {
   printConfigHelp,
   cmdUninstall,
   printUninstallHelp,
+  cmdTechniques,
+  printTechniquesHelp,
 } from './commands/index.js';
 
 function printHelp(): void {
@@ -64,6 +66,11 @@ Commands:
     browser-inspector     Browser inspection MCP server
     taskpack-editor       Pack editor MCP server
   uninstall               Remove ShowRun and clean up data
+  techniques <subcommand> Manage techniques knowledge store
+    setup                 Verify connection and seed techniques
+    list                  List techniques (with filters)
+    import <file>         Import a technique bundle
+    export                Export techniques as JSON
 
 Options:
   --help, -h              Show help for a command
@@ -116,6 +123,9 @@ async function main(): Promise<void> {
       case 'uninstall':
         printUninstallHelp();
         break;
+      case 'techniques':
+        printTechniquesHelp();
+        break;
       default:
         printHelp();
     }
@@ -144,6 +154,9 @@ async function main(): Promise<void> {
         break;
       case 'uninstall':
         await cmdUninstall(commandArgs);
+        break;
+      case 'techniques':
+        await cmdTechniques(commandArgs);
         break;
       default:
         console.error(`Unknown command: ${command}. Use --help for usage.`);

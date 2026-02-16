@@ -104,6 +104,7 @@ function buildContext(overrides: Partial<DashboardContext>): DashboardContext {
     llmProvider: createMockLlmProvider(),
     systemPrompt: 'You are a test agent.',
     pendingSecretsRequests: new Map(),
+    techniqueManager: null,
     ...overrides,
   };
 }
