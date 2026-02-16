@@ -334,7 +334,7 @@ Coverage thresholds are configured per package in `vitest.config.ts`:
 - **Dashboard**: 70% (UI layer)
 - **MCP Servers**: 70%
 - **Harness**: 75%
-- **CLI**: 60%
+- **Showrun (CLI)**: 60%
 
 ## Dashboard & Teach Mode
 
