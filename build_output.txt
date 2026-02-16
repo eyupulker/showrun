@@ -1,3 +1,0 @@
-This file previously contained captured build output (pnpm/tsc logs).
-Build logs should not be committed to source control; please rely on CI logs
-or attach relevant output to pull requests instead.
