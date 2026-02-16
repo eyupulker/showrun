@@ -20,6 +20,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 - [added] Request snapshots — HTTP-first execution for API-only flows (no browser needed)
 - [added] Staleness detection for request snapshots (TTL + response validation)
 - [added] Automatic snapshot capture after successful browser runs with `network_replay` steps
+- [added] `example-multi-page` taskpack demonstrating multi-page data collection using `new_tab`, `switch_tab`, and collectible-based templating
+- [changed] Improved core DSL interpreter to support tab management and access to `collectibles` in templates
 
 ## 0.1.1a — 2026-02-12
 

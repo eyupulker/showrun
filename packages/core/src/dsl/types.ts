@@ -655,6 +655,7 @@ export interface RunFlowOptions {
 export interface VariableContext {
   inputs: Record<string, unknown>;
   vars: Record<string, unknown>;
+  collectibles?: Record<string, unknown>;
   secrets?: Record<string, string>;
 }
 

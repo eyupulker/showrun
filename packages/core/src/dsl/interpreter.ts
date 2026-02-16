@@ -1,5 +1,6 @@
+import type { Page } from 'playwright';
 import type { RunContext, RunResult, AuthConfig } from '../types.js';
-import type { DslStep, RunFlowOptions, RunFlowResult } from './types.js';
+import type { DslStep, RunFlowOptions, RunFlowResult, VariableContext } from './types.js';
 import { validateFlow } from './validation.js';
 import { executeStep } from './stepHandlers.js';
 import { resolveTemplates } from './templating.js';
@@ -139,10 +140,11 @@ export async function runFlow(
   const collectibles: Record<string, unknown> = {};
   const vars: Record<string, unknown> = {};
 
-  // Initialize variable context (including secrets for templating)
-  const variableContext = {
+  // Initialize variable context (including secrets for templating and collectibles for extraction-based flow)
+  const variableContext: VariableContext = {
     inputs,
     vars,
+    collectibles,
     secrets,
   };
 
@@ -157,6 +159,7 @@ export async function runFlow(
 
   const stepContext: StepContext = {
     page: ctx.page,
+    browserContext: ctx.page.context(),
     collectibles,
     vars,
     inputs,
@@ -309,6 +312,14 @@ export async function runFlow(
 
         await stepPromise;
         stepsExecuted++;
+
+        // Handle tab switching if the step (new_tab or switch_tab) produced a new page
+        if (vars['__newPage']) {
+          const newPage = vars['__newPage'] as Page;
+          stepContext.page = newPage;
+          ctx.page = newPage;
+          delete vars['__newPage'];
+        }
 
         // Mark step as executed if it has "once" flag, with captured outputs
         if (resolvedStep.once) {
@@ -623,6 +634,14 @@ async function executeStepsWithRecovery(
       }
 
       await executeStep(stepContext, resolvedStep);
+
+      // Handle tab switching if the step (new_tab or switch_tab) produced a new page
+      if (vars['__newPage']) {
+        const newPage = vars['__newPage'] as Page;
+        stepContext.page = newPage;
+        ctx.page = newPage;
+        delete vars['__newPage'];
+      }
 
       // Mark as executed with captured outputs
       if (resolvedStep.once) {

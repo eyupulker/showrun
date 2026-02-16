@@ -1,0 +1,7 @@
+{
+  "id": "example-multi-page",
+  "name": "Multi-page Data Collection",
+  "version": "0.1.0",
+  "description": "Example demonstrating data collection across multiple pages using collectibles and tab management",
+  "kind": "json-dsl"
+}
