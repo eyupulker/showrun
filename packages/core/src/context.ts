@@ -25,7 +25,7 @@ export class RunContextFactory {
       async saveScreenshot(name: string): Promise<string> {
         let path = join(artifactsDir, `${name}.webp`);
         try {
-          await page.screenshot({ path, type: 'webp' as any, quality, fullPage: true });
+          await page.screenshot({ path, type: 'webp', quality, fullPage: true });
         } catch (e) {
           // Fallback to JPEG if WebP is not supported
           path = join(artifactsDir, `${name}.jpg`);

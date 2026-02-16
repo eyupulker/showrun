@@ -478,7 +478,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
           <img
             src={screenshot}
             alt="Screenshot"
-            loading="lazy"
+
             style={{ maxWidth: '100%', border: '1px solid #ccc' }}
           />
         </div>

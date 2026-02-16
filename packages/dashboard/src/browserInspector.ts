@@ -473,15 +473,24 @@ export async function takeScreenshot(
     // ignore viewport errors
   }
 
-  // Use configured quality or default to 80
-  const screenshotQuality = quality ?? parseInt(process.env.SCREENSHOT_QUALITY || '80', 10);
+  // Use configured quality or default to 80, and ensure it is within [0, 100]
+  let screenshotQuality: number;
+  if (typeof quality === 'number' && Number.isFinite(quality)) {
+    screenshotQuality = quality;
+  } else {
+    const envQualityRaw = process.env.SCREENSHOT_QUALITY;
+    const envQualityParsed = envQualityRaw !== undefined ? parseInt(envQualityRaw, 10) : NaN;
+    screenshotQuality = Number.isNaN(envQualityParsed) ? 80 : envQualityParsed;
+  }
+  // Round and clamp to Playwright's supported range [0, 100]
+  screenshotQuality = Math.min(100, Math.max(0, Math.round(screenshotQuality)));
 
   let imageBuffer: Buffer;
   let mimeType: string;
 
   try {
     // Prefer WebP for better compression (Chromium only)
-    imageBuffer = await page.screenshot({ type: 'webp' as any, quality: screenshotQuality });
+    imageBuffer = await page.screenshot({ type: 'webp', quality: screenshotQuality });
     mimeType = 'image/webp';
   } catch (e) {
     // Fallback to JPEG (universally supported)
@@ -493,7 +502,9 @@ export async function takeScreenshot(
 
   // Fallback to lower quality JPEG only if payload is still too large
   if (imageBase64.length > SCREENSHOT_MAX_BASE64_BYTES) {
-    imageBuffer = await page.screenshot({ type: 'jpeg', quality: Math.max(screenshotQuality - 20, 30) });
+    const fallbackQuality =
+      screenshotQuality > 50 ? Math.max(screenshotQuality - 20, 50) : screenshotQuality;
+    imageBuffer = await page.screenshot({ type: 'jpeg', quality: fallbackQuality });
     mimeType = 'image/jpeg';
     imageBase64 = imageBuffer.toString('base64');
   }
