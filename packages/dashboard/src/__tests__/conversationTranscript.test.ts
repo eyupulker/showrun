@@ -5,17 +5,24 @@
  * (or not) based on the transcriptLogging flag.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { join } from 'path';
-import { mkdirSync, rmSync } from 'fs';
-import { tmpdir } from 'os';
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
+import { mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock heavy dependencies before importing the module under test
 vi.mock('../agentTools.js', () => ({
   MAIN_AGENT_TOOL_DEFINITIONS: [],
   EXPLORATION_AGENT_TOOLS: [
-    { type: 'function', function: { name: 'browser_goto', description: 'Go to URL', parameters: { type: 'object', properties: {} } } },
+    {
+      type: 'function',
+      function: {
+        name: 'browser_goto',
+        description: 'Go to URL',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
   ],
   executeAgentTool: vi.fn(),
 }));
@@ -31,7 +38,9 @@ vi.mock('../mcpWrappers.js', () => ({
 }));
 
 vi.mock('../contextManager.js', () => ({
-  summarizeIfNeeded: vi.fn().mockResolvedValue({ wasSummarized: false, messages: [], tokensBefore: 0, tokensAfter: 0 }),
+  summarizeIfNeeded: vi
+    .fn()
+    .mockResolvedValue({ wasSummarized: false, messages: [], tokensBefore: 0, tokensAfter: 0 }),
   estimateTotalTokens: vi.fn().mockReturnValue(1000),
   forceSummarize: vi.fn(),
 }));
@@ -49,19 +58,19 @@ vi.mock('../teachMode.js', () => ({
   proposeStep: vi.fn(),
 }));
 
+import { createServer } from 'node:http';
 import express from 'express';
 import { Server as SocketIOServer } from 'socket.io';
-import { createServer } from 'http';
 import {
-  initDatabase,
   closeDatabase,
   createConversation,
-  getTranscriptByConversationId,
   getAllTranscripts,
+  getTranscriptByConversationId,
+  initDatabase,
 } from '../db.js';
+import type { LlmProvider } from '../llm/provider.js';
 import { createTeachRouter } from '../routes/teach.js';
 import type { DashboardContext } from '../types/context.js';
-import type { LlmProvider } from '../llm/provider.js';
 
 /** Create a mock LLM provider that returns a simple text response (no tool calls) */
 function createMockLlmProvider(): LlmProvider {
@@ -161,7 +170,11 @@ async function postAgentStreaming(
             .split('\n')
             .filter((line) => line.trim())
             .map((line) => {
-              try { return JSON.parse(line); } catch { return null; }
+              try {
+                return JSON.parse(line);
+              } catch {
+                return null;
+              }
             })
             .filter(Boolean);
           resolve({ status: res.status, events });
@@ -206,12 +219,12 @@ describe('Conversation Transcript Logging (E2E)', () => {
     // Verify transcript was saved
     const transcript = getTranscriptByConversationId(conv.id);
     expect(transcript).not.toBeNull();
-    expect(transcript!.conversationId).toBe(conv.id);
-    expect(transcript!.packId).toBe('some-pack');
-    expect(transcript!.agentIterations).toBe(1);
+    expect(transcript?.conversationId).toBe(conv.id);
+    expect(transcript?.packId).toBe('some-pack');
+    expect(transcript?.agentIterations).toBe(1);
 
     // Verify the transcript content contains the user message
-    const messages = JSON.parse(transcript!.transcript);
+    const messages = JSON.parse(transcript?.transcript);
     expect(messages).toBeInstanceOf(Array);
     expect(messages.length).toBeGreaterThan(0);
     expect(messages[0].role).toBe('user');
@@ -263,8 +276,8 @@ describe('Conversation Transcript Logging (E2E)', () => {
     // Even on error, transcript should be saved
     const transcript = getTranscriptByConversationId(conv.id);
     expect(transcript).not.toBeNull();
-    expect(transcript!.conversationId).toBe(conv.id);
-    expect(transcript!.packId).toBe('error-pack');
+    expect(transcript?.conversationId).toBe(conv.id);
+    expect(transcript?.packId).toBe('error-pack');
   });
 
   it('saves transcript with conversationStatus from the DB', async () => {
@@ -283,7 +296,7 @@ describe('Conversation Transcript Logging (E2E)', () => {
 
     const transcript = getTranscriptByConversationId(conv.id);
     expect(transcript).not.toBeNull();
-    expect(transcript!.conversationStatus).toBe('active');
+    expect(transcript?.conversationStatus).toBe('active');
   });
 
   it('saves toolTrace in the transcript when tools are called', async () => {
@@ -297,7 +310,9 @@ describe('Conversation Transcript Logging (E2E)', () => {
       if (callCount === 1) {
         return Promise.resolve({
           content: 'Let me check the site.',
-          toolCalls: [{ id: 'tc-1', name: 'browser_goto', arguments: '{"url":"https://example.com"}' }],
+          toolCalls: [
+            { id: 'tc-1', name: 'browser_goto', arguments: '{"url":"https://example.com"}' },
+          ],
         });
       }
       return Promise.resolve({
@@ -327,10 +342,10 @@ describe('Conversation Transcript Logging (E2E)', () => {
 
     const transcript = getTranscriptByConversationId(conv.id);
     expect(transcript).not.toBeNull();
-    expect(transcript!.agentIterations).toBe(2);
+    expect(transcript?.agentIterations).toBe(2);
 
     // Verify tool trace is saved
-    const trace = JSON.parse(transcript!.toolTrace!);
+    const trace = JSON.parse(transcript?.toolTrace!);
     expect(trace).toBeInstanceOf(Array);
     expect(trace.length).toBe(1);
     expect(trace[0].tool).toBe('browser_goto');
@@ -368,7 +383,10 @@ describe('Conversation Transcript Logging (E2E)', () => {
     expect(status).toBe(200);
 
     // Verify thinking events were streamed to the client
-    const thinkingEvents = events.filter((e) => e.type === 'thinking_delta' || e.type === 'thinking_start' || e.type === 'thinking_stop');
+    const thinkingEvents = events.filter(
+      (e) =>
+        e.type === 'thinking_delta' || e.type === 'thinking_start' || e.type === 'thinking_stop'
+    );
     expect(thinkingEvents.length).toBeGreaterThan(0);
 
     const thinkingStopEvent = events.find((e) => e.type === 'thinking_stop');
@@ -379,7 +397,7 @@ describe('Conversation Transcript Logging (E2E)', () => {
     const transcript = getTranscriptByConversationId(conv.id);
     expect(transcript).not.toBeNull();
 
-    const messages = JSON.parse(transcript!.transcript);
+    const messages = JSON.parse(transcript?.transcript);
     expect(messages.length).toBeGreaterThanOrEqual(1);
 
     // The user message should be first
@@ -412,11 +430,20 @@ describe('Conversation Transcript Logging (E2E)', () => {
         yield { type: 'content_start' };
         yield { type: 'content_stop', text: 'Let me check the site.' };
         yield { type: 'tool_call_start', id: 'tc-1', name: 'browser_goto' };
-        yield { type: 'tool_call_stop', toolCall: { id: 'tc-1', name: 'browser_goto', arguments: '{"url":"https://example.com"}' } };
+        yield {
+          type: 'tool_call_stop',
+          toolCall: {
+            id: 'tc-1',
+            name: 'browser_goto',
+            arguments: '{"url":"https://example.com"}',
+          },
+        };
         yield { type: 'message_stop' };
         return {
           content: 'Let me check the site.',
-          toolCalls: [{ id: 'tc-1', name: 'browser_goto', arguments: '{"url":"https://example.com"}' }],
+          toolCalls: [
+            { id: 'tc-1', name: 'browser_goto', arguments: '{"url":"https://example.com"}' },
+          ],
         };
       }
       // Second call: no thinking, just final response
@@ -449,7 +476,7 @@ describe('Conversation Transcript Logging (E2E)', () => {
     const transcript = getTranscriptByConversationId(conv.id);
     expect(transcript).not.toBeNull();
 
-    const messages = JSON.parse(transcript!.transcript);
+    const messages = JSON.parse(transcript?.transcript);
 
     // Find the assistant message that has tool_calls (first LLM response)
     const assistantWithTools = messages.find(

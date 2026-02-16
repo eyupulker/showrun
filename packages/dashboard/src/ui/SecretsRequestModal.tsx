@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 
 interface SecretRequest {
   name: string;
@@ -45,14 +46,17 @@ export default function SecretsRequestModal({
       for (const secret of secrets) {
         const value = values[secret.name];
         if (value) {
-          const response = await fetch(`/api/packs/${encodeURIComponent(packId)}/secrets/${encodeURIComponent(secret.name)}`, {
-            method: 'PUT',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-showrun-token': token,
-            },
-            body: JSON.stringify({ value }),
-          });
+          const response = await fetch(
+            `/api/packs/${encodeURIComponent(packId)}/secrets/${encodeURIComponent(secret.name)}`,
+            {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-showrun-token': token,
+              },
+              body: JSON.stringify({ value }),
+            }
+          );
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
             throw new Error(errorData.error || `Failed to save ${secret.name}`);
@@ -61,16 +65,19 @@ export default function SecretsRequestModal({
       }
 
       // Notify server that secrets have been provided
-      const resumeResponse = await fetch(`/api/teach/agent/${encodeURIComponent(conversationId)}/secrets-filled`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-showrun-token': token,
-        },
-        body: JSON.stringify({
-          secretNames: secrets.map(s => s.name),
-        }),
-      });
+      const resumeResponse = await fetch(
+        `/api/teach/agent/${encodeURIComponent(conversationId)}/secrets-filled`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-showrun-token': token,
+          },
+          body: JSON.stringify({
+            secretNames: secrets.map((s) => s.name),
+          }),
+        }
+      );
 
       if (!resumeResponse.ok) {
         const errorData = await resumeResponse.json().catch(() => ({ error: 'Unknown error' }));
@@ -91,8 +98,8 @@ export default function SecretsRequestModal({
 
   // Check if all required secrets have values
   const allRequiredFilled = secrets
-    .filter(s => s.required !== false)
-    .every(s => values[s.name]?.trim());
+    .filter((s) => s.required !== false)
+    .every((s) => values[s.name]?.trim());
 
   return (
     <div
@@ -117,19 +124,25 @@ export default function SecretsRequestModal({
       >
         <h2 style={{ marginTop: 0 }}>Secrets Required</h2>
 
-        <div style={{
-          padding: '12px 16px',
-          backgroundColor: 'rgba(255, 103, 26, 0.1)',
-          border: '1px solid rgba(255, 103, 26, 0.2)',
-          borderRadius: '8px',
-          marginBottom: '20px',
-          fontSize: '14px',
-          color: 'var(--text-primary)',
-        }}>
+        <div
+          style={{
+            padding: '12px 16px',
+            backgroundColor: 'rgba(255, 103, 26, 0.1)',
+            border: '1px solid rgba(255, 103, 26, 0.2)',
+            borderRadius: '8px',
+            marginBottom: '20px',
+            fontSize: '14px',
+            color: 'var(--text-primary)',
+          }}
+        >
           {message}
         </div>
 
-        {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+        {error && (
+          <div className="error" style={{ marginBottom: '16px' }}>
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit}>
           {secrets.map((secret) => (
@@ -141,7 +154,14 @@ export default function SecretsRequestModal({
                 )}
               </label>
               {secret.description && (
-                <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', marginBottom: '6px' }}>
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: 'var(--text-muted)',
+                    marginTop: '2px',
+                    marginBottom: '6px',
+                  }}
+                >
                   {secret.description}
                 </div>
               )}
@@ -159,36 +179,30 @@ export default function SecretsRequestModal({
                   color: 'var(--text-primary)',
                 }}
                 placeholder={`Enter ${secret.name}...`}
-                autoFocus={secrets[0]?.name === secret.name}
               />
             </div>
           ))}
 
-          <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}>
-            <button
-              className="btn-secondary"
-              type="button"
-              onClick={onCancel}
-              disabled={saving}
-            >
+          <div
+            style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '20px' }}
+          >
+            <button className="btn-secondary" type="button" onClick={onCancel} disabled={saving}>
               Cancel
             </button>
-            <button
-              className="btn-primary"
-              type="submit"
-              disabled={saving || !allRequiredFilled}
-            >
+            <button className="btn-primary" type="submit" disabled={saving || !allRequiredFilled}>
               {saving ? 'Saving...' : 'Provide Secrets'}
             </button>
           </div>
         </form>
 
-        <div style={{
-          marginTop: '16px',
-          fontSize: '11px',
-          color: 'var(--text-muted)',
-          textAlign: 'center',
-        }}>
+        <div
+          style={{
+            marginTop: '16px',
+            fontSize: '11px',
+            color: 'var(--text-muted)',
+            textAlign: 'center',
+          }}
+        >
           Secret values are stored locally and never sent to the AI.
         </div>
       </div>

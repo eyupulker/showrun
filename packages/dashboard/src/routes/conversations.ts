@@ -1,23 +1,20 @@
-import { Router, type Request, type Response } from 'express';
-import { rmSync } from 'fs';
-import type { DashboardContext } from '../types/context.js';
-import { createTokenChecker } from '../helpers/auth.js';
+import { rmSync } from 'node:fs';
 import { TaskPackLoader, validatePathInAllowedDir } from '@showrun/core';
-import {
-  createConversation,
-  getConversation,
-  getAllConversations,
-  updateConversation,
-  deleteConversation,
-  addMessage,
-  getMessagesForConversation,
-  exportConversationForDebug,
-} from '../db.js';
-import {
-  getConversationBrowserSession,
-  setConversationBrowserSession,
-} from '../agentTools.js';
+import { type Request, type Response, Router } from 'express';
+import { getConversationBrowserSession, setConversationBrowserSession } from '../agentTools.js';
 import { closeSession } from '../browserInspector.js';
+import {
+  addMessage,
+  createConversation,
+  deleteConversation,
+  exportConversationForDebug,
+  getAllConversations,
+  getConversation,
+  getMessagesForConversation,
+  updateConversation,
+} from '../db.js';
+import { createTokenChecker } from '../helpers/auth.js';
+import type { DashboardContext } from '../types/context.js';
 
 export function createConversationsRouter(ctx: DashboardContext): Router {
   const router = Router();

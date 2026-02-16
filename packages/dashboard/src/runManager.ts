@@ -4,13 +4,12 @@
  */
 import {
   createRun,
-  getRun as dbGetRun,
+  type DbRunInfo,
   getAllRuns as dbGetAllRuns,
+  getRun as dbGetRun,
+  dbRunToLegacy,
   updateRun as dbUpdateRun,
   pruneOldRuns,
-  dbRunToLegacy,
-  type DbRunInfo,
-  type LegacyRunInfo,
 } from './db.js';
 
 // Keep the legacy RunInfo interface for backward compatibility
@@ -46,12 +45,7 @@ export class RunManager {
    */
   addRun(run: RunInfo): void {
     // Create in database
-    createRun(
-      run.packId,
-      run.packName,
-      run.source || 'dashboard',
-      run.conversationId || undefined
-    );
+    createRun(run.packId, run.packName, run.source || 'dashboard', run.conversationId || undefined);
 
     // If the run already has an ID different from what DB would generate,
     // we need to update it. For now, we'll accept that the runId might change.

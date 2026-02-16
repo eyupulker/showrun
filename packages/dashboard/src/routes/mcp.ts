@@ -1,13 +1,13 @@
-import { Router, type Request, type Response } from 'express';
-import type { DashboardContext } from '../types/context.js';
-import { createTokenChecker } from '../helpers/auth.js';
 import {
-  discoverPacks,
   createMCPServerOverHTTP,
-  type MCPRunStartInfo,
+  discoverPacks,
   type MCPRunCompleteInfo,
+  type MCPRunStartInfo,
 } from '@showrun/mcp-server';
+import { type Request, type Response, Router } from 'express';
+import { createTokenChecker } from '../helpers/auth.js';
 import type { RunInfo } from '../runManager.js';
+import type { DashboardContext } from '../types/context.js';
 
 const MCP_DEFAULT_PORT = 3340;
 
@@ -46,7 +46,8 @@ export function createMcpRouter(ctx: DashboardContext): Router {
     if (selectedPacks.length === 0) {
       return res.status(400).json({ error: 'No valid pack IDs found' });
     }
-    const port = typeof requestedPort === 'number' && requestedPort > 0 ? requestedPort : MCP_DEFAULT_PORT;
+    const port =
+      typeof requestedPort === 'number' && requestedPort > 0 ? requestedPort : MCP_DEFAULT_PORT;
     try {
       const handle = await createMCPServerOverHTTP({
         packs: selectedPacks,
@@ -93,7 +94,9 @@ export function createMcpRouter(ctx: DashboardContext): Router {
       });
       ctx.mcpServer.handle = handle;
       ctx.mcpServer.packIds = packIds;
-      console.log(`[Dashboard] MCP server started at ${handle.url} with ${selectedPacks.length} pack(s)`);
+      console.log(
+        `[Dashboard] MCP server started at ${handle.url} with ${selectedPacks.length} pack(s)`
+      );
       res.json({
         url: handle.url,
         port: handle.port,

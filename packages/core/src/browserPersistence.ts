@@ -7,9 +7,9 @@
  * - profile: Pack-local persistent profile
  */
 
-import { existsSync, mkdirSync, readdirSync, statSync, rmSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { BrowserPersistence } from './types.js';
 
 /**
@@ -60,7 +60,9 @@ export function resolveBrowserDataDir(config: BrowserDataDirConfig): string | un
 
     case 'session': {
       if (!sessionId) {
-        console.warn('[browserPersistence] Session persistence requires sessionId, falling back to none');
+        console.warn(
+          '[browserPersistence] Session persistence requires sessionId, falling back to none'
+        );
         return undefined;
       }
       const baseDir = join(tmpdir(), SESSION_BASE_DIR);
@@ -74,7 +76,9 @@ export function resolveBrowserDataDir(config: BrowserDataDirConfig): string | un
 
     case 'profile': {
       if (!packPath) {
-        console.warn('[browserPersistence] Profile persistence requires packPath, falling back to none');
+        console.warn(
+          '[browserPersistence] Profile persistence requires packPath, falling back to none'
+        );
         return undefined;
       }
       const profileDir = join(packPath, PROFILE_DIR_NAME);
@@ -172,7 +176,7 @@ function touchDirectory(dir: string): void {
     const now = new Date();
     // Node doesn't have a direct utimes for directories, but we can use a marker file
     const markerPath = join(dir, '.last_access');
-    const fs = require('fs');
+    const fs = require('node:fs');
     fs.closeSync(fs.openSync(markerPath, 'w'));
     fs.utimesSync(dir, now, now);
   } catch {

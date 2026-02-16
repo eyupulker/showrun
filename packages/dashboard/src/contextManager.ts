@@ -3,15 +3,15 @@
  * Handles token estimation, message summarization, and plan storage
  */
 
-import type { LlmProvider } from './llm/provider.js';
 import { getConversationPlan, setConversationPlan } from './db.js';
+import type { LlmProvider } from './llm/provider.js';
 
 // Token estimation: ~4 characters per token (rough approximation for Claude)
 const CHARS_PER_TOKEN = 4;
 
 // Thresholds
-const TOKEN_LIMIT_SOFT = 100_000;  // Start summarizing at this point
-const TOKEN_LIMIT_HARD = 180_000;  // Absolute max before forced truncation
+const TOKEN_LIMIT_SOFT = 100_000; // Start summarizing at this point
+const TOKEN_LIMIT_HARD = 180_000; // Absolute max before forced truncation
 const RECENT_MESSAGES_TO_KEEP = 10; // Keep last N messages unsummarized
 
 type ContentPart =
@@ -21,7 +21,11 @@ type ContentPart =
 // Use a generic type to avoid conflicts with local type definitions
 export type AgentMessage =
   | { role: 'user'; content: string | ContentPart[] }
-  | { role: 'assistant'; content: string | null; tool_calls?: Array<{ id: string; name: string; arguments: string }> }
+  | {
+      role: 'assistant';
+      content: string | null;
+      tool_calls?: Array<{ id: string; name: string; arguments: string }>;
+    }
   | { role: 'tool'; content: string; tool_call_id: string };
 
 // Internal alias for backward compat within this file
@@ -67,10 +71,9 @@ function estimateMessageTokens(msg: AgentMsg): number {
 /**
  * Estimate total tokens for system prompt + messages
  */
-export function estimateTotalTokens<T extends { role: string; content: unknown; tool_calls?: unknown[]; tool_call_id?: string }>(
-  systemPrompt: string,
-  messages: T[]
-): number {
+export function estimateTotalTokens<
+  T extends { role: string; content: unknown; tool_calls?: unknown[]; tool_call_id?: string },
+>(systemPrompt: string, messages: T[]): number {
   let total = Math.ceil(systemPrompt.length / CHARS_PER_TOKEN);
   for (const msg of messages) {
     total += estimateMessageTokens(msg as unknown as AgentMsg);
@@ -104,7 +107,9 @@ export function savePlan(sessionKey: string, plan: string): void {
   if (isConversationId(sessionKey)) {
     try {
       setConversationPlan(sessionKey, plan);
-      console.log(`[ContextManager] Plan saved to DB for conversation ${sessionKey} (${plan.length} chars)`);
+      console.log(
+        `[ContextManager] Plan saved to DB for conversation ${sessionKey} (${plan.length} chars)`
+      );
     } catch (err) {
       console.warn(`[ContextManager] Failed to persist plan to DB:`, err);
     }
@@ -178,7 +183,9 @@ export async function summarizeIfNeeded<T extends AgentMessage>(
     return { messages, wasSummarized: false, tokensBefore, tokensAfter: tokensBefore };
   }
 
-  console.log(`[ContextManager] Token count ${tokensBefore} exceeds soft limit ${TOKEN_LIMIT_SOFT}, summarizing...`);
+  console.log(
+    `[ContextManager] Token count ${tokensBefore} exceeds soft limit ${TOKEN_LIMIT_SOFT}, summarizing...`
+  );
 
   // Split messages: keep recent, summarize older
   const recentCount = Math.min(RECENT_MESSAGES_TO_KEEP, messages.length);
@@ -195,30 +202,33 @@ export async function summarizeIfNeeded<T extends AgentMessage>(
   const existingPlan = sessionKey ? getPlan(sessionKey) : null;
 
   // Build summary prompt
-  const olderContent = olderMessages.map((m, i) => {
-    const role = m.role.toUpperCase();
-    let content = '';
-    if (typeof m.content === 'string') {
-      content = m.content || '(empty)';
-    } else if (Array.isArray(m.content)) {
-      content = m.content
-        .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
-        .map(p => p.text)
-        .join('\n') || '(media content)';
-    }
-    if ('tool_calls' in m && m.tool_calls) {
-      const toolNames = (m.tool_calls as Array<{ name: string }>).map(tc => tc.name).join(', ');
-      content += `\n[Called tools: ${toolNames}]`;
-    }
-    if ('tool_call_id' in m) {
-      content = `[Tool result for ${m.tool_call_id}]: ${content.slice(0, 500)}${content.length > 500 ? '...' : ''}`;
-    }
-    // Truncate very long messages in the summary input
-    if (content.length > 2000) {
-      content = content.slice(0, 2000) + '... (truncated)';
-    }
-    return `[${i + 1}] ${role}: ${content}`;
-  }).join('\n\n');
+  const olderContent = olderMessages
+    .map((m, i) => {
+      const role = m.role.toUpperCase();
+      let content = '';
+      if (typeof m.content === 'string') {
+        content = m.content || '(empty)';
+      } else if (Array.isArray(m.content)) {
+        content =
+          m.content
+            .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+            .map((p) => p.text)
+            .join('\n') || '(media content)';
+      }
+      if ('tool_calls' in m && m.tool_calls) {
+        const toolNames = (m.tool_calls as Array<{ name: string }>).map((tc) => tc.name).join(', ');
+        content += `\n[Called tools: ${toolNames}]`;
+      }
+      if ('tool_call_id' in m) {
+        content = `[Tool result for ${m.tool_call_id}]: ${content.slice(0, 500)}${content.length > 500 ? '...' : ''}`;
+      }
+      // Truncate very long messages in the summary input
+      if (content.length > 2000) {
+        content = `${content.slice(0, 2000)}... (truncated)`;
+      }
+      return `[${i + 1}] ${role}: ${content}`;
+    })
+    .join('\n\n');
 
   const summarySystemPrompt = `You are a conversation summarizer. Create a concise summary of the conversation that preserves:
 1. The user's original goal/request
@@ -249,7 +259,9 @@ Keep the summary under 2000 words. Focus on information needed to continue the c
     const newMessages: T[] = [summaryMessage, ...recentMessages];
     const tokensAfter = estimateTotalTokens(systemPrompt, newMessages);
 
-    console.log(`[ContextManager] Summarized ${olderMessages.length} messages. Tokens: ${tokensBefore} -> ${tokensAfter}`);
+    console.log(
+      `[ContextManager] Summarized ${olderMessages.length} messages. Tokens: ${tokensBefore} -> ${tokensAfter}`
+    );
 
     // If still over hard limit, we need to be more aggressive
     if (tokensAfter > TOKEN_LIMIT_HARD) {
@@ -257,7 +269,12 @@ Keep the summary under 2000 words. Focus on information needed to continue the c
       // Keep only the summary and last 3 messages
       const truncatedMessages: T[] = [summaryMessage, ...recentMessages.slice(-3)];
       const tokensFinal = estimateTotalTokens(systemPrompt, truncatedMessages);
-      return { messages: truncatedMessages, wasSummarized: true, tokensBefore, tokensAfter: tokensFinal };
+      return {
+        messages: truncatedMessages,
+        wasSummarized: true,
+        tokensBefore,
+        tokensAfter: tokensFinal,
+      };
     }
 
     return { messages: newMessages, wasSummarized: true, tokensBefore, tokensAfter };
@@ -277,13 +294,15 @@ export const PLAN_TOOL_DEFINITION = {
   type: 'function' as const,
   function: {
     name: 'agent_save_plan',
-    description: 'Save the current plan/strategy for this task. Use this to persist important context that should survive conversation summarization. Call this whenever you formulate a multi-step plan.',
+    description:
+      'Save the current plan/strategy for this task. Use this to persist important context that should survive conversation summarization. Call this whenever you formulate a multi-step plan.',
     parameters: {
       type: 'object' as const,
       properties: {
         plan: {
           type: 'string',
-          description: 'The plan text to save. Should include: goal, steps, current progress, and any important decisions.',
+          description:
+            'The plan text to save. Should include: goal, steps, current progress, and any important decisions.',
         },
       },
       required: ['plan'],
@@ -298,7 +317,8 @@ export const GET_PLAN_TOOL_DEFINITION = {
   type: 'function' as const,
   function: {
     name: 'agent_get_plan',
-    description: 'Retrieve the saved plan for this task. Use this at the start of a conversation or after summarization to recover context.',
+    description:
+      'Retrieve the saved plan for this task. Use this at the start of a conversation or after summarization to recover context.',
     parameters: {
       type: 'object' as const,
       properties: {},

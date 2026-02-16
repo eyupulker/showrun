@@ -226,13 +226,32 @@ export interface AuthConfig {
  */
 export type LogEvent =
   | { type: 'run_started'; data: { packId: string; packVersion: string; inputs: unknown } }
-  | { type: 'step_started'; data: { stepId: string; type: string; label?: string; params?: unknown } }
-  | { type: 'step_finished'; data: { stepId: string; type: string; label?: string; durationMs: number } }
-  | { type: 'step_skipped'; data: { stepId: string; type: string; reason: 'once_already_executed' | 'condition_met'; restoredVars?: string[]; restoredCollectibles?: string[]; condition?: string } }
+  | {
+      type: 'step_started';
+      data: { stepId: string; type: string; label?: string; params?: unknown };
+    }
+  | {
+      type: 'step_finished';
+      data: { stepId: string; type: string; label?: string; durationMs: number };
+    }
+  | {
+      type: 'step_skipped';
+      data: {
+        stepId: string;
+        type: string;
+        reason: 'once_already_executed' | 'condition_met';
+        restoredVars?: string[];
+        restoredCollectibles?: string[];
+        condition?: string;
+      };
+    }
   | { type: 'auth_failure_detected'; data: { url: string; status: number; stepId?: string } }
   | { type: 'auth_recovery_started'; data: { recoveryAttempt: number; maxRecoveries: number } }
   | { type: 'auth_recovery_finished'; data: { recoveryAttempt: number; success: boolean } }
-  | { type: 'auth_recovery_exhausted'; data: { url: string; status: number; maxRecoveries: number } }
+  | {
+      type: 'auth_recovery_exhausted';
+      data: { url: string; status: number; maxRecoveries: number };
+    }
   | { type: 'run_finished'; data: { success: boolean; durationMs: number } }
   | { type: 'error'; data: { error: string; stepId?: string; type?: string; label?: string } };
 
@@ -246,11 +265,11 @@ export interface ArtifactManager {
 
 /**
  * Task Pack module interface
- * 
+ *
  * Supports two execution styles:
  * - Declarative: provide `flow` array of DSL steps
  * - Imperative: provide `run` function
- * 
+ *
  * If both are provided, `flow` takes precedence.
  */
 export interface TaskPack {

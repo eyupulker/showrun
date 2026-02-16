@@ -5,8 +5,8 @@
  */
 
 import type { Page } from 'playwright';
-import type { SkipCondition, TargetOrAnyOf, Target } from './types.js';
 import { resolveTarget } from './target.js';
+import type { SkipCondition, Target, TargetOrAnyOf } from './types.js';
 
 /**
  * Timeout for element checks (1 second - fast fail)

@@ -4,23 +4,23 @@
  * These can be called directly without MCP protocol overhead
  */
 
-import type { DslStep, CollectibleDefinition, TaskPackManifest } from '@showrun/core';
+import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { CollectibleDefinition, DslStep, TaskPackManifest } from '@showrun/core';
 import {
+  ensureDir,
+  readJsonFile,
+  runTaskPack,
+  sanitizePackId,
   TaskPackLoader,
   validateJsonTaskPack,
-  runTaskPack,
-  readJsonFile,
-  writeFlowJson,
   validatePathInAllowedDir,
-  ensureDir,
+  writeFlowJson,
   writeTaskPackManifest,
-  sanitizePackId,
 } from '@showrun/core';
-import { discoverPacks } from '@showrun/mcp-server';
 import { JSONLLogger } from '@showrun/harness';
-import { randomBytes } from 'crypto';
-import { resolve } from 'path';
-import { existsSync } from 'fs';
+import { discoverPacks } from '@showrun/mcp-server';
 
 /**
  * Flow patch operation
@@ -31,7 +31,13 @@ export type FlowPatchOp =
   | { op: 'replace'; index: number; step: DslStep }
   | { op: 'delete'; index: number }
   | { op: 'update_collectibles'; collectibles: CollectibleDefinition[] }
-  | { op: 'update_inputs'; inputs: Record<string, { type: string; description?: string; required?: boolean; default?: unknown }> };
+  | {
+      op: 'update_inputs';
+      inputs: Record<
+        string,
+        { type: string; description?: string; required?: boolean; default?: unknown }
+      >;
+    };
 
 /**
  * Result of running a task pack
@@ -54,13 +60,19 @@ export interface RunPackResult {
  */
 function getStepParamsHint(stepType: string): string {
   const hints: Record<string, string> = {
-    extract_text: 'Required: target (object with kind) OR selector (string), out (string). Optional: first, trim, default.',
-    extract_attribute: 'Required: target OR selector, attribute (string), out (string). Optional: first, default.',
+    extract_text:
+      'Required: target (object with kind) OR selector (string), out (string). Optional: first, trim, default.',
+    extract_attribute:
+      'Required: target OR selector, attribute (string), out (string). Optional: first, default.',
     extract_title: 'Required: out (string).',
-    network_find: 'Required: where ({urlIncludes?, method?, ...}), saveAs (string). Optional: pick, waitForMs. Note: "url" is NOT valid in where — use "urlIncludes".',
-    network_replay: 'Required: requestId, auth ("browser_context"), out (string), response ({as: "json"|"text"}). Optional: overrides, saveAs, response.path.',
-    network_extract: 'Required: fromVar (string), as ("json"|"text"), out (string). Optional: path (JMESPath).',
-    wait_for: 'Required: at least ONE of target, selector, url, or loadState. Optional: visible, timeoutMs. Note: "waitForMs" is NOT valid.',
+    network_find:
+      'Required: where ({urlIncludes?, method?, ...}), saveAs (string). Optional: pick, waitForMs. Note: "url" is NOT valid in where — use "urlIncludes".',
+    network_replay:
+      'Required: requestId, auth ("browser_context"), out (string), response ({as: "json"|"text"}). Optional: overrides, saveAs, response.path.',
+    network_extract:
+      'Required: fromVar (string), as ("json"|"text"), out (string). Optional: path (JMESPath).',
+    wait_for:
+      'Required: at least ONE of target, selector, url, or loadState. Optional: visible, timeoutMs. Note: "waitForMs" is NOT valid.',
     set_var: 'Required: name (string), value (string|number|boolean). Arrays/objects not allowed.',
     click: 'Required: target (object with kind) OR selector. Optional: first.',
     fill: 'Required: target OR selector, value (string). Optional: first, clear.',
@@ -93,7 +105,11 @@ export class TaskPackEditorWrapper {
     });
   }
 
-  async createPack(id: string, name: string, description?: string): Promise<{
+  async createPack(
+    id: string,
+    name: string,
+    description?: string
+  ): Promise<{
     id: string;
     name: string;
     version: string;
@@ -102,7 +118,9 @@ export class TaskPackEditorWrapper {
   }> {
     // Validate pack ID format
     if (!/^[a-zA-Z0-9_-]+$/.test(id)) {
-      throw new Error('Pack ID must contain only alphanumeric characters, underscores, and hyphens');
+      throw new Error(
+        'Pack ID must contain only alphanumeric characters, underscores, and hyphens'
+      );
     }
 
     // Check if pack already exists
@@ -154,7 +172,7 @@ export class TaskPackEditorWrapper {
   async readPack(packId: string) {
     const currentPacks = await discoverPacks({ directories: this.packDirs });
     const packInfo = currentPacks.find(({ pack }) => pack.metadata.id === packId);
-    
+
     if (!packInfo) {
       throw new Error(`Pack not found: ${packId}`);
     }
@@ -236,7 +254,7 @@ export class TaskPackEditorWrapper {
   async applyFlowPatch(packId: string, patch: FlowPatchOp) {
     const currentPacks = await discoverPacks({ directories: this.packDirs });
     const packInfo = currentPacks.find(({ pack }) => pack.metadata.id === packId);
-    
+
     if (!packInfo) {
       throw new Error(`Pack not found: ${packId}`);
     }
@@ -271,45 +289,67 @@ export class TaskPackEditorWrapper {
 
     const stepError = (op: string, reason: string, hint: string) =>
       new Error(
-        `Patch "${op}" failed: ${reason}. ${hint} Received: step=${step === undefined ? 'undefined' : step === null ? 'null' : typeof step}${typeof step === 'object' && step && !Array.isArray(step) ? ', keys=' + Object.keys(step as object).join(',') : ''}.`
+        `Patch "${op}" failed: ${reason}. ${hint} Received: step=${step === undefined ? 'undefined' : step === null ? 'null' : typeof step}${typeof step === 'object' && step && !Array.isArray(step) ? `, keys=${Object.keys(step as object).join(',')}` : ''}.`
       );
 
     switch (resolvedPatch.op) {
       case 'append':
-        if (!resolvedPatch.step || typeof resolvedPatch.step !== 'object' || Array.isArray(resolvedPatch.step)) {
+        if (
+          !resolvedPatch.step ||
+          typeof resolvedPatch.step !== 'object' ||
+          Array.isArray(resolvedPatch.step)
+        ) {
           throw stepError(
             'append',
             'step is missing or not an object',
             "Send patch.step (or patch.proposal.step) with id, type, and params. Example network_replay: { id: 'network_replay_1', type: 'network_replay', params: { requestId: '{{vars.req}}', auth: 'browser_context', out: 'data', response: { as: 'json' } } }."
           );
         }
-        if (!('id' in resolvedPatch.step) || !('type' in resolvedPatch.step) || !('params' in resolvedPatch.step)) {
+        if (
+          !('id' in resolvedPatch.step) ||
+          !('type' in resolvedPatch.step) ||
+          !('params' in resolvedPatch.step)
+        ) {
           throw stepError(
             'append',
-            "step must have id, type, and params",
+            'step must have id, type, and params',
             "Example: { id: 'step_id', type: 'network_replay', params: { requestId, auth: 'browser_context', out, response: { as: 'json' } } }."
           );
         }
         newFlow.push(resolvedPatch.step as DslStep);
         break;
       case 'insert':
-        if (resolvedPatch.index === undefined || !resolvedPatch.step || typeof resolvedPatch.step !== 'object' || Array.isArray(resolvedPatch.step)) {
+        if (
+          resolvedPatch.index === undefined ||
+          !resolvedPatch.step ||
+          typeof resolvedPatch.step !== 'object' ||
+          Array.isArray(resolvedPatch.step)
+        ) {
           throw new Error(
-            "insert requires index (number) and step (object with id, type, params). You sent: " +
-            `index=${resolvedPatch.index === undefined ? 'undefined' : resolvedPatch.index}, step=${resolvedPatch.step === undefined ? 'undefined' : typeof resolvedPatch.step}.`
+            'insert requires index (number) and step (object with id, type, params). You sent: ' +
+              `index=${resolvedPatch.index === undefined ? 'undefined' : resolvedPatch.index}, step=${resolvedPatch.step === undefined ? 'undefined' : typeof resolvedPatch.step}.`
           );
         }
         if (resolvedPatch.index < 0 || resolvedPatch.index > newFlow.length) {
-          throw new Error(`insert index must be 0..${newFlow.length}. Received: ${resolvedPatch.index}`);
+          throw new Error(
+            `insert index must be 0..${newFlow.length}. Received: ${resolvedPatch.index}`
+          );
         }
         newFlow.splice(resolvedPatch.index, 0, resolvedPatch.step as DslStep);
         break;
       case 'replace':
-        if (resolvedPatch.index === undefined || !resolvedPatch.step || typeof resolvedPatch.step !== 'object' || Array.isArray(resolvedPatch.step)) {
-          throw new Error("replace requires index and step (object with id, type, params).");
+        if (
+          resolvedPatch.index === undefined ||
+          !resolvedPatch.step ||
+          typeof resolvedPatch.step !== 'object' ||
+          Array.isArray(resolvedPatch.step)
+        ) {
+          throw new Error('replace requires index and step (object with id, type, params).');
         }
         if (resolvedPatch.index < 0 || resolvedPatch.index >= newFlow.length) {
-          throw new Error(`replace index must be 0..${newFlow.length - 1}. Received: ${resolvedPatch.index}`);
+          throw new Error(
+            `replace index must be 0..${newFlow.length - 1}. Received: ${resolvedPatch.index}`
+          );
         }
         newFlow[resolvedPatch.index] = resolvedPatch.step as DslStep;
         break;
@@ -318,20 +358,30 @@ export class TaskPackEditorWrapper {
           throw new Error("delete requires index (number). Example: { op: 'delete', index: 0 }");
         }
         if (resolvedPatch.index < 0 || resolvedPatch.index >= newFlow.length) {
-          throw new Error(`delete index must be 0..${newFlow.length - 1}. Received: ${resolvedPatch.index}`);
+          throw new Error(
+            `delete index must be 0..${newFlow.length - 1}. Received: ${resolvedPatch.index}`
+          );
         }
         newFlow.splice(resolvedPatch.index, 1);
         break;
       case 'update_collectibles':
         if (!resolvedPatch.collectibles || !Array.isArray(resolvedPatch.collectibles)) {
-          throw new Error("update_collectibles requires collectibles (array of { name, type, description }).");
+          throw new Error(
+            'update_collectibles requires collectibles (array of { name, type, description }).'
+          );
         }
         newCollectibles.length = 0;
         newCollectibles.push(...resolvedPatch.collectibles);
         break;
       case 'update_inputs':
-        if (!resolvedPatch.inputs || typeof resolvedPatch.inputs !== 'object' || Array.isArray(resolvedPatch.inputs)) {
-          throw new Error("update_inputs requires inputs (object of { fieldName: { type, description?, required?, default? } }).");
+        if (
+          !resolvedPatch.inputs ||
+          typeof resolvedPatch.inputs !== 'object' ||
+          Array.isArray(resolvedPatch.inputs)
+        ) {
+          throw new Error(
+            'update_inputs requires inputs (object of { fieldName: { type, description?, required?, default? } }).'
+          );
         }
         // Merge new inputs with existing (allows adding/updating individual fields)
         newInputs = { ...newInputs, ...resolvedPatch.inputs };

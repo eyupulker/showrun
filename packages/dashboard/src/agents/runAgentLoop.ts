@@ -4,9 +4,9 @@
  * Extracted from teach.ts to be shared by both Exploration and Editor agents.
  */
 
-import type { StreamEvent, ChatWithToolsResult, ToolCall } from '../llm/provider.js';
 import type { AgentMessage } from '../contextManager.js';
-import { summarizeIfNeeded, estimateTotalTokens } from '../contextManager.js';
+import { estimateTotalTokens, summarizeIfNeeded } from '../contextManager.js';
+import type { ChatWithToolsResult, StreamEvent, ToolCall } from '../llm/provider.js';
 import type { AgentLoopOptions, AgentLoopResult } from './types.js';
 
 type ContentPart =
@@ -38,19 +38,28 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
 
   let agentMessages: AgentMsg[] = initialMessages.map((m) => {
     if (m.role === 'tool') {
-      return { role: 'tool' as const, content: m.content as string, tool_call_id: (m as any).tool_call_id };
+      return {
+        role: 'tool' as const,
+        content: m.content as string,
+        tool_call_id: (m as any).tool_call_id,
+      };
     }
     if (m.role === 'assistant') {
       return {
         role: 'assistant' as const,
         content: (m.content as string) ?? null,
-        ...(('tool_calls' in m && m.tool_calls) ? { tool_calls: m.tool_calls as ToolCall[] } : {}),
+        ...('tool_calls' in m && m.tool_calls ? { tool_calls: m.tool_calls as ToolCall[] } : {}),
       };
     }
     return { role: 'user' as const, content: m.content as string | ContentPart[] };
   });
 
-  const toolTrace: Array<{ tool: string; args: Record<string, unknown>; result: unknown; success: boolean }> = [];
+  const toolTrace: Array<{
+    tool: string;
+    args: Record<string, unknown>;
+    result: unknown;
+    success: boolean;
+  }> = [];
   let finalContent = '';
 
   const emit = (event: StreamEvent | Record<string, unknown>) => {
@@ -87,7 +96,13 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
   for (; iter < maxIterations; iter++) {
     // Check abort
     if (abortSignal?.aborted) {
-      return { finalContent, toolTrace, iterationsUsed: iter, aborted: true, messages: agentMessages as AgentMessage[] };
+      return {
+        finalContent,
+        toolTrace,
+        iterationsUsed: iter,
+        aborted: true,
+        messages: agentMessages as AgentMessage[],
+      };
     }
 
     // Check token count and summarize if needed
@@ -104,8 +119,14 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         );
         if (summaryResult.wasSummarized) {
           agentMessages = summaryResult.messages;
-          console.log(`[AgentLoop] Summarized: ${summaryResult.tokensBefore} -> ${summaryResult.tokensAfter} tokens`);
-          emit({ type: 'summarized', tokensBefore: summaryResult.tokensBefore, tokensAfter: summaryResult.tokensAfter });
+          console.log(
+            `[AgentLoop] Summarized: ${summaryResult.tokensBefore} -> ${summaryResult.tokensAfter} tokens`
+          );
+          emit({
+            type: 'summarized',
+            tokensBefore: summaryResult.tokensBefore,
+            tokensAfter: summaryResult.tokensAfter,
+          });
         }
       } catch (err) {
         console.error('[AgentLoop] Summarization failed:', err);
@@ -136,7 +157,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         emit({ type: 'tool_start', tool: tc.name, args: toolArgs });
 
         const execResult = await toolExecutor(tc.name, toolArgs);
-        let resultStr = execResult.stringForLlm;
+        const resultStr = execResult.stringForLlm;
         let resultParsed: unknown;
         try {
           resultParsed = JSON.parse(resultStr);
@@ -144,22 +165,39 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
           resultParsed = resultStr;
         }
 
-        const success = !(resultParsed && typeof resultParsed === 'object' && 'error' in resultParsed);
+        const success = !(
+          resultParsed &&
+          typeof resultParsed === 'object' &&
+          'error' in resultParsed
+        );
         toolTrace.push({ tool: tc.name, args: toolArgs, result: resultParsed, success });
 
         emit({ type: 'tool_result', tool: tc.name, args: toolArgs, result: resultParsed, success });
         onToolResult?.(tc.name, toolArgs, resultParsed, success);
 
         if (!success && onToolError) {
-          const errorStr = resultParsed && typeof resultParsed === 'object' && 'error' in resultParsed
-            ? String((resultParsed as any).error).slice(0, 5000)
-            : String(resultStr).slice(0, 5000);
-          onToolError(tc.name, toolArgs, errorStr, iter, (result.content ?? '').slice(0, 5000) || null);
+          const errorStr =
+            resultParsed && typeof resultParsed === 'object' && 'error' in resultParsed
+              ? String((resultParsed as any).error).slice(0, 5000)
+              : String(resultStr).slice(0, 5000);
+          onToolError(
+            tc.name,
+            toolArgs,
+            errorStr,
+            iter,
+            (result.content ?? '').slice(0, 5000) || null
+          );
         }
 
         // Check abort after each tool
         if (abortSignal?.aborted) {
-          return { finalContent, toolTrace, iterationsUsed: iter + 1, aborted: true, messages: agentMessages as AgentMessage[] };
+          return {
+            finalContent,
+            toolTrace,
+            iterationsUsed: iter + 1,
+            aborted: true,
+            messages: agentMessages as AgentMessage[],
+          };
         }
 
         // Track browser snapshot for screenshot injection
@@ -176,7 +214,10 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         agentMessages.push({
           role: 'user',
           content: [
-            { type: 'text', text: 'Screenshot attached for analysis. Analyze the page and answer the user.' },
+            {
+              type: 'text',
+              text: 'Screenshot attached for analysis. Analyze the page and answer the user.',
+            },
             { type: 'image_url', image_url: { url: dataUrl } },
           ],
         });

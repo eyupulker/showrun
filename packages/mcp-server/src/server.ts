@@ -1,14 +1,14 @@
+import { randomUUID } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { mkdirSync } from 'fs';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
-import * as z from 'zod';
-import type { TaskPack, InputSchema, PrimitiveType } from '@showrun/core';
+import type { InputSchema } from '@showrun/core';
 import { runTaskPack } from '@showrun/core';
 import { JSONLLogger } from '@showrun/harness';
-import type { DiscoveredPack } from './packDiscovery.js';
+import * as z from 'zod';
 import { ConcurrencyLimiter } from './concurrency.js';
+import type { DiscoveredPack } from './packDiscovery.js';
 
 /**
  * Options for MCP server
@@ -74,9 +74,7 @@ export function inputSchemaToZodSchema(inputs: InputSchema): z.ZodRawShape {
 /**
  * Creates and starts the MCP server
  */
-export async function createMCPServer(
-  options: MCPServerOptions
-): Promise<void> {
+export async function createMCPServer(options: MCPServerOptions): Promise<void> {
   const { packs, baseRunDir, concurrency, headful } = options;
 
   // Generate unique session ID for this server instance
@@ -103,7 +101,7 @@ export async function createMCPServer(
   // Register each discovered pack as a tool
   for (const { pack, toolName, path: packDir } of packs) {
     const inputSchema = inputSchemaToZodSchema(pack.inputs);
-    
+
     server.registerTool(
       toolName,
       {
@@ -114,9 +112,7 @@ export async function createMCPServer(
       async (inputs: Record<string, unknown>) => {
         const runId = randomUUID();
 
-        console.error(
-          `[MCP Server] Tool invocation: ${toolName} (runId: ${runId})`
-        );
+        console.error(`[MCP Server] Tool invocation: ${toolName} (runId: ${runId})`);
 
         // Create run directory
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -125,7 +121,7 @@ export async function createMCPServer(
         // Execute with concurrency control
         return await limiter.execute(async () => {
           const logger = new JSONLLogger(runDir);
-          
+
           try {
             const runResult = await runTaskPack(pack, inputs, {
               runDir,
@@ -137,9 +133,7 @@ export async function createMCPServer(
               cacheDir: packDir,
             });
 
-            console.error(
-              `[MCP Server] Tool completed: ${toolName} (runId: ${runId}) - Success`
-            );
+            console.error(`[MCP Server] Tool completed: ${toolName} (runId: ${runId}) - Success`);
 
             return {
               content: [
@@ -151,7 +145,7 @@ export async function createMCPServer(
             };
           } catch (error) {
             const errorMessage = error instanceof Error ? error.message : String(error);
-            
+
             console.error(
               `[MCP Server] Tool failed: ${toolName} (runId: ${runId}) - ${errorMessage}`
             );
@@ -170,7 +164,9 @@ export async function createMCPServer(
       }
     );
 
-    console.error(`[MCP Server] Registered tool: ${toolName} (${pack.metadata.id} v${pack.metadata.version})`);
+    console.error(
+      `[MCP Server] Registered tool: ${toolName} (${pack.metadata.id} v${pack.metadata.version})`
+    );
   }
 
   // Start server with stdio transport

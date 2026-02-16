@@ -2,9 +2,9 @@
 /**
  * Copies dashboard UI assets to the dist folder for npm publishing
  */
-import { cpSync, mkdirSync, existsSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');

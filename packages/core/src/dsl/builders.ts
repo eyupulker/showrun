@@ -1,24 +1,24 @@
 import type {
-  NavigateStep,
-  ExtractTitleStep,
-  ExtractTextStep,
-  ExtractAttributeStep,
-  SleepStep,
-  WaitForStep,
-  ClickStep,
-  FillStep,
   AssertStep,
-  SetVarStep,
-  SelectOptionStep,
-  PressKeyStep,
-  UploadFileStep,
+  ClickStep,
+  ExtractAttributeStep,
+  ExtractTextStep,
+  ExtractTitleStep,
+  FillStep,
   FrameStep,
+  NavigateStep,
   NewTabStep,
+  PlaywrightRole,
+  PressKeyStep,
+  SelectOptionStep,
+  SetVarStep,
+  SkipCondition,
+  SleepStep,
   SwitchTabStep,
   Target,
   TargetOrAnyOf,
-  PlaywrightRole,
-  SkipCondition,
+  UploadFileStep,
+  WaitForStep,
 } from './types.js';
 
 /**
@@ -491,7 +491,11 @@ export function selectOption(
   params: {
     selector?: string; // Legacy support
     target?: TargetOrAnyOf; // New human-stable selectors
-    value: string | { label: string } | { index: number } | Array<string | { label: string } | { index: number }>;
+    value:
+      | string
+      | { label: string }
+      | { index: number }
+      | Array<string | { label: string } | { index: number }>;
     first?: boolean;
     label?: string;
     timeoutMs?: number;

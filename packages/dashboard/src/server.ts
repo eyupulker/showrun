@@ -1,11 +1,11 @@
-import express, { type Request, type Response } from 'express';
-import { createServer } from 'http';
-import { Server as SocketIOServer } from 'socket.io';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import cors from 'cors';
-import { randomBytes } from 'crypto';
-import { resolve, dirname } from 'path';
-import { mkdirSync, existsSync, readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
+import express, { type Request, type Response } from 'express';
+import { Server as SocketIOServer } from 'socket.io';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -15,8 +15,8 @@ const __dirname = dirname(__filename);
  */
 function findUiPath(): string {
   const candidates = [
-    resolve(__dirname, 'ui'),           // Same directory (bundled or dev)
-    resolve(__dirname, '../dist/ui'),   // Parent dist (when running from src)
+    resolve(__dirname, 'ui'), // Same directory (bundled or dev)
+    resolve(__dirname, '../dist/ui'), // Parent dist (when running from src)
   ];
   for (const candidate of candidates) {
     if (existsSync(resolve(candidate, 'index.html'))) {
@@ -27,23 +27,23 @@ function findUiPath(): string {
   return candidates[0];
 }
 
-import { discoverPacks, ConcurrencyLimiter } from '@showrun/mcp-server';
-import { ensureDir, resolveFilePath, ensureSystemPromptInConfigDir } from '@showrun/core';
-import { RunManager } from './runManager.js';
+import { ensureDir, ensureSystemPromptInConfigDir, resolveFilePath } from '@showrun/core';
+import { ConcurrencyLimiter, discoverPacks } from '@showrun/mcp-server';
 import { initDatabase } from './db.js';
 import { createLlmProvider } from './llm/index.js';
 import { TaskPackEditorWrapper } from './mcpWrappers.js';
-import type { DashboardContext, PendingSecretsRequest } from './types/context.js';
 import {
-  createConfigRouter,
-  createRunsRouter,
-  createConversationsRouter,
-  createPacksRouter,
-  createSecretsRouter,
-  createMcpRouter,
   createBrowserRouter,
+  createConfigRouter,
+  createConversationsRouter,
+  createMcpRouter,
+  createPacksRouter,
+  createRunsRouter,
+  createSecretsRouter,
   createTeachRouter,
 } from './routes/index.js';
+import { RunManager } from './runManager.js';
+import type { DashboardContext, PendingSecretsRequest } from './types/context.js';
 
 export interface DashboardOptions {
   packs: string[];
@@ -102,7 +102,9 @@ function loadSystemPrompt(): string {
   }
 
   console.error('[Dashboard] ERROR: No system prompt found.');
-  console.error('[Dashboard] Run `showrun config init` to set up configuration, or create EXPLORATION_AGENT_SYSTEM_PROMPT.md in the project root.');
+  console.error(
+    '[Dashboard] Run `showrun config init` to set up configuration, or create EXPLORATION_AGENT_SYSTEM_PROMPT.md in the project root.'
+  );
   return 'System prompt not configured. Run `showrun config init` or create EXPLORATION_AGENT_SYSTEM_PROMPT.md in the project root.';
 }
 
@@ -110,17 +112,30 @@ function loadSystemPrompt(): string {
  * Starts the dashboard server
  */
 export async function startDashboard(options: DashboardOptions): Promise<void> {
-  const { packs: packDirs, port, host = '127.0.0.1', headful, baseRunDir, workspaceDir, dataDir = './data' } = options;
+  const {
+    packs: packDirs,
+    port,
+    host = '127.0.0.1',
+    headful,
+    baseRunDir,
+    workspaceDir,
+    dataDir = './data',
+  } = options;
   // --debug flag takes priority, then SHOWRUN_DEBUG env/config
   const debug = options.debug || process.env.SHOWRUN_DEBUG === 'true';
   // --transcript-logging flag takes priority, then SHOWRUN_TRANSCRIPT_LOGGING env/config
-  const transcriptLogging = options.transcriptLogging || process.env.SHOWRUN_TRANSCRIPT_LOGGING === 'true';
+  const transcriptLogging =
+    options.transcriptLogging || process.env.SHOWRUN_TRANSCRIPT_LOGGING === 'true';
 
   if (debug) {
-    console.log('[Dashboard] Debug mode enabled — failed tool calls will be logged to data/failed-tool-calls.jsonl');
+    console.log(
+      '[Dashboard] Debug mode enabled — failed tool calls will be logged to data/failed-tool-calls.jsonl'
+    );
   }
   if (transcriptLogging) {
-    console.log('[Dashboard] Transcript logging enabled — full agent conversations will be saved to the database');
+    console.log(
+      '[Dashboard] Transcript logging enabled — full agent conversations will be saved to the database'
+    );
   }
 
   // Initialize database
@@ -135,8 +150,8 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   const resolvedWorkspaceDir = workspaceDir
     ? resolve(workspaceDir)
     : packDirs.length > 0
-    ? resolve(packDirs[0])
-    : null;
+      ? resolve(packDirs[0])
+      : null;
 
   if (resolvedWorkspaceDir) {
     ensureDir(resolvedWorkspaceDir);
@@ -187,8 +202,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   const basePrompt = loadSystemPrompt();
 
   // Action-first addon: agent MUST use tools, enforces two-agent architecture rules
-  const EXPLORATION_AGENT_ACTION_RULES =
-    `\n\nEXPLORATION AGENT RULES (MANDATORY):
+  const EXPLORATION_AGENT_ACTION_RULES = `\n\nEXPLORATION AGENT RULES (MANDATORY):
 - You MUST use tools. Browser and Network tools are ALWAYS available. Tool calls are expected, not optional.
 - If packId is provided: FIRST call editor_read_pack to see the current flow state before doing anything else.
 - You are the EXPLORATION AGENT. You CANNOT build flows directly. You explore websites and delegate flow building to the Editor Agent via agent_build_flow.

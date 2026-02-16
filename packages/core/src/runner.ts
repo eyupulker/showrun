@@ -1,18 +1,19 @@
-import { type Browser, type Page } from 'playwright';
-import { mkdirSync, writeFileSync } from 'fs';
-import { join } from 'path';
-import type { TaskPack, RunResult, RunContext } from './types.js';
-import { InputValidator, RunContextFactory, runFlow, attachNetworkCapture, TaskPackLoader } from './index.js';
-import type { Logger } from './types.js';
-import { launchBrowser, type BrowserSession } from './browserLauncher.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import type { Browser, Page } from 'playwright';
+import { type BrowserSession, launchBrowser } from './browserLauncher.js';
 import { isFlowHttpCompatible } from './httpReplay.js';
-import type { SnapshotFile, RequestSnapshot } from './requestSnapshot.js';
 import {
-  writeSnapshots,
-  extractTopLevelKeys,
-  detectSensitiveHeaders,
-} from './requestSnapshot.js';
+  attachNetworkCapture,
+  InputValidator,
+  RunContextFactory,
+  runFlow,
+  TaskPackLoader,
+} from './index.js';
 import type { NetworkCaptureApi } from './networkCapture.js';
+import type { RequestSnapshot, SnapshotFile } from './requestSnapshot.js';
+import { detectSensitiveHeaders, extractTopLevelKeys, writeSnapshots } from './requestSnapshot.js';
+import type { Logger, RunContext, RunResult, TaskPack } from './types.js';
 
 /**
  * Options for running a task pack
@@ -79,7 +80,13 @@ export async function runTaskPack(
   inputs: Record<string, unknown>,
   options: RunTaskPackOptions
 ): Promise<RunTaskPackResult> {
-  const { runDir, logger, headless: requestedHeadless = true, packPath, secrets: providedSecrets } = options;
+  const {
+    runDir,
+    logger,
+    headless: requestedHeadless = true,
+    packPath,
+    secrets: providedSecrets,
+  } = options;
   const artifactsDir = join(runDir, 'artifacts');
   const eventsPath = join(runDir, 'events.jsonl');
 
@@ -95,7 +102,7 @@ export async function runTaskPack(
   if (!requestedHeadless && !hasDisplay) {
     console.error(
       '[Warning] Headful mode requested but no DISPLAY environment variable found. ' +
-      'Falling back to headless mode. Set DISPLAY or use xvfb-run to enable headful mode.'
+        'Falling back to headless mode. Set DISPLAY or use xvfb-run to enable headful mode.'
     );
   }
 
@@ -127,7 +134,7 @@ export async function runTaskPack(
         snapshots!,
         secrets,
         logger,
-        options,
+        options
       );
 
       const durationMs = Date.now() - startTime;
@@ -173,22 +180,18 @@ export async function runTaskPack(
     // Create run context
     // Note: browserSession.browser may be null for persistent contexts or Camoufox
     // We pass a proxy that satisfies the Browser type for the RunContext
-    const browserProxy = browserSession.browser ?? {
-      close: async () => browserSession?.close(),
-      contexts: () => [browserSession?.context],
-      isConnected: () => true,
-      newContext: async () => browserSession?.context,
-      newPage: async () => browserSession?.page,
-      version: () => 'unknown',
-    } as unknown as Browser;
+    const browserProxy =
+      browserSession.browser ??
+      ({
+        close: async () => browserSession?.close(),
+        contexts: () => [browserSession?.context],
+        isConnected: () => true,
+        newContext: async () => browserSession?.context,
+        newPage: async () => browserSession?.page,
+        version: () => 'unknown',
+      } as unknown as Browser);
 
-    runContext = RunContextFactory.create(
-      page,
-      browserProxy,
-      logger,
-      artifactsDir,
-      networkCapture
-    );
+    runContext = RunContextFactory.create(page, browserProxy, logger, artifactsDir, networkCapture);
 
     // Execute declarative DSL flow
     const flowResult = await runFlow(runContext, taskPack.flow, {
@@ -202,9 +205,7 @@ export async function runTaskPack(
 
     // Filter collectibles to only include those defined in the pack
     // This prevents intermediate variables from polluting the output
-    const definedCollectibleNames = new Set(
-      (taskPack.collectibles || []).map(c => c.name)
-    );
+    const definedCollectibleNames = new Set((taskPack.collectibles || []).map((c) => c.name));
     const filteredCollectibles: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(flowResult.collectibles)) {
       if (definedCollectibleNames.has(key)) {
@@ -232,7 +233,9 @@ export async function runTaskPack(
       try {
         captureSnapshots(taskPack, flowResult, networkCapture, packPath);
       } catch (snapErr) {
-        console.warn(`[runner] Failed to capture snapshots: ${snapErr instanceof Error ? snapErr.message : String(snapErr)}`);
+        console.warn(
+          `[runner] Failed to capture snapshots: ${snapErr instanceof Error ? snapErr.message : String(snapErr)}`
+        );
       }
     }
 
@@ -329,9 +332,11 @@ async function runHttpOnly(
   snapshots: SnapshotFile,
   secrets: Record<string, string>,
   logger: Logger,
-  options: RunTaskPackOptions,
+  options: RunTaskPackOptions
 ): Promise<RunResult> {
-  console.log(`[runner] Running in HTTP-only mode (${Object.keys(snapshots.snapshots).length} snapshots)`);
+  console.log(
+    `[runner] Running in HTTP-only mode (${Object.keys(snapshots.snapshots).length} snapshots)`
+  );
 
   // Build a minimal RunContext that doesn't require a browser.
   // In HTTP mode the interpreter skips all DOM steps, so page/browser are never accessed.
@@ -365,9 +370,7 @@ async function runHttpOnly(
   // the error, which the caller catches and falls back to browser mode.
 
   // Filter collectibles to only include those defined in the pack
-  const definedCollectibleNames = new Set(
-    (taskPack.collectibles || []).map((c) => c.name),
-  );
+  const definedCollectibleNames = new Set((taskPack.collectibles || []).map((c) => c.name));
   const filteredCollectibles: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(flowResult.collectibles)) {
     if (definedCollectibleNames.has(key)) {
@@ -404,7 +407,7 @@ function captureSnapshots(
   taskPack: TaskPack,
   flowResult: import('./dsl/types.js').RunFlowResult,
   networkCapture: NetworkCaptureApi,
-  packPath: string,
+  packPath: string
 ): void {
   const replaySteps = taskPack.flow.filter((s) => s.type === 'network_replay');
   if (replaySteps.length === 0) return;
@@ -452,7 +455,7 @@ function captureSnapshots(
             body: step.params.overrides.body,
             setQuery: step.params.overrides.setQuery
               ? Object.fromEntries(
-                  Object.entries(step.params.overrides.setQuery).map(([k, v]) => [k, String(v)]),
+                  Object.entries(step.params.overrides.setQuery).map(([k, v]) => [k, String(v)])
                 )
               : undefined,
             setHeaders: step.params.overrides.setHeaders,
@@ -484,7 +487,7 @@ function captureSnapshots(
     };
     writeSnapshots(packPath, merged);
     console.log(
-      `[runner] Captured ${Object.keys(newSnapshots).length} snapshot(s) → snapshots.json`,
+      `[runner] Captured ${Object.keys(newSnapshots).length} snapshot(s) → snapshots.json`
     );
   }
 }

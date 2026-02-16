@@ -1,13 +1,13 @@
-import { Router, type Request, type Response } from 'express';
-import type { DashboardContext } from '../types/context.js';
-import { createTokenChecker } from '../helpers/auth.js';
 import { validatePathInAllowedDir } from '@showrun/core';
+import { type Request, type Response, Router } from 'express';
+import { createTokenChecker } from '../helpers/auth.js';
 import {
+  deleteSecretValue,
   getSecretNamesWithValues,
   setSecretValue,
-  deleteSecretValue,
   updateSecretDefinitions,
 } from '../secretsUtils.js';
+import type { DashboardContext } from '../types/context.js';
 
 export function createSecretsRouter(ctx: DashboardContext): Router {
   const router = Router();

@@ -3,7 +3,7 @@
  * Converts Target types to Playwright Locators
  */
 
-import type { Locator, Page, Frame } from 'playwright';
+import type { Frame, Locator, Page } from 'playwright';
 import type { Target, TargetOrAnyOf } from './types.js';
 
 /**
@@ -28,10 +28,7 @@ function isFrame(source: LocatorSource): source is Frame {
 /**
  * Resolves a single Target to a Playwright Locator
  */
-export function resolveTarget(
-  source: LocatorSource,
-  target: Target
-): Locator {
+export function resolveTarget(source: LocatorSource, target: Target): Locator {
   // Check if it's a Page or Frame (both have similar locator methods)
   if (isPage(source) || isFrame(source)) {
     switch (target.kind) {
@@ -52,9 +49,10 @@ export function resolveTarget(
         return source.getByAltText(target.text, { exact: target.exact ?? false });
       case 'testId':
         return source.getByTestId(target.id);
-      default:
+      default: {
         const _exhaustive: never = target;
         throw new Error(`Unknown target kind: ${(_exhaustive as Target).kind}`);
+      }
     }
   } else {
     // It's a Locator
@@ -77,9 +75,10 @@ export function resolveTarget(
         return locator.getByAltText(target.text, { exact: target.exact ?? false });
       case 'testId':
         return locator.getByTestId(target.id);
-      default:
+      default: {
         const _exhaustive: never = target;
         throw new Error(`Unknown target kind: ${(_exhaustive as Target).kind}`);
+      }
     }
   }
 }

@@ -6,9 +6,9 @@
  */
 
 import { EDITOR_AGENT_TOOLS } from '../agentTools.js';
+import type { AgentMessage } from '../contextManager.js';
 import { runAgentLoop } from './runAgentLoop.js';
 import type { EditorAgentOptions, EditorAgentResult } from './types.js';
-import type { AgentMessage } from '../contextManager.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Editor Agent System Prompt (embedded constant — not user-customizable)
@@ -195,9 +195,7 @@ export async function runEditorAgent(options: EditorAgentOptions): Promise<Edito
     '\n\nStart by reading the current pack state with `editor_read_pack`, then build the flow step by step.',
   ].join('');
 
-  const initialMessages: AgentMessage[] = [
-    { role: 'user', content: userMessage },
-  ];
+  const initialMessages: AgentMessage[] = [{ role: 'user', content: userMessage }];
 
   // Track flow changes for the result
   let stepsCreated = 0;
@@ -214,7 +212,9 @@ export async function runEditorAgent(options: EditorAgentOptions): Promise<Edito
     // Only allow editor tools
     if (!name.startsWith('editor_')) {
       return {
-        stringForLlm: JSON.stringify({ error: `Tool "${name}" is not available to the Editor Agent. Only editor_* tools are allowed.` }),
+        stringForLlm: JSON.stringify({
+          error: `Tool "${name}" is not available to the Editor Agent. Only editor_* tools are allowed.`,
+        }),
       };
     }
 
@@ -256,7 +256,7 @@ export async function runEditorAgent(options: EditorAgentOptions): Promise<Edito
     toolExecutor: trackingToolExecutor,
     maxIterations: MAX_EDITOR_ITERATIONS,
     onStreamEvent: taggedEmit,
-    onToolResult: (toolName, args, resultParsed, success) => {
+    onToolResult: (toolName, _args, _resultParsed, success) => {
       // Notify UI of flow updates
       if (toolName === 'editor_apply_flow_patch' && success && onFlowUpdated) {
         // The teach.ts handler will read the pack and emit flow_updated
@@ -271,11 +271,14 @@ export async function runEditorAgent(options: EditorAgentOptions): Promise<Edito
   });
 
   // Build result
-  const success = loopResult.toolTrace.some(t => t.tool === 'editor_run_pack' && t.success) || stepsCreated > 0;
+  const success =
+    loopResult.toolTrace.some((t) => t.tool === 'editor_run_pack' && t.success) || stepsCreated > 0;
 
   return {
     success: success && !loopResult.aborted,
-    summary: loopResult.finalContent || `Editor Agent completed. Steps created: ${stepsCreated}, Collectibles: ${collectiblesCount}.`,
+    summary:
+      loopResult.finalContent ||
+      `Editor Agent completed. Steps created: ${stepsCreated}, Collectibles: ${collectiblesCount}.`,
     stepsCreated,
     collectiblesCount,
     testResult: lastTestResult,

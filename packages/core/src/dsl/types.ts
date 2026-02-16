@@ -1,6 +1,6 @@
 /**
  * DSL Step Types
- * 
+ *
  * Defines the structure for declarative browser automation steps.
  * All steps are plain objects (JSON-serializable) with no functions.
  */
@@ -480,7 +480,11 @@ export interface SelectOptionStep extends BaseDslStep {
      * - { index: number }: select by index (0-based)
      * - Array of any of the above for multi-select
      */
-    value: string | { label: string } | { index: number } | Array<string | { label: string } | { index: number }>;
+    value:
+      | string
+      | { label: string }
+      | { index: number }
+      | Array<string | { label: string } | { index: number }>;
     /**
      * If true, only target first match (default: true)
      */

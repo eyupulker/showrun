@@ -1,8 +1,14 @@
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
-import type { TaskPack, TaskPackManifest, InputSchema, CollectibleDefinition, SecretDefinition } from './types.js';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { DslStep } from './dsl/types.js';
 import { loadSnapshots } from './requestSnapshot.js';
+import type {
+  CollectibleDefinition,
+  InputSchema,
+  SecretDefinition,
+  TaskPack,
+  TaskPackManifest,
+} from './types.js';
 
 /**
  * Structure of the .secrets.json file
@@ -35,7 +41,9 @@ export class TaskPackLoader {
       const content = readFileSync(manifestPath, 'utf-8');
       manifest = JSON.parse(content);
     } catch (error) {
-      throw new Error(`Failed to parse taskpack.json: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to parse taskpack.json: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
 
     // Validate required fields
@@ -45,7 +53,9 @@ export class TaskPackLoader {
 
     // Only json-dsl format is supported
     if (manifest.kind !== 'json-dsl') {
-      throw new Error('taskpack.json must have "kind": "json-dsl". Other formats are no longer supported.');
+      throw new Error(
+        'taskpack.json must have "kind": "json-dsl". Other formats are no longer supported.'
+      );
     }
 
     return manifest;
@@ -55,7 +65,7 @@ export class TaskPackLoader {
    * Load task pack from directory (json-dsl format only)
    */
   static async loadTaskPack(packPath: string): Promise<TaskPack> {
-    const manifest = this.loadManifest(packPath);
+    const manifest = TaskPackLoader.loadManifest(packPath);
 
     const flowPath = join(packPath, 'flow.json');
     if (!existsSync(flowPath)) {
@@ -72,7 +82,9 @@ export class TaskPackLoader {
       const content = readFileSync(flowPath, 'utf-8');
       flowData = JSON.parse(content);
     } catch (error) {
-      throw new Error(`Failed to parse flow.json: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to parse flow.json: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
 
     if (!flowData.flow || !Array.isArray(flowData.flow)) {
@@ -115,13 +127,17 @@ export class TaskPackLoader {
 
       // Validate version
       if (secretsFile.version !== 1) {
-        console.warn(`[TaskPackLoader] Unsupported secrets file version: ${secretsFile.version}, expected 1`);
+        console.warn(
+          `[TaskPackLoader] Unsupported secrets file version: ${secretsFile.version}, expected 1`
+        );
         return {};
       }
 
       return secretsFile.secrets || {};
     } catch (error) {
-      console.warn(`[TaskPackLoader] Failed to load secrets from ${secretsPath}: ${error instanceof Error ? error.message : String(error)}`);
+      console.warn(
+        `[TaskPackLoader] Failed to load secrets from ${secretsPath}: ${error instanceof Error ? error.message : String(error)}`
+      );
       return {};
     }
   }
@@ -131,7 +147,7 @@ export class TaskPackLoader {
    */
   static getSecretDefinitions(packPath: string): SecretDefinition[] {
     try {
-      const manifest = this.loadManifest(packPath);
+      const manifest = TaskPackLoader.loadManifest(packPath);
       return manifest.secrets || [];
     } catch {
       return [];

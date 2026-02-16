@@ -2,8 +2,8 @@
  * showrun run <pack> - Run a task pack
  */
 
-import { resolve } from 'path';
-import { existsSync } from 'fs';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { runPack } from '@showrun/harness';
 
 const EXIT_SUCCESS = 0;
@@ -51,7 +51,9 @@ export function parseRunArgs(args: string[]): RunCommandOptions {
     try {
       inputs = JSON.parse(inputsJson);
     } catch (error) {
-      console.error(`Error: Invalid JSON in --inputs: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(
+        `Error: Invalid JSON in --inputs: ${error instanceof Error ? error.message : String(error)}`
+      );
       process.exit(EXIT_VALIDATION_ERROR);
     }
   }
@@ -82,7 +84,10 @@ export async function cmdRun(args: string[]): Promise<void> {
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    if (errorMessage.includes('validation failed') || errorMessage.includes('Missing required field')) {
+    if (
+      errorMessage.includes('validation failed') ||
+      errorMessage.includes('Missing required field')
+    ) {
       console.error(`Validation Error: ${errorMessage}`);
       process.exit(EXIT_VALIDATION_ERROR);
     }

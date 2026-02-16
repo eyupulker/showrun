@@ -9,11 +9,11 @@
  *   Windows:     %APPDATA%\showrun\        → ancestor .showrun\ → cwd\.showrun\
  */
 
-import { existsSync, readFileSync, copyFileSync } from 'fs';
-import { resolve, join, parse as parsePath } from 'path';
-import { platform, homedir } from 'os';
-import { cwd } from 'process';
-import { ensureDir, readJsonFile, atomicWrite } from './packUtils.js';
+import { copyFileSync, existsSync } from 'node:fs';
+import { homedir, platform } from 'node:os';
+import { join, parse as parsePath, resolve } from 'node:path';
+import { cwd } from 'node:process';
+import { ensureDir, readJsonFile } from './packUtils.js';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -58,9 +58,12 @@ export interface ResolvedConfigPaths {
  */
 export function deepMerge<T>(base: T, override: T): T {
   if (
-    typeof base !== 'object' || base === null ||
-    typeof override !== 'object' || override === null ||
-    Array.isArray(base) || Array.isArray(override)
+    typeof base !== 'object' ||
+    base === null ||
+    typeof override !== 'object' ||
+    override === null ||
+    Array.isArray(base) ||
+    Array.isArray(override)
   ) {
     return override;
   }
@@ -73,8 +76,12 @@ export function deepMerge<T>(base: T, override: T): T {
 
     const baseVal = result[key];
     if (
-      typeof baseVal === 'object' && baseVal !== null && !Array.isArray(baseVal) &&
-      typeof overrideVal === 'object' && overrideVal !== null && !Array.isArray(overrideVal)
+      typeof baseVal === 'object' &&
+      baseVal !== null &&
+      !Array.isArray(baseVal) &&
+      typeof overrideVal === 'object' &&
+      overrideVal !== null &&
+      !Array.isArray(overrideVal)
     ) {
       result[key] = deepMerge(baseVal, overrideVal);
     } else {
@@ -162,7 +169,9 @@ export function loadConfig(): ResolvedConfigPaths {
         merged = deepMerge(merged, fileConfig);
         loadedFiles.push(configPath);
       } catch (err) {
-        console.warn(`[Config] Failed to load ${configPath}: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(
+          `[Config] Failed to load ${configPath}: ${err instanceof Error ? err.message : String(err)}`
+        );
       }
     }
   }

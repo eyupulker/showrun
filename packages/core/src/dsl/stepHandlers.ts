@@ -1,35 +1,39 @@
-import type { Page, BrowserContext, Frame } from 'playwright';
+import { type JSONValue, search as jmesSearch } from '@jmespath-community/jmespath';
+import type { BrowserContext, Frame, Page } from 'playwright';
+import type { AuthFailureMonitor } from '../authResilience.js';
+import { replayFromSnapshot } from '../httpReplay.js';
 import type {
-  DslStep,
-  NavigateStep,
-  ExtractTitleStep,
-  ExtractTextStep,
-  ExtractAttributeStep,
-  SleepStep,
-  WaitForStep,
-  ClickStep,
-  FillStep,
+  NetworkCaptureApi,
+  NetworkFindWhere,
+  NetworkReplayOverrides,
+} from '../networkCapture.js';
+import type { SnapshotFile } from '../requestSnapshot.js';
+import { validateResponse } from '../requestSnapshot.js';
+import { resolveTargetWithFallback, selectorToTarget } from './target.js';
+import { resolveTemplate } from './templating.js';
+import type {
   AssertStep,
-  SetVarStep,
+  ClickStep,
+  DslStep,
+  ExtractAttributeStep,
+  ExtractTextStep,
+  ExtractTitleStep,
+  FillStep,
+  FrameStep,
+  NavigateStep,
+  NetworkExtractStep,
   NetworkFindStep,
   NetworkReplayStep,
-  NetworkExtractStep,
-  SelectOptionStep,
-  PressKeyStep,
-  UploadFileStep,
-  FrameStep,
   NewTabStep,
+  PressKeyStep,
+  SelectOptionStep,
+  SetVarStep,
+  SleepStep,
   SwitchTabStep,
+  UploadFileStep,
   VariableContext,
+  WaitForStep,
 } from './types.js';
-import type { NetworkCaptureApi, NetworkFindWhere, NetworkReplayOverrides } from '../networkCapture.js';
-import { resolveTemplate } from './templating.js';
-import { resolveTargetWithFallback, selectorToTarget } from './target.js';
-import type { AuthFailureMonitor } from '../authResilience.js';
-import { search as jmesSearch, type JSONValue } from '@jmespath-community/jmespath';
-import type { SnapshotFile } from '../requestSnapshot.js';
-import { replayFromSnapshot } from '../httpReplay.js';
-import { validateResponse } from '../requestSnapshot.js';
 
 /**
  * Step execution context
@@ -64,10 +68,7 @@ export interface StepContext {
 /**
  * Executes a navigate step
  */
-async function executeNavigate(
-  ctx: StepContext,
-  step: NavigateStep
-): Promise<void> {
+async function executeNavigate(ctx: StepContext, step: NavigateStep): Promise<void> {
   try {
     await ctx.page.goto(step.params.url, {
       waitUntil: step.params.waitUntil ?? 'networkidle',
@@ -86,10 +87,7 @@ async function executeNavigate(
 /**
  * Executes an extract_title step
  */
-async function executeExtractTitle(
-  ctx: StepContext,
-  step: ExtractTitleStep
-): Promise<void> {
+async function executeExtractTitle(ctx: StepContext, step: ExtractTitleStep): Promise<void> {
   const title = await ctx.page.title();
   ctx.collectibles[step.params.out] = title;
 }
@@ -97,13 +95,11 @@ async function executeExtractTitle(
 /**
  * Executes an extract_text step
  */
-async function executeExtractText(
-  ctx: StepContext,
-  step: ExtractTextStep
-): Promise<void> {
+async function executeExtractText(ctx: StepContext, step: ExtractTextStep): Promise<void> {
   // Support both legacy selector and new target
-  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
-  
+  const targetOrAnyOf =
+    step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+
   if (!targetOrAnyOf) {
     throw new Error('ExtractText step must have either "target" or "selector"');
   }
@@ -117,7 +113,9 @@ async function executeExtractText(
 
   // Log matched target for diagnostics (if hint provided, include it)
   if (step.params.hint) {
-    console.log(`[ExtractText:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    console.log(
+      `[ExtractText:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`
+    );
   }
 
   const count = matchedCount;
@@ -131,13 +129,14 @@ async function executeExtractText(
   if (step.params.first === true) {
     // Get first element only (explicit first: true)
     const text = await locator.first().textContent();
-    ctx.collectibles[step.params.out] = step.params.trim ?? true ? text?.trim() ?? '' : text ?? '';
+    ctx.collectibles[step.params.out] =
+      (step.params.trim ?? true) ? (text?.trim() ?? '') : (text ?? '');
   } else {
     // Get all elements (default behavior for scraping)
     const texts: string[] = [];
     for (let i = 0; i < count; i++) {
       const text = await locator.nth(i).textContent();
-      const processed = step.params.trim ?? true ? text?.trim() ?? '' : text ?? '';
+      const processed = (step.params.trim ?? true) ? (text?.trim() ?? '') : (text ?? '');
       texts.push(processed);
     }
     ctx.collectibles[step.params.out] = texts;
@@ -147,24 +146,19 @@ async function executeExtractText(
 /**
  * Executes a sleep step
  */
-async function executeSleep(
-  ctx: StepContext,
-  step: SleepStep
-): Promise<void> {
+async function executeSleep(_ctx: StepContext, step: SleepStep): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, step.params.durationMs));
 }
 
 /**
  * Executes a wait_for step
  */
-async function executeWaitFor(
-  ctx: StepContext,
-  step: WaitForStep
-): Promise<void> {
+async function executeWaitFor(ctx: StepContext, step: WaitForStep): Promise<void> {
   const timeout = step.timeoutMs ?? step.params.timeoutMs ?? 30000;
 
   // Support both legacy selector and new target
-  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+  const targetOrAnyOf =
+    step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
 
   if (targetOrAnyOf) {
     const { locator, matchedTarget, matchedCount } = await resolveTargetWithFallback(
@@ -175,7 +169,9 @@ async function executeWaitFor(
 
     // Log matched target for diagnostics
     if (step.params.hint) {
-      console.log(`[WaitFor:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+      console.log(
+        `[WaitFor:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`
+      );
     }
 
     if (step.params.visible ?? true) {
@@ -210,13 +206,11 @@ async function executeWaitFor(
 /**
  * Executes a click step
  */
-async function executeClick(
-  ctx: StepContext,
-  step: ClickStep
-): Promise<void> {
+async function executeClick(ctx: StepContext, step: ClickStep): Promise<void> {
   // Support both legacy selector and new target
-  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
-  
+  const targetOrAnyOf =
+    step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+
   if (!targetOrAnyOf) {
     throw new Error('Click step must have either "target" or "selector"');
   }
@@ -230,10 +224,12 @@ async function executeClick(
 
   // Log matched target for diagnostics
   if (step.params.hint) {
-    console.log(`[Click:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    console.log(
+      `[Click:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`
+    );
   }
 
-  const target = step.params.first ?? true ? locator.first() : locator;
+  const target = (step.params.first ?? true) ? locator.first() : locator;
 
   if (step.params.waitForVisible ?? true) {
     await target.waitFor({ state: 'visible' });
@@ -245,13 +241,11 @@ async function executeClick(
 /**
  * Executes a fill step
  */
-async function executeFill(
-  ctx: StepContext,
-  step: FillStep
-): Promise<void> {
+async function executeFill(ctx: StepContext, step: FillStep): Promise<void> {
   // Support both legacy selector and new target
-  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
-  
+  const targetOrAnyOf =
+    step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+
   if (!targetOrAnyOf) {
     throw new Error('Fill step must have either "target" or "selector"');
   }
@@ -265,10 +259,12 @@ async function executeFill(
 
   // Log matched target for diagnostics
   if (step.params.hint) {
-    console.log(`[Fill:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    console.log(
+      `[Fill:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`
+    );
   }
 
-  const target = step.params.first ?? true ? locator.first() : locator;
+  const target = (step.params.first ?? true) ? locator.first() : locator;
 
   await target.waitFor({ state: 'visible' });
 
@@ -287,8 +283,9 @@ async function executeExtractAttribute(
   step: ExtractAttributeStep
 ): Promise<void> {
   // Support both legacy selector and new target
-  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
-  
+  const targetOrAnyOf =
+    step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+
   if (!targetOrAnyOf) {
     throw new Error('ExtractAttribute step must have either "target" or "selector"');
   }
@@ -302,7 +299,9 @@ async function executeExtractAttribute(
 
   // Log matched target for diagnostics
   if (step.params.hint) {
-    console.log(`[ExtractAttribute:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    console.log(
+      `[ExtractAttribute:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`
+    );
   }
 
   const count = matchedCount;
@@ -330,14 +329,12 @@ async function executeExtractAttribute(
 /**
  * Executes an assert step
  */
-async function executeAssert(
-  ctx: StepContext,
-  step: AssertStep
-): Promise<void> {
+async function executeAssert(ctx: StepContext, step: AssertStep): Promise<void> {
   const errors: string[] = [];
 
   // Support both legacy selector and new target
-  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+  const targetOrAnyOf =
+    step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
 
   if (targetOrAnyOf) {
     const { locator, matchedTarget, matchedCount } = await resolveTargetWithFallback(
@@ -348,7 +345,9 @@ async function executeAssert(
 
     // Log matched target for diagnostics
     if (step.params.hint) {
-      console.log(`[Assert:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+      console.log(
+        `[Assert:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`
+      );
     }
 
     if (matchedCount === 0) {
@@ -389,13 +388,10 @@ async function executeAssert(
  * Executes a set_var step
  * Note: Value may contain templates that need to be resolved
  */
-async function executeSetVar(
-  ctx: StepContext,
-  step: SetVarStep
-): Promise<void> {
+async function executeSetVar(ctx: StepContext, step: SetVarStep): Promise<void> {
   // If value is a string, it might contain templates - resolve them
   let resolvedValue: string | number | boolean = step.params.value;
-  
+
   if (typeof resolvedValue === 'string') {
     // Resolve templates in the value
     const varContext: VariableContext = {
@@ -404,7 +400,7 @@ async function executeSetVar(
     };
     resolvedValue = resolveTemplate(resolvedValue, varContext);
   }
-  
+
   ctx.vars[step.params.name] = resolvedValue;
 }
 
@@ -483,10 +479,7 @@ function sleepMs(ms: number): Promise<void> {
 /**
  * Executes a network_find step. If waitForMs is set and no match is found initially, polls the buffer until a match appears or timeout.
  */
-async function executeNetworkFind(
-  ctx: StepContext,
-  step: NetworkFindStep
-): Promise<void> {
+async function executeNetworkFind(ctx: StepContext, step: NetworkFindStep): Promise<void> {
   if (!ctx.networkCapture) {
     throw new Error(
       'network_find requires an active browser session with network capture. Run the flow in a context that has network capture enabled.'
@@ -508,7 +501,7 @@ async function executeNetworkFind(
     const deadline = Date.now() + waitForMs;
     while (Date.now() < deadline) {
       await sleepMs(pollIntervalMs);
-      requestId = ctx.networkCapture!.getRequestIdByIndex(where, pick);
+      requestId = ctx.networkCapture?.getRequestIdByIndex(where, pick);
       if (requestId != null) break;
     }
   }
@@ -520,19 +513,19 @@ async function executeNetworkFind(
     const searchTerms: string[] = [];
     if (where.urlIncludes) {
       // Split URL pattern into searchable terms (e.g., "/api/discovery/search" -> ["api", "discovery", "search"])
-      searchTerms.push(...where.urlIncludes.split(/[\/\-_.]/).filter(s => s.length > 2));
+      searchTerms.push(...where.urlIncludes.split(/[/\-_.]/).filter((s) => s.length > 2));
     }
     if (where.urlRegex) {
       // Extract alphanumeric words from regex
-      searchTerms.push(...where.urlRegex.match(/[a-zA-Z]{3,}/g) || []);
+      searchTerms.push(...(where.urlRegex.match(/[a-zA-Z]{3,}/g) || []));
     }
 
     // Find relevant requests (those that match any search term)
     let relevantRequests = allRequests;
     if (searchTerms.length > 0) {
-      relevantRequests = allRequests.filter(r => {
+      relevantRequests = allRequests.filter((r) => {
         const urlLower = r.url.toLowerCase();
-        return searchTerms.some(term => urlLower.includes(term.toLowerCase()));
+        return searchTerms.some((term) => urlLower.includes(term.toLowerCase()));
       });
     }
 
@@ -541,11 +534,12 @@ async function executeNetworkFind(
     let filterDesc = `matching "${searchTerms.join('", "')}"`;
 
     if (displayRequests.length === 0) {
-      displayRequests = allRequests.filter(r =>
-        r.resourceType === 'xhr' ||
-        r.resourceType === 'fetch' ||
-        /\/api\//i.test(r.url) ||
-        /graphql/i.test(r.url)
+      displayRequests = allRequests.filter(
+        (r) =>
+          r.resourceType === 'xhr' ||
+          r.resourceType === 'fetch' ||
+          /\/api\//i.test(r.url) ||
+          /graphql/i.test(r.url)
       );
       filterDesc = 'API/XHR';
     }
@@ -557,12 +551,13 @@ async function executeNetworkFind(
 
     const sampleUrls = displayRequests
       .slice(-15)
-      .map(r => `  ${r.method} ${r.url}`)
+      .map((r) => `  ${r.method} ${r.url}`)
       .join('\n');
 
-    const debugInfo = displayRequests.length > 0
-      ? `\n\nCaptured requests (${filterDesc}, showing ${Math.min(displayRequests.length, 15)} of ${allRequests.length} total):\n${sampleUrls}`
-      : `\n\nNo requests captured (0 total). The request may not have been triggered yet.`;
+    const debugInfo =
+      displayRequests.length > 0
+        ? `\n\nCaptured requests (${filterDesc}, showing ${Math.min(displayRequests.length, 15)} of ${allRequests.length} total):\n${sampleUrls}`
+        : `\n\nNo requests captured (0 total). The request may not have been triggered yet.`;
 
     const msg = `network_find: no request matched (where: ${JSON.stringify(where)}, pick: ${pick})${waitForMs > 0 ? ` within ${waitForMs}ms` : ''}. Ensure the request is triggered before this step (e.g. by navigation or a prior interaction), or increase waitForMs.${debugInfo}`;
     console.warn(`[${step.id}] ${msg}`);
@@ -574,10 +569,7 @@ async function executeNetworkFind(
 /**
  * Executes a network_replay step
  */
-async function executeNetworkReplay(
-  ctx: StepContext,
-  step: NetworkReplayStep
-): Promise<void> {
+async function executeNetworkReplay(ctx: StepContext, step: NetworkReplayStep): Promise<void> {
   if (!ctx.networkCapture) {
     throw new Error(
       'network_replay requires an active browser session with network capture. Run the flow in a context that has network capture enabled.'
@@ -646,7 +638,7 @@ async function executeNetworkReplay(
       outValue = pathResult.value;
       // Store hint if path extraction had issues
       if (pathResult.hint) {
-        ctx.vars['__jmespath_hint'] = pathResult.hint;
+        ctx.vars.__jmespath_hint = pathResult.hint;
       }
     }
   } else {
@@ -655,7 +647,7 @@ async function executeNetworkReplay(
       outValue = pathResult.value;
       // Store hint if path extraction had issues
       if (pathResult.hint) {
-        ctx.vars['__jmespath_hint'] = pathResult.hint;
+        ctx.vars.__jmespath_hint = pathResult.hint;
       }
     } else {
       outValue = result.body;
@@ -670,18 +662,20 @@ async function executeNetworkReplay(
 /**
  * Executes a network_extract step (from var set by network_replay saveAs or similar)
  */
-async function executeNetworkExtract(
-  ctx: StepContext,
-  step: NetworkExtractStep
-): Promise<void> {
+async function executeNetworkExtract(ctx: StepContext, step: NetworkExtractStep): Promise<void> {
   // Check vars first, then collectibles (network_replay uses 'out' for collectibles, 'saveAs' for vars)
   const raw = ctx.vars[step.params.fromVar] ?? ctx.collectibles[step.params.fromVar];
   if (raw === undefined) {
-    throw new Error(`network_extract: var "${step.params.fromVar}" is not set (checked vars and collectibles)`);
+    throw new Error(
+      `network_extract: var "${step.params.fromVar}" is not set (checked vars and collectibles)`
+    );
   }
   // Replay saveAs stores { body, status, contentType, bodySize }; support that or raw string
   const bodyStr =
-    raw && typeof raw === 'object' && 'body' in raw && typeof (raw as { body: unknown }).body === 'string'
+    raw &&
+    typeof raw === 'object' &&
+    'body' in raw &&
+    typeof (raw as { body: unknown }).body === 'string'
       ? (raw as { body: string }).body
       : typeof raw === 'string'
         ? raw
@@ -725,20 +719,18 @@ async function executeNetworkExtract(
 
   // Store hints in a special variable for propagation to run results
   if (hints.length > 0) {
-    const existingHints = (ctx.vars['__jmespath_hints'] as string[]) || [];
-    ctx.vars['__jmespath_hints'] = [...existingHints, ...hints];
+    const existingHints = (ctx.vars.__jmespath_hints as string[]) || [];
+    ctx.vars.__jmespath_hints = [...existingHints, ...hints];
   }
 }
 
 /**
  * Executes a select_option step
  */
-async function executeSelectOption(
-  ctx: StepContext,
-  step: SelectOptionStep
-): Promise<void> {
+async function executeSelectOption(ctx: StepContext, step: SelectOptionStep): Promise<void> {
   // Support both legacy selector and new target
-  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+  const targetOrAnyOf =
+    step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
 
   if (!targetOrAnyOf) {
     throw new Error('SelectOption step must have either "target" or "selector"');
@@ -753,14 +745,16 @@ async function executeSelectOption(
 
   // Log matched target for diagnostics
   if (step.params.hint) {
-    console.log(`[SelectOption:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    console.log(
+      `[SelectOption:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`
+    );
   }
 
-  const target = step.params.first ?? true ? locator.first() : locator;
+  const target = (step.params.first ?? true) ? locator.first() : locator;
 
   // Convert value to Playwright's selectOption format
   const values = Array.isArray(step.params.value) ? step.params.value : [step.params.value];
-  const selectOptions = values.map(v => {
+  const selectOptions = values.map((v) => {
     if (typeof v === 'string') {
       return { value: v };
     } else if ('label' in v) {
@@ -777,15 +771,13 @@ async function executeSelectOption(
 /**
  * Executes a press_key step
  */
-async function executePressKey(
-  ctx: StepContext,
-  step: PressKeyStep
-): Promise<void> {
+async function executePressKey(ctx: StepContext, step: PressKeyStep): Promise<void> {
   const times = step.params.times ?? 1;
   const delayMs = step.params.delayMs ?? 0;
 
   // If target is specified, focus it first
-  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+  const targetOrAnyOf =
+    step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
 
   if (targetOrAnyOf) {
     const { locator, matchedTarget, matchedCount } = await resolveTargetWithFallback(
@@ -795,7 +787,9 @@ async function executePressKey(
     );
 
     if (step.params.hint) {
-      console.log(`[PressKey:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+      console.log(
+        `[PressKey:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`
+      );
     }
 
     await locator.first().focus();
@@ -814,14 +808,12 @@ async function executePressKey(
 /**
  * Executes an upload_file step
  */
-async function executeUploadFile(
-  ctx: StepContext,
-  step: UploadFileStep
-): Promise<void> {
-  const path = await import('path');
+async function executeUploadFile(ctx: StepContext, step: UploadFileStep): Promise<void> {
+  const path = await import('node:path');
 
   // Support both legacy selector and new target
-  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+  const targetOrAnyOf =
+    step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
 
   if (!targetOrAnyOf) {
     throw new Error('UploadFile step must have either "target" or "selector"');
@@ -835,14 +827,16 @@ async function executeUploadFile(
   );
 
   if (step.params.hint) {
-    console.log(`[UploadFile:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    console.log(
+      `[UploadFile:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`
+    );
   }
 
-  const target = step.params.first ?? true ? locator.first() : locator;
+  const target = (step.params.first ?? true) ? locator.first() : locator;
 
   // Resolve file paths (relative to pack directory if not absolute)
   const files = Array.isArray(step.params.files) ? step.params.files : [step.params.files];
-  const resolvedFiles = files.map(f => {
+  const resolvedFiles = files.map((f) => {
     if (path.isAbsolute(f)) {
       return f;
     }
@@ -855,10 +849,7 @@ async function executeUploadFile(
 /**
  * Executes a frame step
  */
-async function executeFrame(
-  ctx: StepContext,
-  step: FrameStep
-): Promise<void> {
+async function executeFrame(ctx: StepContext, step: FrameStep): Promise<void> {
   if (step.params.action === 'exit') {
     // Return to main frame
     ctx.currentFrame = undefined;
@@ -896,12 +887,11 @@ async function executeFrame(
 /**
  * Executes a new_tab step
  */
-async function executeNewTab(
-  ctx: StepContext,
-  step: NewTabStep
-): Promise<void> {
+async function executeNewTab(ctx: StepContext, step: NewTabStep): Promise<void> {
   if (!ctx.browserContext) {
-    throw new Error('new_tab requires a browser context. Make sure the runner provides browserContext in StepContext.');
+    throw new Error(
+      'new_tab requires a browser context. Make sure the runner provides browserContext in StepContext.'
+    );
   }
 
   const pages = ctx.browserContext.pages();
@@ -932,18 +922,17 @@ async function executeNewTab(
   // Store previous tab index and switch to new tab
   ctx.previousTabIndex = currentTabIndex;
   // Note: The runner should update ctx.page to newPage after this step
-  ctx.vars['__newPage'] = newPage;
+  ctx.vars.__newPage = newPage;
 }
 
 /**
  * Executes a switch_tab step
  */
-async function executeSwitchTab(
-  ctx: StepContext,
-  step: SwitchTabStep
-): Promise<void> {
+async function executeSwitchTab(ctx: StepContext, step: SwitchTabStep): Promise<void> {
   if (!ctx.browserContext) {
-    throw new Error('switch_tab requires a browser context. Make sure the runner provides browserContext in StepContext.');
+    throw new Error(
+      'switch_tab requires a browser context. Make sure the runner provides browserContext in StepContext.'
+    );
   }
 
   const pages = ctx.browserContext.pages();
@@ -975,24 +964,30 @@ async function executeSwitchTab(
   // Store previous tab index and switch
   ctx.previousTabIndex = currentTabIndex;
   // Note: The runner should update ctx.page to targetPage after this step
-  ctx.vars['__newPage'] = targetPage;
+  ctx.vars.__newPage = targetPage;
   await targetPage.bringToFront();
 }
 
 /** Step types that are skipped silently in HTTP mode (setup/trigger steps). */
 const HTTP_MODE_SKIP_STEPS = new Set([
-  'navigate', 'click', 'fill', 'select_option', 'press_key',
-  'upload_file', 'wait_for', 'assert', 'frame', 'new_tab',
-  'switch_tab', 'network_find',
+  'navigate',
+  'click',
+  'fill',
+  'select_option',
+  'press_key',
+  'upload_file',
+  'wait_for',
+  'assert',
+  'frame',
+  'new_tab',
+  'switch_tab',
+  'network_find',
 ]);
 
 /**
  * Execute a network_replay step in HTTP-only mode using snapshot data.
  */
-async function executeNetworkReplayHttp(
-  ctx: StepContext,
-  step: NetworkReplayStep,
-): Promise<void> {
+async function executeNetworkReplayHttp(ctx: StepContext, step: NetworkReplayStep): Promise<void> {
   if (!ctx.snapshots) {
     throw new Error('network_replay in HTTP mode requires snapshots');
   }
@@ -1028,13 +1023,15 @@ async function executeNetworkReplayHttp(
     try {
       outValue = JSON.parse(result.body) as unknown;
     } catch {
-      throw new Error(`network_replay (HTTP mode): response body is not valid JSON (status ${result.status})`);
+      throw new Error(
+        `network_replay (HTTP mode): response body is not valid JSON (status ${result.status})`
+      );
     }
     if (pathExpr) {
       const pathResult = getByPath(outValue, pathExpr);
       outValue = pathResult.value;
       if (pathResult.hint) {
-        ctx.vars['__jmespath_hint'] = pathResult.hint;
+        ctx.vars.__jmespath_hint = pathResult.hint;
       }
     }
   } else {
@@ -1042,7 +1039,7 @@ async function executeNetworkReplayHttp(
       const pathResult = getByPath(JSON.parse(result.body) as unknown, pathExpr);
       outValue = pathResult.value;
       if (pathResult.hint) {
-        ctx.vars['__jmespath_hint'] = pathResult.hint;
+        ctx.vars.__jmespath_hint = pathResult.hint;
       }
     } else {
       outValue = result.body;
@@ -1057,10 +1054,7 @@ async function executeNetworkReplayHttp(
 /**
  * Executes a single DSL step
  */
-export async function executeStep(
-  ctx: StepContext,
-  step: DslStep
-): Promise<void> {
+export async function executeStep(ctx: StepContext, step: DslStep): Promise<void> {
   // In HTTP mode, skip DOM/setup steps and use snapshot replay for network_replay
   if (ctx.httpMode) {
     if (HTTP_MODE_SKIP_STEPS.has(step.type)) {
@@ -1131,9 +1125,10 @@ export async function executeStep(
     case 'switch_tab':
       await executeSwitchTab(ctx, step);
       break;
-    default:
+    default: {
       // TypeScript exhaustiveness check
       const _exhaustive: never = step;
       throw new Error(`Unknown step type: ${(_exhaustive as DslStep).type}`);
+    }
   }
 }

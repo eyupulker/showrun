@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface Pack {
   id: string;
@@ -52,7 +52,7 @@ function MCPServerView({ packs, token, conversations = [] }: MCPServerViewProps)
 
   useEffect(() => {
     fetchStatus();
-  }, []);
+  }, [fetchStatus]);
 
   const handleStart = async () => {
     if (selectedIds.size === 0) {
@@ -130,7 +130,8 @@ function MCPServerView({ packs, token, conversations = [] }: MCPServerViewProps)
       <div className="card">
         <h2>MCP Server (HTTP/SSE)</h2>
         <p style={{ marginBottom: '16px', color: 'var(--text-secondary)', fontSize: '14px' }}>
-          Start an MCP server with selected task packs. Clients connect via Streamable HTTP (POST/GET) or SSE.
+          Start an MCP server with selected task packs. Clients connect via Streamable HTTP
+          (POST/GET) or SSE.
         </p>
 
         {error && <div className="error">{error}</div>}
@@ -146,7 +147,9 @@ function MCPServerView({ packs, token, conversations = [] }: MCPServerViewProps)
                 borderRadius: '10px',
               }}
             >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+              <div
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}
+              >
                 <span
                   style={{
                     width: '10px',
@@ -261,7 +264,10 @@ function MCPServerView({ packs, token, conversations = [] }: MCPServerViewProps)
                 </button>
               </div>
             </div>
-            <div className="pack-list" style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '16px' }}>
+            <div
+              className="pack-list"
+              style={{ maxHeight: '240px', overflowY: 'auto', marginBottom: '16px' }}
+            >
               {packs.length === 0 ? (
                 <div className="loading">No task packs available</div>
               ) : (

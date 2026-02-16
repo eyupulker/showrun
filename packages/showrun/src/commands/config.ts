@@ -2,19 +2,18 @@
  * showrun config <subcommand> - Configuration management
  */
 
-import { resolve, join } from 'path';
-import { existsSync } from 'fs';
-import { cwd } from 'process';
+import { existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { cwd } from 'node:process';
 import {
-  discoverConfigDirs,
-  loadConfig,
-  getGlobalConfigDir,
-  resolveFilePath,
-  ensureDir,
   atomicWrite,
   DEFAULT_CONFIG_TEMPLATE,
+  discoverConfigDirs,
+  ensureDir,
+  getGlobalConfigDir,
+  loadConfig,
+  resolveFilePath,
 } from '@showrun/core';
-import type { ShowRunConfig } from '@showrun/core';
 
 export function printConfigHelp(): void {
   console.log(`
@@ -58,7 +57,7 @@ async function cmdConfigInit(args: string[]): Promise<void> {
   if (existsSync(configPath)) {
     console.log(`[Config] config.json already exists at ${configPath}`);
   } else {
-    const content = JSON.stringify(DEFAULT_CONFIG_TEMPLATE, null, 2) + '\n';
+    const content = `${JSON.stringify(DEFAULT_CONFIG_TEMPLATE, null, 2)}\n`;
     atomicWrite(configPath, content);
     console.log(`[Config] Created ${configPath}`);
   }
@@ -69,7 +68,7 @@ async function cmdConfigInit(args: string[]): Promise<void> {
   if (!existsSync(promptDest)) {
     const sourcePath = resolveFilePath(promptFilename);
     if (sourcePath) {
-      const { copyFileSync } = await import('fs');
+      const { copyFileSync } = await import('node:fs');
       copyFileSync(sourcePath, promptDest);
       console.log(`[Config] Copied ${promptFilename} to ${configDir}`);
     }

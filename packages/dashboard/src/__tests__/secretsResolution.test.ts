@@ -4,16 +4,15 @@
  * after pack creation, linking, and secret setting.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { join } from 'path';
-import { mkdirSync, rmSync, existsSync } from 'fs';
-import { tmpdir } from 'os';
-import { randomBytes } from 'crypto';
-
-import { TaskPackLoader, resolveTemplates } from '@showrun/core';
-import { executeAgentTool, type AgentToolContext } from '../agentTools.js';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { resolveTemplates, TaskPackLoader } from '@showrun/core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { type AgentToolContext, executeAgentTool } from '../agentTools.js';
 import { TaskPackEditorWrapper } from '../mcpWrappers.js';
-import { setSecretValue, getSecretNamesWithValues } from '../secretsUtils.js';
+import { getSecretNamesWithValues, setSecretValue } from '../secretsUtils.js';
 
 // Mock database module
 vi.mock('../db.js', () => ({
@@ -205,11 +204,7 @@ describe('Secrets Resolution Integration', () => {
       };
 
       // Call browser_type with template (sessionId is auto-injected)
-      await executeAgentTool(
-        'browser_type',
-        { text: '{{secret.API_KEY}}', label: 'Key' },
-        ctx
-      );
+      await executeAgentTool('browser_type', { text: '{{secret.API_KEY}}', label: 'Key' }, ctx);
 
       // Verify typeInElement was called with resolved secret
       // Session ID is auto-generated, so we use expect.any(String)
@@ -303,8 +298,8 @@ describe('Secrets Resolution Integration', () => {
       const passwordSecret = secretInfos.find((s) => s.name === 'PASSWORD');
 
       expect(passwordSecret).toBeDefined();
-      expect(passwordSecret!.hasValue).toBe(true);
-      expect(passwordSecret!.preview).toBe('se******'); // First 2 chars + asterisks
+      expect(passwordSecret?.hasValue).toBe(true);
+      expect(passwordSecret?.preview).toBe('se******'); // First 2 chars + asterisks
     });
   });
 

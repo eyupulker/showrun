@@ -8,12 +8,12 @@
 
 import type { DslStep } from './dsl/types.js';
 import {
+  applyOverrides,
+  isSnapshotStale,
   type RequestSnapshot,
   type SnapshotFile,
-  isSnapshotStale,
-  validateResponse,
-  applyOverrides,
   type ValidationResult,
+  validateResponse,
 } from './requestSnapshot.js';
 
 // ---------------------------------------------------------------------------
@@ -48,10 +48,7 @@ const DOM_EXTRACTION_STEPS = new Set(['extract_text', 'extract_title', 'extract_
  * 1. Every `network_replay` step has a corresponding, non-stale snapshot.
  * 2. No DOM extraction steps exist in the flow.
  */
-export function isFlowHttpCompatible(
-  steps: DslStep[],
-  snapshots: SnapshotFile | null,
-): boolean {
+export function isFlowHttpCompatible(steps: DslStep[], snapshots: SnapshotFile | null): boolean {
   if (!snapshots) return false;
 
   // Check for DOM extraction steps
@@ -86,7 +83,7 @@ export async function replayFromSnapshot(
   snapshot: RequestSnapshot,
   inputs: Record<string, unknown>,
   vars: Record<string, unknown>,
-  options?: { secrets?: Record<string, string>; timeoutMs?: number },
+  options?: { secrets?: Record<string, string>; timeoutMs?: number }
 ): Promise<HttpReplayResult> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const { url, method, headers, body } = applyOverrides(snapshot, inputs, vars, options?.secrets);
@@ -139,7 +136,7 @@ export async function replayAndValidate(
   snapshot: RequestSnapshot,
   inputs: Record<string, unknown>,
   vars: Record<string, unknown>,
-  options?: { secrets?: Record<string, string>; timeoutMs?: number },
+  options?: { secrets?: Record<string, string>; timeoutMs?: number }
 ): Promise<{ result: HttpReplayResult; validation: ValidationResult }> {
   const result = await replayFromSnapshot(snapshot, inputs, vars, options);
   const validation = validateResponse(snapshot, result);

@@ -58,10 +58,7 @@ export interface LlmProvider {
   /**
    * Chat completion: send messages and get assistant reply (free-form text).
    */
-  chat(args: {
-    systemPrompt?: string;
-    messages: ChatMessage[];
-  }): Promise<string>;
+  chat(args: { systemPrompt?: string; messages: ChatMessage[] }): Promise<string>;
   /**
    * Chat with tools: model may return tool_calls; execute them and call again until final reply.
    * messages may include assistant messages with tool_calls (for multi-turn tool use).

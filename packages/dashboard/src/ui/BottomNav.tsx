@@ -1,5 +1,3 @@
-import React from 'react';
-
 export type NavView = 'chat' | 'runs' | 'mcp' | 'packs';
 
 interface BottomNavProps {

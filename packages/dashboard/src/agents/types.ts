@@ -2,9 +2,9 @@
  * Shared types for the two-agent architecture (Exploration + Editor)
  */
 
-import type { ToolDef, ToolCall, StreamEvent, ChatWithToolsResult, LlmProvider } from '../llm/provider.js';
+import type { ExecuteToolResult } from '../agentTools.js';
 import type { AgentMessage } from '../contextManager.js';
-import type { ExecuteToolResult, AgentToolContext } from '../agentTools.js';
+import type { LlmProvider, StreamEvent, ToolDef } from '../llm/provider.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Agent Loop Types
@@ -26,9 +26,20 @@ export interface AgentLoopOptions {
   /** Callback for streaming events (optional) */
   onStreamEvent?: (event: StreamEvent | Record<string, unknown>) => void;
   /** Callback after each tool execution (optional) */
-  onToolResult?: (toolName: string, args: Record<string, unknown>, result: unknown, success: boolean) => void;
+  onToolResult?: (
+    toolName: string,
+    args: Record<string, unknown>,
+    result: unknown,
+    success: boolean
+  ) => void;
   /** Callback when a tool call fails — for centralized error logging */
-  onToolError?: (toolName: string, args: Record<string, unknown>, error: string, iteration: number, assistantContent: string | null) => void;
+  onToolError?: (
+    toolName: string,
+    args: Record<string, unknown>,
+    error: string,
+    iteration: number,
+    assistantContent: string | null
+  ) => void;
   /** AbortSignal to cancel the loop */
   abortSignal?: { aborted: boolean };
   /** Session key for plan storage / summarization */
@@ -41,7 +52,12 @@ export interface AgentLoopResult {
   /** Final text content from the agent */
   finalContent: string;
   /** Trace of all tool calls made */
-  toolTrace: Array<{ tool: string; args: Record<string, unknown>; result: unknown; success: boolean }>;
+  toolTrace: Array<{
+    tool: string;
+    args: Record<string, unknown>;
+    result: unknown;
+    success: boolean;
+  }>;
   /** Number of iterations used */
   iterationsUsed: number;
   /** Whether the loop was aborted */
@@ -70,7 +86,13 @@ export interface EditorAgentOptions {
   /** Callback when flow is updated (for UI real-time updates) */
   onFlowUpdated?: (flow: unknown, validation?: unknown) => void;
   /** Callback when an editor tool call fails — for centralized error logging */
-  onToolError?: (toolName: string, args: Record<string, unknown>, error: string, iteration: number, assistantContent: string | null) => void;
+  onToolError?: (
+    toolName: string,
+    args: Record<string, unknown>,
+    error: string,
+    iteration: number,
+    assistantContent: string | null
+  ) => void;
   /** AbortSignal */
   abortSignal?: { aborted: boolean };
   /** Session key for plan storage */

@@ -1,5 +1,4 @@
-import { join } from 'path';
-import type { TaskPack, RunResult } from '@showrun/core';
+import type { RunResult, TaskPack } from '@showrun/core';
 import { runTaskPack } from '@showrun/core';
 import { JSONLLogger } from './logger.js';
 

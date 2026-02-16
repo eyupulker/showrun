@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'fs';
-import { join } from 'path';
-import { tmpdir } from 'os';
-import { saveVersion, listVersions, restoreVersion, getVersionFiles } from '../packVersioning.js';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { getVersionFiles, listVersions, restoreVersion, saveVersion } from '../packVersioning.js';
 
 function createTempPack(opts?: { version?: string }): string {
   const dir = join(tmpdir(), `test-pack-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -36,7 +36,9 @@ describe('Pack Versioning', () => {
   afterEach(() => {
     try {
       rmSync(packDir, { recursive: true, force: true });
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   });
 
   it('saves a version and creates versioned files', () => {
@@ -120,7 +122,12 @@ describe('Pack Versioning', () => {
 
     // Modify flow
     const flowPath = join(packDir, 'flow.json');
-    writeFileSync(flowPath, JSON.stringify({ flow: [{ id: 'new', type: 'navigate', params: { url: 'https://new.com' } }] }));
+    writeFileSync(
+      flowPath,
+      JSON.stringify({
+        flow: [{ id: 'new', type: 'navigate', params: { url: 'https://new.com' } }],
+      })
+    );
 
     restoreVersion(packDir, 1);
 
@@ -140,7 +147,12 @@ describe('Pack Versioning', () => {
 
     // Modify current flow
     const flowPath = join(packDir, 'flow.json');
-    writeFileSync(flowPath, JSON.stringify({ flow: [{ id: 'changed', type: 'navigate', params: { url: 'https://changed.com' } }] }));
+    writeFileSync(
+      flowPath,
+      JSON.stringify({
+        flow: [{ id: 'changed', type: 'navigate', params: { url: 'https://changed.com' } }],
+      })
+    );
 
     // getVersionFiles should return the original
     const files = getVersionFiles(packDir, 1);

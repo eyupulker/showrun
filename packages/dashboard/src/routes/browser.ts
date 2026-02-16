@@ -1,23 +1,23 @@
-import { Router, type Request, type Response } from 'express';
-import type { DashboardContext } from '../types/context.js';
-import { createTokenChecker } from '../helpers/auth.js';
+import { type Request, type Response, Router } from 'express';
 import {
-  startBrowserSession,
-  gotoUrl,
-  goBack,
-  typeInElement,
-  takeScreenshot,
-  getLinks,
+  closeSession,
   getDomSnapshot,
-  networkList,
-  networkSearch,
+  getLastActions,
+  getLinks,
+  goBack,
+  gotoUrl,
+  networkClear,
   networkGet,
   networkGetResponse,
+  networkList,
   networkReplay,
-  networkClear,
-  getLastActions,
-  closeSession,
+  networkSearch,
+  startBrowserSession,
+  takeScreenshot,
+  typeInElement,
 } from '../browserInspector.js';
+import { createTokenChecker } from '../helpers/auth.js';
+import type { DashboardContext } from '../types/context.js';
 
 export function createBrowserRouter(ctx: DashboardContext): Router {
   const router = Router();
@@ -308,7 +308,7 @@ export function createBrowserRouter(ctx: DashboardContext): Router {
   // REST API: Browser Inspector - Last actions
   router.get('/api/teach/browser/:sessionId/actions', (req: Request, res: Response) => {
     const { sessionId } = req.params;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const limit = parseInt(req.query.limit as string, 10) || 10;
 
     try {
       const actions = getLastActions(sessionId, limit);

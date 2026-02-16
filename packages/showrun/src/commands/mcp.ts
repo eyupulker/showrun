@@ -2,7 +2,7 @@
  * showrun mcp <subcommand> - MCP server utilities
  */
 
-import { resolve } from 'path';
+import { resolve } from 'node:path';
 import { createBrowserInspectorServer } from '@showrun/browser-inspector-mcp';
 import { createTaskPackEditorServer } from '@showrun/taskpack-editor-mcp';
 
@@ -55,7 +55,10 @@ export function parseTaskpackEditorArgs(args: string[]): McpTaskpackEditorOption
 
   // Default to ./taskpacks if not provided
   const packs = packsStr
-    ? packsStr.split(',').map((d) => resolve(d.trim())).filter(Boolean)
+    ? packsStr
+        .split(',')
+        .map((d) => resolve(d.trim()))
+        .filter(Boolean)
     : [resolve('./taskpacks')];
 
   // Default workspace to first packs directory
@@ -73,7 +76,9 @@ export async function cmdMcpBrowserInspector(args: string[]): Promise<void> {
     const _options = parseBrowserInspectorArgs(args);
     await createBrowserInspectorServer({});
   } catch (error) {
-    console.error(`[Browser Inspector MCP] Fatal error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `[Browser Inspector MCP] Fatal error: ${error instanceof Error ? error.message : String(error)}`
+    );
     process.exit(1);
   }
 }
@@ -87,7 +92,9 @@ export async function cmdMcpTaskpackEditor(args: string[]): Promise<void> {
       baseRunDir: options.baseRunDir,
     });
   } catch (error) {
-    console.error(`[TaskPack Editor MCP] Fatal error: ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `[TaskPack Editor MCP] Fatal error: ${error instanceof Error ? error.message : String(error)}`
+    );
     process.exit(1);
   }
 }

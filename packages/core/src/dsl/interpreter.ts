@@ -1,21 +1,21 @@
-import type { RunContext, RunResult, AuthConfig } from '../types.js';
-import type { DslStep, RunFlowOptions, RunFlowResult } from './types.js';
-import { validateFlow } from './validation.js';
-import { executeStep } from './stepHandlers.js';
-import { resolveTemplates } from './templating.js';
-import type { StepContext } from './stepHandlers.js';
 import {
-  OnceCache,
   AuthFailureMonitor,
   AuthGuardChecker,
+  getOnceSteps,
+  OnceCache,
+  type StepOutput,
   setupBrowserAuthMonitoring,
   shouldSkipStep,
-  getOnceSteps,
-  type StepOutput,
 } from '../authResilience.js';
 import type { NetworkCaptureApi, NetworkEntrySerializable } from '../networkCapture.js';
-import { evaluateCondition, conditionToString } from './conditions.js';
 import type { SnapshotFile } from '../requestSnapshot.js';
+import type { AuthConfig, RunContext } from '../types.js';
+import { conditionToString, evaluateCondition } from './conditions.js';
+import type { StepContext } from './stepHandlers.js';
+import { executeStep } from './stepHandlers.js';
+import { resolveTemplates } from './templating.js';
+import type { DslStep, RunFlowOptions, RunFlowResult } from './types.js';
+import { validateFlow } from './validation.js';
 
 /**
  * Capture the delta of vars and collectibles produced by a step,
@@ -148,9 +148,7 @@ export async function runFlow(
 
   // Initialize auth resilience components: load persisted "once" cache when sessionId/profileId provided
   const onceCache =
-    sessionId || profileId
-      ? OnceCache.fromDisk(sessionId, profileId, cacheDir)
-      : new OnceCache();
+    sessionId || profileId ? OnceCache.fromDisk(sessionId, profileId, cacheDir) : new OnceCache();
   let authMonitor: AuthFailureMonitor | null = null;
   let authGuard: AuthGuardChecker | null = null;
   let authRecoveriesUsed = 0;
@@ -245,10 +243,7 @@ export async function runFlow(
       // Check if step should be skipped due to skip_if condition
       if (step.skip_if) {
         try {
-          const shouldSkip = await evaluateCondition(
-            { page: ctx.page, vars },
-            step.skip_if
-          );
+          const shouldSkip = await evaluateCondition({ page: ctx.page, vars }, step.skip_if);
           if (shouldSkip) {
             ctx.logger.log({
               type: 'step_skipped',
@@ -278,7 +273,10 @@ export async function runFlow(
       } as DslStep;
 
       // Log step start with resolved params (redact secrets for safe logging)
-      const logParams = redactSecrets(JSON.parse(JSON.stringify(resolvedStep.params)), secretValues);
+      const logParams = redactSecrets(
+        JSON.parse(JSON.stringify(resolvedStep.params)),
+        secretValues
+      );
       ctx.logger.log({
         type: 'step_started',
         data: {
@@ -313,7 +311,13 @@ export async function runFlow(
         // Mark step as executed if it has "once" flag, with captured outputs
         if (resolvedStep.once) {
           const scope = resolvedStep.once === 'session' && sessionId ? 'session' : 'profile';
-          const stepOutputs = captureStepOutputs(varsBefore, vars, collectiblesBefore, collectibles, ctx.networkCapture);
+          const stepOutputs = captureStepOutputs(
+            varsBefore,
+            vars,
+            collectiblesBefore,
+            collectibles,
+            ctx.networkCapture
+          );
           onceCache.markExecuted(step.id, scope, stepOutputs);
         }
 
@@ -434,8 +438,15 @@ export async function runFlow(
 
                 // Mark step as executed if it has "once" flag, with captured outputs
                 if (resolvedStep.once) {
-                  const scope = resolvedStep.once === 'session' && sessionId ? 'session' : 'profile';
-                  const stepOutputs = captureStepOutputs(retryVarsBefore, vars, retryCollectiblesBefore, collectibles, ctx.networkCapture);
+                  const scope =
+                    resolvedStep.once === 'session' && sessionId ? 'session' : 'profile';
+                  const stepOutputs = captureStepOutputs(
+                    retryVarsBefore,
+                    vars,
+                    retryCollectiblesBefore,
+                    collectibles,
+                    ctx.networkCapture
+                  );
                   onceCache.markExecuted(step.id, scope, stepOutputs);
                 }
 
@@ -533,8 +544,8 @@ export async function runFlow(
     const finalUrl = httpMode ? undefined : ctx.page.url();
 
     // Collect JMESPath hints from vars (stored by step handlers)
-    const jmespathHints = (vars['__jmespath_hints'] as string[]) || [];
-    const singleHint = vars['__jmespath_hint'] as string | undefined;
+    const jmespathHints = (vars.__jmespath_hints as string[]) || [];
+    const singleHint = vars.__jmespath_hint as string | undefined;
     if (singleHint && !jmespathHints.includes(singleHint)) {
       jmespathHints.push(singleHint);
     }
@@ -558,8 +569,6 @@ export async function runFlow(
     }
 
     return result;
-  } catch (error) {
-    throw error;
   } finally {
     if (sessionId || profileId) {
       onceCache.persist(sessionId, profileId, cacheDir);
@@ -580,7 +589,7 @@ async function executeStepsWithRecovery(
   sessionId: string | undefined,
   profileId: string | undefined,
   stopOnError: boolean,
-  authRecoveriesUsed: number
+  _authRecoveriesUsed: number
 ): Promise<void> {
   const { vars } = variableContext;
   const collectibles = stepContext.collectibles;
@@ -627,7 +636,13 @@ async function executeStepsWithRecovery(
       // Mark as executed with captured outputs
       if (resolvedStep.once) {
         const scope = resolvedStep.once === 'session' && sessionId ? 'session' : 'profile';
-        const stepOutputs = captureStepOutputs(varsBefore, vars, collectiblesBefore, collectibles, networkCapture);
+        const stepOutputs = captureStepOutputs(
+          varsBefore,
+          vars,
+          collectiblesBefore,
+          collectibles,
+          networkCapture
+        );
         onceCache.markExecuted(step.id, scope, stepOutputs);
       }
     } catch (error) {

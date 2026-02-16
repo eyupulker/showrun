@@ -2,9 +2,10 @@
  * SQLite database layer for dashboard persistence
  * Stores conversations, messages, and run history
  */
+
+import { existsSync, mkdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import Database from 'better-sqlite3';
-import { mkdirSync, existsSync } from 'fs';
-import { dirname, resolve } from 'path';
 import { v4 as uuidv4 } from 'uuid';
 
 // Types
@@ -206,10 +207,9 @@ function runMigrations(database: Database.Database): void {
     if (!appliedMigrations.has(migration.name)) {
       console.log(`[Database] Running migration: ${migration.name}`);
       database.exec(migration.sql);
-      database.prepare('INSERT INTO _migrations (name, appliedAt) VALUES (?, ?)').run(
-        migration.name,
-        Date.now()
-      );
+      database
+        .prepare('INSERT INTO _migrations (name, appliedAt) VALUES (?, ?)')
+        .run(migration.name, Date.now());
     }
   }
 }
@@ -321,7 +321,9 @@ function mapRowToConversation(row: any): Conversation {
  */
 export function getConversationPlan(conversationId: string): string | null {
   const database = getDatabase();
-  const row = database.prepare('SELECT plan FROM conversations WHERE id = ?').get(conversationId) as any;
+  const row = database
+    .prepare('SELECT plan FROM conversations WHERE id = ?')
+    .get(conversationId) as any;
   return row?.plan || null;
 }
 
@@ -330,7 +332,9 @@ export function getConversationPlan(conversationId: string): string | null {
  */
 export function setConversationPlan(conversationId: string, plan: string): void {
   const database = getDatabase();
-  database.prepare('UPDATE conversations SET plan = ?, updatedAt = ? WHERE id = ?').run(plan, Date.now(), conversationId);
+  database
+    .prepare('UPDATE conversations SET plan = ?, updatedAt = ? WHERE id = ?')
+    .run(plan, Date.now(), conversationId);
 }
 
 // ============================================================================
@@ -364,9 +368,7 @@ export function addMessage(
     );
 
   // Update conversation updatedAt
-  database
-    .prepare('UPDATE conversations SET updatedAt = ? WHERE id = ?')
-    .run(now, conversationId);
+  database.prepare('UPDATE conversations SET updatedAt = ? WHERE id = ?').run(now, conversationId);
 
   return {
     id,
@@ -472,7 +474,7 @@ export function getAllRuns(options?: {
   }
 
   if (conditions.length > 0) {
-    sql += ' WHERE ' + conditions.join(' AND ');
+    sql += ` WHERE ${conditions.join(' AND ')}`;
   }
 
   sql += ' ORDER BY createdAt DESC';
@@ -491,7 +493,14 @@ export function updateRun(
   updates: Partial<
     Pick<
       DbRunInfo,
-      'status' | 'startedAt' | 'finishedAt' | 'durationMs' | 'runDir' | 'collectiblesJson' | 'metaJson' | 'errorMessage'
+      | 'status'
+      | 'startedAt'
+      | 'finishedAt'
+      | 'durationMs'
+      | 'runDir'
+      | 'collectiblesJson'
+      | 'metaJson'
+      | 'errorMessage'
     >
   >
 ): DbRunInfo | null {
@@ -556,9 +565,7 @@ export function pruneOldRuns(keepCount: number = 1000): number {
 
   if (!cutoffRow) return 0;
 
-  const result = database
-    .prepare('DELETE FROM runs WHERE createdAt < ?')
-    .run(cutoffRow.createdAt);
+  const result = database.prepare('DELETE FROM runs WHERE createdAt < ?').run(cutoffRow.createdAt);
   return result.changes;
 }
 
@@ -590,10 +597,10 @@ export interface ConversationTranscript {
   conversationId: string;
   packId: string | null;
   conversationStatus: string | null;
-  transcript: string;    // JSON string
-  toolTrace: string | null;     // JSON string
-  flowJson: string | null;      // JSON string
-  validation: string | null;    // JSON string
+  transcript: string; // JSON string
+  toolTrace: string | null; // JSON string
+  flowJson: string | null; // JSON string
+  validation: string | null; // JSON string
   agentIterations: number | null;
   createdAt: number;
 }
@@ -612,10 +619,23 @@ export function createConversationTranscript(data: {
   const id = uuidv4();
   const now = Date.now();
 
-  const transcriptStr = typeof data.transcript === 'string' ? data.transcript : JSON.stringify(data.transcript);
-  const toolTraceStr = data.toolTrace ? (typeof data.toolTrace === 'string' ? data.toolTrace : JSON.stringify(data.toolTrace)) : null;
-  const flowJsonStr = data.flowJson ? (typeof data.flowJson === 'string' ? data.flowJson : JSON.stringify(data.flowJson)) : null;
-  const validationStr = data.validation ? (typeof data.validation === 'string' ? data.validation : JSON.stringify(data.validation)) : null;
+  const transcriptStr =
+    typeof data.transcript === 'string' ? data.transcript : JSON.stringify(data.transcript);
+  const toolTraceStr = data.toolTrace
+    ? typeof data.toolTrace === 'string'
+      ? data.toolTrace
+      : JSON.stringify(data.toolTrace)
+    : null;
+  const flowJsonStr = data.flowJson
+    ? typeof data.flowJson === 'string'
+      ? data.flowJson
+      : JSON.stringify(data.flowJson)
+    : null;
+  const validationStr = data.validation
+    ? typeof data.validation === 'string'
+      ? data.validation
+      : JSON.stringify(data.validation)
+    : null;
 
   database
     .prepare(
@@ -651,14 +671,20 @@ export function createConversationTranscript(data: {
 
 export function getConversationTranscript(id: string): ConversationTranscript | null {
   const database = getDatabase();
-  const row = database.prepare('SELECT * FROM conversation_transcripts WHERE id = ?').get(id) as any;
+  const row = database
+    .prepare('SELECT * FROM conversation_transcripts WHERE id = ?')
+    .get(id) as any;
   return row ? mapRowToTranscript(row) : null;
 }
 
-export function getTranscriptByConversationId(conversationId: string): ConversationTranscript | null {
+export function getTranscriptByConversationId(
+  conversationId: string
+): ConversationTranscript | null {
   const database = getDatabase();
   const row = database
-    .prepare('SELECT * FROM conversation_transcripts WHERE conversationId = ? ORDER BY createdAt DESC LIMIT 1')
+    .prepare(
+      'SELECT * FROM conversation_transcripts WHERE conversationId = ? ORDER BY createdAt DESC LIMIT 1'
+    )
     .get(conversationId) as any;
   return row ? mapRowToTranscript(row) : null;
 }
@@ -679,7 +705,7 @@ export function getAllTranscripts(options?: {
   }
 
   if (conditions.length > 0) {
-    sql += ' WHERE ' + conditions.join(' AND ');
+    sql += ` WHERE ${conditions.join(' AND ')}`;
   }
 
   sql += ' ORDER BY createdAt DESC';

@@ -1,14 +1,14 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, existsSync } from 'fs';
-import { join, resolve } from 'path';
-import { tmpdir } from 'os';
-import { randomBytes } from 'crypto';
+import { randomBytes } from 'node:crypto';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  applyConfigToEnv,
   deepMerge,
   discoverConfigDirs,
   loadConfig,
-  applyConfigToEnv,
   resolveFilePath,
   type ShowRunConfig,
 } from '../config.js';
@@ -30,10 +30,7 @@ describe('deepMerge', () => {
   it('recursively merges nested objects', () => {
     const base = { llm: { provider: 'openai', openai: { apiKey: 'k1' } } };
     const override = { llm: { provider: 'anthropic', anthropic: { apiKey: 'k2' } } };
-    const result = deepMerge(
-      base as Record<string, unknown>,
-      override as Record<string, unknown>,
-    );
+    const result = deepMerge(base as Record<string, unknown>, override as Record<string, unknown>);
     expect(result).toEqual({
       llm: {
         provider: 'anthropic',
@@ -52,19 +49,17 @@ describe('deepMerge', () => {
   it('replaces arrays instead of merging them', () => {
     const base = { items: [1, 2, 3] };
     const override = { items: [4, 5] };
-    expect(deepMerge(
-      base as Record<string, unknown>,
-      override as Record<string, unknown>,
-    )).toEqual({ items: [4, 5] });
+    expect(deepMerge(base as Record<string, unknown>, override as Record<string, unknown>)).toEqual(
+      { items: [4, 5] }
+    );
   });
 
   it('replaces primitives', () => {
     const base = { x: 'old' };
     const override = { x: 'new' };
-    expect(deepMerge(
-      base as Record<string, unknown>,
-      override as Record<string, unknown>,
-    )).toEqual({ x: 'new' });
+    expect(deepMerge(base as Record<string, unknown>, override as Record<string, unknown>)).toEqual(
+      { x: 'new' }
+    );
   });
 });
 
@@ -100,12 +95,7 @@ describe('discoverConfigDirs', () => {
 });
 
 describe('applyConfigToEnv', () => {
-  const testEnvVars = [
-    'LLM_PROVIDER',
-    'ANTHROPIC_API_KEY',
-    'OPENAI_API_KEY',
-    'MAX_BROWSER_ROUNDS',
-  ];
+  const testEnvVars = ['LLM_PROVIDER', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'MAX_BROWSER_ROUNDS'];
   const saved: Record<string, string | undefined> = {};
 
   beforeEach(() => {

@@ -8,7 +8,10 @@ export class InputValidator {
    * Apply default values from schema to inputs.
    * Returns a new object with defaults applied for missing fields.
    */
-  static applyDefaults(inputs: Record<string, unknown>, schema: InputSchema): Record<string, unknown> {
+  static applyDefaults(
+    inputs: Record<string, unknown>,
+    schema: InputSchema
+  ): Record<string, unknown> {
     const result = { ...inputs };
     for (const [fieldName, fieldDef] of Object.entries(schema)) {
       if (!(fieldName in result) && fieldDef.default !== undefined) {
@@ -39,7 +42,7 @@ export class InputValidator {
       }
 
       const fieldDef = schema[fieldName];
-      const typeError = this.validateType(fieldName, value, fieldDef.type);
+      const typeError = InputValidator.validateType(fieldName, value, fieldDef.type);
       if (typeError) {
         errors.push(typeError);
       }
@@ -53,7 +56,11 @@ export class InputValidator {
   /**
    * Validate a single value against a type
    */
-  private static validateType(fieldName: string, value: unknown, expectedType: PrimitiveType): string | null {
+  private static validateType(
+    fieldName: string,
+    value: unknown,
+    expectedType: PrimitiveType
+  ): string | null {
     switch (expectedType) {
       case 'string':
         if (typeof value !== 'string') {

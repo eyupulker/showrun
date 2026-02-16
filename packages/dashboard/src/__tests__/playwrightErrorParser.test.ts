@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { parsePlaywrightError } from '../agentTools.js';
 
 describe('parsePlaywrightError', () => {
   it('parses click timeout with intercepted click (element found, click attempted)', () => {
     const raw =
-      "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('Summer 2026', { exact: true }).first()\u001b[22m\n\u001b[2m  - locator resolved to <span class=\"_label_zhfs4_241\">Summer 2026</span>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - performing click action\u001b[22m\n";
+      'locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText(\'Summer 2026\', { exact: true }).first()\u001b[22m\n\u001b[2m  - locator resolved to <span class="_label_zhfs4_241">Summer 2026</span>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m    - element is visible, enabled and stable\u001b[22m\n\u001b[2m    - scrolling into view if needed\u001b[22m\n\u001b[2m    - done scrolling\u001b[22m\n\u001b[2m    - performing click action\u001b[22m\n';
 
     const result = parsePlaywrightError(raw);
 
@@ -12,8 +12,10 @@ describe('parsePlaywrightError', () => {
     expect(result.hint).toContain('intercepted');
     expect(result.hint).toContain('browser_click_coordinates');
     expect(result.callLog).toBeDefined();
-    expect(result.callLog!.length).toBeGreaterThan(0);
-    expect(result.callLog).toContain("locator resolved to <span class=\"_label_zhfs4_241\">Summer 2026</span>");
+    expect(result.callLog?.length).toBeGreaterThan(0);
+    expect(result.callLog).toContain(
+      'locator resolved to <span class="_label_zhfs4_241">Summer 2026</span>'
+    );
   });
 
   it('parses timeout when element not found', () => {
@@ -28,7 +30,7 @@ describe('parsePlaywrightError', () => {
 
   it('parses timeout when element found but not visible', () => {
     const raw =
-      "locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText('Hidden Button')\u001b[22m\n\u001b[2m  - locator resolved to <button style=\"display:none\">Hidden Button</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n";
+      'locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByText(\'Hidden Button\')\u001b[22m\n\u001b[2m  - locator resolved to <button style="display:none">Hidden Button</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    - waiting for element to be visible, enabled and stable\u001b[22m\n';
 
     const result = parsePlaywrightError(raw);
 
@@ -37,7 +39,8 @@ describe('parsePlaywrightError', () => {
   });
 
   it('parses strict mode violation', () => {
-    const raw = "locator.click: Error: strict mode violation: getByText('Click me') resolved to 3 elements";
+    const raw =
+      "locator.click: Error: strict mode violation: getByText('Click me') resolved to 3 elements";
 
     const result = parsePlaywrightError(raw);
 
@@ -46,7 +49,7 @@ describe('parsePlaywrightError', () => {
   });
 
   it('parses element detached from DOM', () => {
-    const raw = "locator.click: Error: element is not attached to the DOM";
+    const raw = 'locator.click: Error: element is not attached to the DOM';
 
     const result = parsePlaywrightError(raw);
 
@@ -55,7 +58,7 @@ describe('parsePlaywrightError', () => {
   });
 
   it('parses frame detached error', () => {
-    const raw = "locator.click: Error: frame was detached";
+    const raw = 'locator.click: Error: frame was detached';
 
     const result = parsePlaywrightError(raw);
 
@@ -63,7 +66,7 @@ describe('parsePlaywrightError', () => {
   });
 
   it('returns plain error for unknown patterns', () => {
-    const raw = "Some random error message";
+    const raw = 'Some random error message';
 
     const result = parsePlaywrightError(raw);
 
@@ -73,7 +76,7 @@ describe('parsePlaywrightError', () => {
   });
 
   it('strips ANSI codes from error message', () => {
-    const raw = "\u001b[2mlocator.click: Timeout\u001b[22m";
+    const raw = '\u001b[2mlocator.click: Timeout\u001b[22m';
 
     const result = parsePlaywrightError(raw);
 

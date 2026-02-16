@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface SecretInfo {
   name: string;
@@ -46,20 +46,23 @@ export default function SecretsPanel({ packId, token, onSecretsUpdated }: Secret
 
   useEffect(() => {
     loadSecrets();
-  }, [packId, token]);
+  }, [loadSecrets]);
 
   const handleSetValue = async (name: string) => {
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch(`/api/packs/${encodeURIComponent(packId)}/secrets/${encodeURIComponent(name)}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-showrun-token': token,
-        },
-        body: JSON.stringify({ value: secretValue }),
-      });
+      const response = await fetch(
+        `/api/packs/${encodeURIComponent(packId)}/secrets/${encodeURIComponent(name)}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-showrun-token': token,
+          },
+          body: JSON.stringify({ value: secretValue }),
+        }
+      );
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(errorData.error || `HTTP ${response.status}`);
@@ -82,7 +85,14 @@ export default function SecretsPanel({ packId, token, onSecretsUpdated }: Secret
 
   if (loading) {
     return (
-      <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+      <div
+        style={{
+          padding: '16px',
+          color: 'var(--text-muted)',
+          fontSize: '13px',
+          textAlign: 'center',
+        }}
+      >
         Loading secrets...
       </div>
     );
@@ -91,7 +101,9 @@ export default function SecretsPanel({ packId, token, onSecretsUpdated }: Secret
   if (error) {
     return (
       <div style={{ padding: '16px' }}>
-        <div className="error" style={{ marginBottom: '8px' }}>{error}</div>
+        <div className="error" style={{ marginBottom: '8px' }}>
+          {error}
+        </div>
         <button className="btn-secondary" onClick={loadSecrets} style={{ fontSize: '12px' }}>
           Retry
         </button>
@@ -101,7 +113,14 @@ export default function SecretsPanel({ packId, token, onSecretsUpdated }: Secret
 
   if (secrets.length === 0) {
     return (
-      <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+      <div
+        style={{
+          padding: '16px',
+          color: 'var(--text-muted)',
+          fontSize: '13px',
+          textAlign: 'center',
+        }}
+      >
         No secrets defined for this pack.
         <div style={{ marginTop: '8px', fontSize: '11px' }}>
           Add secrets in the pack's taskpack.json
@@ -132,37 +151,50 @@ export default function SecretsPanel({ packId, token, onSecretsUpdated }: Secret
               backgroundColor: editingSecret === secret.name ? 'var(--bg-card-active)' : undefined,
             }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                marginBottom: '4px',
+              }}
+            >
               <div>
                 <span style={{ fontWeight: 500, color: 'var(--text-primary)', fontSize: '13px' }}>
                   {secret.name}
                 </span>
                 {secret.required && (
-                  <span style={{ color: 'var(--accent-orange)', fontSize: '11px', marginLeft: '6px' }}>
+                  <span
+                    style={{ color: 'var(--accent-orange)', fontSize: '11px', marginLeft: '6px' }}
+                  >
                     (required)
                   </span>
                 )}
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 {secret.hasValue ? (
-                  <span style={{
-                    fontFamily: 'monospace',
-                    fontSize: '11px',
-                    color: 'var(--accent-green)',
-                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                  }}>
+                  <span
+                    style={{
+                      fontFamily: 'monospace',
+                      fontSize: '11px',
+                      color: 'var(--accent-green)',
+                      backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                    }}
+                  >
                     {secret.preview}
                   </span>
                 ) : (
-                  <span style={{
-                    fontSize: '11px',
-                    color: 'var(--text-muted)',
-                    backgroundColor: 'rgba(100, 100, 100, 0.2)',
-                    padding: '2px 6px',
-                    borderRadius: '4px',
-                  }}>
+                  <span
+                    style={{
+                      fontSize: '11px',
+                      color: 'var(--text-muted)',
+                      backgroundColor: 'rgba(100, 100, 100, 0.2)',
+                      padding: '2px 6px',
+                      borderRadius: '4px',
+                    }}
+                  >
                     not set
                   </span>
                 )}
@@ -181,7 +213,6 @@ export default function SecretsPanel({ packId, token, onSecretsUpdated }: Secret
                   placeholder="Enter secret value..."
                   value={secretValue}
                   onChange={(e) => setSecretValue(e.target.value)}
-                  autoFocus
                   style={{
                     width: '100%',
                     padding: '6px 8px',

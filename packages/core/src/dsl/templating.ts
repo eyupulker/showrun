@@ -11,7 +11,7 @@ import type { VariableContext } from './types.js';
 /** Minimal env: null loader (renderString only), allow undefined for optional inputs. */
 const env = new nunjucks.Environment(null, {
   autoescape: false,
-  throwOnUndefined: false,  // Allow undefined values to render as empty string
+  throwOnUndefined: false, // Allow undefined values to render as empty string
 });
 
 /**

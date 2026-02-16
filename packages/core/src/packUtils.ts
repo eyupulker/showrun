@@ -1,11 +1,11 @@
 /**
  * Pack utilities for task pack file operations
  */
-import { mkdirSync, writeFileSync, readFileSync, existsSync, renameSync } from 'fs';
-import { resolve, join } from 'path';
-import type { TaskPackManifest, InputSchema, CollectibleDefinition } from './types.js';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { DslStep } from './dsl/types.js';
 import { validateJsonTaskPack } from './jsonPackValidator.js';
+import type { CollectibleDefinition, InputSchema, TaskPackManifest } from './types.js';
 
 /**
  * Sanitize a pack ID to be safe for use as a directory name
@@ -50,7 +50,7 @@ export function validatePathInAllowedDir(path: string, allowedDir: string): void
   const resolvedPath = resolve(path);
   const resolvedAllowed = resolve(allowedDir);
 
-  if (!resolvedPath.startsWith(resolvedAllowed + '/') && resolvedPath !== resolvedAllowed) {
+  if (!resolvedPath.startsWith(`${resolvedAllowed}/`) && resolvedPath !== resolvedAllowed) {
     throw new Error(`Path ${resolvedPath} is outside allowed directory ${resolvedAllowed}`);
   }
 }
@@ -66,19 +66,18 @@ export function readJsonFile<T>(filePath: string): T {
     const content = readFileSync(filePath, 'utf-8');
     return JSON.parse(content) as T;
   } catch (error) {
-    throw new Error(`Failed to parse JSON file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to parse JSON file ${filePath}: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
 /**
  * Write taskpack.json
  */
-export function writeTaskPackManifest(
-  packDir: string,
-  manifest: TaskPackManifest
-): void {
+export function writeTaskPackManifest(packDir: string, manifest: TaskPackManifest): void {
   const manifestPath = join(packDir, 'taskpack.json');
-  const content = JSON.stringify(manifest, null, 2) + '\n';
+  const content = `${JSON.stringify(manifest, null, 2)}\n`;
   atomicWrite(manifestPath, content);
 }
 
@@ -112,6 +111,6 @@ export function writeFlowJson(
   }
 
   const flowPath = join(packDir, 'flow.json');
-  const content = JSON.stringify(flowData, null, 2) + '\n';
+  const content = `${JSON.stringify(flowData, null, 2)}\n`;
   atomicWrite(flowPath, content);
 }

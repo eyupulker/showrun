@@ -1,5 +1,3 @@
-import type { DslStep, Target, TargetOrAnyOf, SkipCondition } from './types.js';
-
 /**
  * Validation errors
  */
@@ -57,11 +55,37 @@ function validateTarget(target: unknown, errors?: string[], prefix?: string): bo
 
     case 'role': {
       const validRoles = [
-        'button', 'checkbox', 'combobox', 'dialog', 'gridcell', 'link', 'listbox',
-        'menuitem', 'option', 'radio', 'searchbox', 'slider', 'switch', 'tab',
-        'tabpanel', 'textbox', 'treeitem', 'article', 'banner', 'complementary',
-        'contentinfo', 'form', 'main', 'navigation', 'region', 'search', 'alert',
-        'log', 'marquee', 'status', 'timer'
+        'button',
+        'checkbox',
+        'combobox',
+        'dialog',
+        'gridcell',
+        'link',
+        'listbox',
+        'menuitem',
+        'option',
+        'radio',
+        'searchbox',
+        'slider',
+        'switch',
+        'tab',
+        'tabpanel',
+        'textbox',
+        'treeitem',
+        'article',
+        'banner',
+        'complementary',
+        'contentinfo',
+        'form',
+        'main',
+        'navigation',
+        'region',
+        'search',
+        'alert',
+        'log',
+        'marquee',
+        'status',
+        'timer',
       ];
       if (!validRoles.includes(t.role as string)) {
         addError(errors, `${pfx}Role target must have a valid role: ${validRoles.join(', ')}`);
@@ -236,7 +260,8 @@ function validateSkipCondition(condition: unknown, errors?: string[], prefix?: s
       break;
 
     default:
-      addError(errors,
+      addError(
+        errors,
         `${pfx}Unknown skip_if condition type: ${key}. Valid types: url_includes, url_matches, element_visible, element_exists, var_equals, var_truthy, var_falsy, all, any`
       );
   }
@@ -250,11 +275,41 @@ const ALLOWED_PARAMS: Record<string, string[]> = {
   extract_title: ['out'],
   extract_text: ['selector', 'target', 'out', 'first', 'trim', 'default', 'hint', 'scope', 'near'],
   sleep: ['durationMs'],
-  wait_for: ['selector', 'target', 'url', 'loadState', 'visible', 'timeoutMs', 'hint', 'scope', 'near'],
+  wait_for: [
+    'selector',
+    'target',
+    'url',
+    'loadState',
+    'visible',
+    'timeoutMs',
+    'hint',
+    'scope',
+    'near',
+  ],
   click: ['selector', 'target', 'first', 'waitForVisible', 'hint', 'scope', 'near'],
   fill: ['selector', 'target', 'value', 'first', 'clear', 'hint', 'scope', 'near'],
-  extract_attribute: ['selector', 'target', 'attribute', 'out', 'first', 'default', 'hint', 'scope', 'near'],
-  assert: ['selector', 'target', 'visible', 'textIncludes', 'urlIncludes', 'message', 'hint', 'scope', 'near'],
+  extract_attribute: [
+    'selector',
+    'target',
+    'attribute',
+    'out',
+    'first',
+    'default',
+    'hint',
+    'scope',
+    'near',
+  ],
+  assert: [
+    'selector',
+    'target',
+    'visible',
+    'textIncludes',
+    'urlIncludes',
+    'message',
+    'hint',
+    'scope',
+    'near',
+  ],
   set_var: ['name', 'value'],
   network_find: ['where', 'pick', 'saveAs', 'waitForMs', 'pollIntervalMs'],
   network_replay: ['requestId', 'overrides', 'auth', 'out', 'saveAs', 'response'],
@@ -335,7 +390,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       if (params.waitUntil !== undefined) {
         const validWaitUntil = ['load', 'domcontentloaded', 'networkidle', 'commit'];
         if (!validWaitUntil.includes(params.waitUntil as string)) {
-          errors.push(`${prefix}: Navigate step "waitUntil" must be one of: ${validWaitUntil.join(', ')}`);
+          errors.push(
+            `${prefix}: Navigate step "waitUntil" must be one of: ${validWaitUntil.join(', ')}`
+          );
         }
       }
       break;
@@ -349,7 +406,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
     case 'extract_text':
       // Must have either selector (legacy) or target (new)
       if (!params.selector && !params.target) {
-        errors.push(`${prefix}: ExtractText step must have either "selector" or "target" in params`);
+        errors.push(
+          `${prefix}: ExtractText step must have either "selector" or "target" in params`
+        );
       }
       if (params.selector !== undefined && typeof params.selector !== 'string') {
         errors.push(`${prefix}: ExtractText step "selector" must be a string`);
@@ -398,7 +457,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
 
     case 'wait_for':
       if (!params.selector && !params.target && !params.url && !params.loadState) {
-        errors.push(`${prefix}: WaitFor step must have one of: selector, target, url, or loadState`);
+        errors.push(
+          `${prefix}: WaitFor step must have one of: selector, target, url, or loadState`
+        );
       }
       if (params.selector !== undefined && typeof params.selector !== 'string') {
         errors.push(`${prefix}: WaitFor step "selector" must be a string`);
@@ -446,10 +507,15 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       if (params.loadState !== undefined) {
         const validLoadStates = ['load', 'domcontentloaded', 'networkidle'];
         if (!validLoadStates.includes(params.loadState as string)) {
-          errors.push(`${prefix}: WaitFor step "loadState" must be one of: ${validLoadStates.join(', ')}`);
+          errors.push(
+            `${prefix}: WaitFor step "loadState" must be one of: ${validLoadStates.join(', ')}`
+          );
         }
       }
-      if (params.timeoutMs !== undefined && (typeof params.timeoutMs !== 'number' || params.timeoutMs < 0)) {
+      if (
+        params.timeoutMs !== undefined &&
+        (typeof params.timeoutMs !== 'number' || params.timeoutMs < 0)
+      ) {
         errors.push(`${prefix}: WaitFor step "timeoutMs" must be a non-negative number`);
       }
       break;
@@ -536,7 +602,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
     case 'extract_attribute':
       // Must have either selector (legacy) or target (new)
       if (!params.selector && !params.target) {
-        errors.push(`${prefix}: ExtractAttribute step must have either "selector" or "target" in params`);
+        errors.push(
+          `${prefix}: ExtractAttribute step must have either "selector" or "target" in params`
+        );
       }
       if (params.selector !== undefined && typeof params.selector !== 'string') {
         errors.push(`${prefix}: ExtractAttribute step "selector" must be a string`);
@@ -545,10 +613,14 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
         validateTargetOrAnyOf(params.target, errors, prefix);
       }
       if (typeof params.attribute !== 'string' || !params.attribute) {
-        errors.push(`${prefix}: ExtractAttribute step must have a non-empty string "attribute" in params`);
+        errors.push(
+          `${prefix}: ExtractAttribute step must have a non-empty string "attribute" in params`
+        );
       }
       if (typeof params.out !== 'string' || !params.out) {
-        errors.push(`${prefix}: ExtractAttribute step must have a non-empty string "out" in params`);
+        errors.push(
+          `${prefix}: ExtractAttribute step must have a non-empty string "out" in params`
+        );
       }
       if (params.first !== undefined && typeof params.first !== 'boolean') {
         errors.push(`${prefix}: ExtractAttribute step "first" must be a boolean`);
@@ -565,7 +637,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       if (params.near !== undefined && params.near !== null) {
         const near = params.near as Record<string, unknown>;
         if (typeof near !== 'object' || near.kind !== 'text') {
-          errors.push(`${prefix}: ExtractAttribute step "near" must be an object with kind: "text"`);
+          errors.push(
+            `${prefix}: ExtractAttribute step "near" must be an object with kind: "text"`
+          );
         } else {
           if (typeof near.text !== 'string') {
             errors.push(`${prefix}: ExtractAttribute step "near.text" must be a string`);
@@ -579,7 +653,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
 
     case 'assert':
       if (!params.selector && !params.target && !params.urlIncludes) {
-        errors.push(`${prefix}: Assert step must have at least one of: selector, target, or urlIncludes`);
+        errors.push(
+          `${prefix}: Assert step must have at least one of: selector, target, or urlIncludes`
+        );
       }
       if (params.selector !== undefined && typeof params.selector !== 'string') {
         errors.push(`${prefix}: Assert step "selector" must be a string`);
@@ -637,10 +713,19 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       } else {
         const where = params.where as Record<string, unknown>;
         // Check for unknown where fields
-        const validWhereFields = new Set(['urlIncludes', 'urlRegex', 'method', 'status', 'contentTypeIncludes', 'responseContains']);
+        const validWhereFields = new Set([
+          'urlIncludes',
+          'urlRegex',
+          'method',
+          'status',
+          'contentTypeIncludes',
+          'responseContains',
+        ]);
         for (const key of Object.keys(where)) {
           if (!validWhereFields.has(key)) {
-            errors.push(`${prefix}: NetworkFind step "where.${key}" is not a valid field (unknown fields are silently ignored). Valid fields: ${[...validWhereFields].join(', ')}`);
+            errors.push(
+              `${prefix}: NetworkFind step "where.${key}" is not a valid field (unknown fields are silently ignored). Valid fields: ${[...validWhereFields].join(', ')}`
+            );
           }
         }
         if (where.urlIncludes !== undefined && typeof where.urlIncludes !== 'string') {
@@ -660,20 +745,27 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
         if (where.method !== undefined) {
           const validMethods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'];
           if (!validMethods.includes(where.method as string)) {
-            errors.push(`${prefix}: NetworkFind step "where.method" must be one of: ${validMethods.join(', ')}`);
+            errors.push(
+              `${prefix}: NetworkFind step "where.method" must be one of: ${validMethods.join(', ')}`
+            );
           }
         }
         if (where.status !== undefined && (typeof where.status !== 'number' || where.status < 0)) {
           errors.push(`${prefix}: NetworkFind step "where.status" must be a non-negative number`);
         }
-        if (where.contentTypeIncludes !== undefined && typeof where.contentTypeIncludes !== 'string') {
+        if (
+          where.contentTypeIncludes !== undefined &&
+          typeof where.contentTypeIncludes !== 'string'
+        ) {
           errors.push(`${prefix}: NetworkFind step "where.contentTypeIncludes" must be a string`);
         }
         if (where.responseContains !== undefined) {
           if (typeof where.responseContains !== 'string') {
             errors.push(`${prefix}: NetworkFind step "where.responseContains" must be a string`);
           } else if (where.responseContains.length > 2000) {
-            errors.push(`${prefix}: NetworkFind step "where.responseContains" must be at most 2000 characters`);
+            errors.push(
+              `${prefix}: NetworkFind step "where.responseContains" must be at most 2000 characters`
+            );
           }
         }
       }
@@ -685,10 +777,16 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       } else if (params.saveAs.length > 500) {
         errors.push(`${prefix}: NetworkFind step "saveAs" must be at most 500 characters`);
       }
-      if (params.waitForMs !== undefined && (typeof params.waitForMs !== 'number' || params.waitForMs < 0)) {
+      if (
+        params.waitForMs !== undefined &&
+        (typeof params.waitForMs !== 'number' || params.waitForMs < 0)
+      ) {
         errors.push(`${prefix}: NetworkFind step "waitForMs" must be a non-negative number`);
       }
-      if (params.pollIntervalMs !== undefined && (typeof params.pollIntervalMs !== 'number' || params.pollIntervalMs < 100)) {
+      if (
+        params.pollIntervalMs !== undefined &&
+        (typeof params.pollIntervalMs !== 'number' || params.pollIntervalMs < 100)
+      ) {
         errors.push(`${prefix}: NetworkFind step "pollIntervalMs" must be at least 100`);
       }
       break;
@@ -696,7 +794,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
 
     case 'network_replay': {
       if (typeof params.requestId !== 'string' || !params.requestId) {
-        errors.push(`${prefix}: NetworkReplay step must have a non-empty string "requestId" in params`);
+        errors.push(
+          `${prefix}: NetworkReplay step must have a non-empty string "requestId" in params`
+        );
       } else if (params.requestId.length > 2000) {
         errors.push(`${prefix}: NetworkReplay step "requestId" must be at most 2000 characters`);
       }
@@ -712,38 +812,52 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
         if (overrides.setHeaders && typeof overrides.setHeaders === 'object') {
           for (const key of Object.keys(overrides.setHeaders as Record<string, unknown>)) {
             if (SENSITIVE_HEADERS.has(key.toLowerCase())) {
-              errors.push(`${prefix}: NetworkReplay step "overrides.setHeaders" cannot set sensitive header: ${key}`);
+              errors.push(
+                `${prefix}: NetworkReplay step "overrides.setHeaders" cannot set sensitive header: ${key}`
+              );
             }
           }
         }
         if (overrides.urlReplace !== undefined) {
           if (typeof overrides.urlReplace !== 'object' || overrides.urlReplace === null) {
-            errors.push(`${prefix}: NetworkReplay step "overrides.urlReplace" must be { find: string, replace: string }`);
+            errors.push(
+              `${prefix}: NetworkReplay step "overrides.urlReplace" must be { find: string, replace: string }`
+            );
           } else {
             const ur = overrides.urlReplace as Record<string, unknown>;
             if (typeof ur.find !== 'string' || typeof ur.replace !== 'string') {
-              errors.push(`${prefix}: NetworkReplay step "overrides.urlReplace" must have string "find" and "replace"`);
+              errors.push(
+                `${prefix}: NetworkReplay step "overrides.urlReplace" must have string "find" and "replace"`
+              );
             } else {
               try {
                 new RegExp(ur.find);
               } catch {
-                errors.push(`${prefix}: NetworkReplay step "overrides.urlReplace.find" is not a valid regex`);
+                errors.push(
+                  `${prefix}: NetworkReplay step "overrides.urlReplace.find" is not a valid regex`
+                );
               }
             }
           }
         }
         if (overrides.bodyReplace !== undefined) {
           if (typeof overrides.bodyReplace !== 'object' || overrides.bodyReplace === null) {
-            errors.push(`${prefix}: NetworkReplay step "overrides.bodyReplace" must be { find: string, replace: string }`);
+            errors.push(
+              `${prefix}: NetworkReplay step "overrides.bodyReplace" must be { find: string, replace: string }`
+            );
           } else {
             const br = overrides.bodyReplace as Record<string, unknown>;
             if (typeof br.find !== 'string' || typeof br.replace !== 'string') {
-              errors.push(`${prefix}: NetworkReplay step "overrides.bodyReplace" must have string "find" and "replace"`);
+              errors.push(
+                `${prefix}: NetworkReplay step "overrides.bodyReplace" must have string "find" and "replace"`
+              );
             } else {
               try {
                 new RegExp(br.find);
               } catch {
-                errors.push(`${prefix}: NetworkReplay step "overrides.bodyReplace.find" is not a valid regex`);
+                errors.push(
+                  `${prefix}: NetworkReplay step "overrides.bodyReplace.find" is not a valid regex`
+                );
               }
             }
           }
@@ -771,7 +885,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
 
     case 'network_extract':
       if (typeof params.fromVar !== 'string' || !params.fromVar) {
-        errors.push(`${prefix}: NetworkExtract step must have a non-empty string "fromVar" in params`);
+        errors.push(
+          `${prefix}: NetworkExtract step must have a non-empty string "fromVar" in params`
+        );
       }
       if (params.as !== 'json' && params.as !== 'text') {
         errors.push(`${prefix}: NetworkExtract step "as" must be "json" or "text"`);
@@ -780,12 +896,20 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
         errors.push(`${prefix}: NetworkExtract step "jsonPath" must be a string`);
       }
       if (params.transform !== undefined) {
-        if (typeof params.transform !== 'object' || params.transform === null || Array.isArray(params.transform)) {
-          errors.push(`${prefix}: NetworkExtract step "transform" must be an object mapping field names to jsonPath expressions`);
+        if (
+          typeof params.transform !== 'object' ||
+          params.transform === null ||
+          Array.isArray(params.transform)
+        ) {
+          errors.push(
+            `${prefix}: NetworkExtract step "transform" must be an object mapping field names to jsonPath expressions`
+          );
         } else {
           for (const [key, val] of Object.entries(params.transform as Record<string, unknown>)) {
             if (typeof val !== 'string') {
-              errors.push(`${prefix}: NetworkExtract step "transform.${key}" must be a string (jsonPath expression)`);
+              errors.push(
+                `${prefix}: NetworkExtract step "transform.${key}" must be a string (jsonPath expression)`
+              );
             }
           }
         }
@@ -798,7 +922,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
     case 'select_option':
       // Must have either selector (legacy) or target (new)
       if (!params.selector && !params.target) {
-        errors.push(`${prefix}: SelectOption step must have either "selector" or "target" in params`);
+        errors.push(
+          `${prefix}: SelectOption step must have either "selector" or "target" in params`
+        );
       }
       if (params.selector !== undefined && typeof params.selector !== 'string') {
         errors.push(`${prefix}: SelectOption step "selector" must be a string`);
@@ -821,13 +947,17 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
         if (Array.isArray(params.value)) {
           for (const v of params.value) {
             if (!isValidSelectValue(v)) {
-              errors.push(`${prefix}: SelectOption step "value" must be string, { label: string }, or { index: number }`);
+              errors.push(
+                `${prefix}: SelectOption step "value" must be string, { label: string }, or { index: number }`
+              );
               break;
             }
           }
         } else {
           if (!isValidSelectValue(params.value)) {
-            errors.push(`${prefix}: SelectOption step "value" must be string, { label: string }, or { index: number }`);
+            errors.push(
+              `${prefix}: SelectOption step "value" must be string, { label: string }, or { index: number }`
+            );
           }
         }
       }
@@ -855,7 +985,10 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       if (params.times !== undefined && (typeof params.times !== 'number' || params.times < 1)) {
         errors.push(`${prefix}: PressKey step "times" must be a positive number`);
       }
-      if (params.delayMs !== undefined && (typeof params.delayMs !== 'number' || params.delayMs < 0)) {
+      if (
+        params.delayMs !== undefined &&
+        (typeof params.delayMs !== 'number' || params.delayMs < 0)
+      ) {
         errors.push(`${prefix}: PressKey step "delayMs" must be a non-negative number`);
       }
       if (params.hint !== undefined && typeof params.hint !== 'string') {
@@ -904,7 +1037,9 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       if (params.frame === undefined || params.frame === null) {
         errors.push(`${prefix}: Frame step must have "frame" in params`);
       } else if (typeof params.frame !== 'string' && typeof params.frame !== 'object') {
-        errors.push(`${prefix}: Frame step "frame" must be a string, { name: string }, or { url: string }`);
+        errors.push(
+          `${prefix}: Frame step "frame" must be a string, { name: string }, or { url: string }`
+        );
       } else if (typeof params.frame === 'object') {
         if (!('name' in params.frame) && !('url' in params.frame)) {
           errors.push(`${prefix}: Frame step "frame" object must have "name" or "url"`);
@@ -949,17 +1084,28 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
   // Check for unknown params
   const allowed = ALLOWED_PARAMS[s.type as string];
   if (allowed) {
-    const unknown = Object.keys(params).filter(k => !allowed.includes(k));
+    const unknown = Object.keys(params).filter((k) => !allowed.includes(k));
     if (unknown.length > 0) {
-      const evalLike = unknown.filter(k =>
-        ['eval', 'expression', 'evaluate', 'exec', 'script', 'code', 'js', 'javascript', 'function'].includes(k.toLowerCase())
+      const evalLike = unknown.filter((k) =>
+        [
+          'eval',
+          'expression',
+          'evaluate',
+          'exec',
+          'script',
+          'code',
+          'js',
+          'javascript',
+          'function',
+        ].includes(k.toLowerCase())
       );
       let hint = '';
       if (evalLike.length > 0) {
-        hint = '. To extract/transform data from JSON responses, use the network_extract step with a JMESPath "path" expression instead of eval';
+        hint =
+          '. To extract/transform data from JSON responses, use the network_extract step with a JMESPath "path" expression instead of eval';
       }
       errors.push(
-        `${prefix}: Unknown param(s) ${unknown.map(k => `"${k}"`).join(', ')} in "${s.type}" step. Allowed params: ${allowed.join(', ')}${hint}`
+        `${prefix}: Unknown param(s) ${unknown.map((k) => `"${k}"`).join(', ')} in "${s.type}" step. Allowed params: ${allowed.join(', ')}${hint}`
       );
     }
   }
@@ -984,7 +1130,10 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
 export function validateFlow(steps: unknown[], collectedErrors?: string[]): void {
   if (!Array.isArray(steps)) {
     const msg = 'Flow must be an array of steps';
-    if (collectedErrors) { collectedErrors.push(msg); return; }
+    if (collectedErrors) {
+      collectedErrors.push(msg);
+      return;
+    }
     throw new ValidationError(msg);
   }
 

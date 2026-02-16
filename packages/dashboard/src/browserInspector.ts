@@ -3,8 +3,8 @@
  * Direct browser session management for Teach Mode
  */
 
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
 import type { Target } from '@showrun/core';
+import { type Browser, type BrowserContext, chromium, type Page } from 'playwright';
 
 export type BrowserEngine = 'chromium' | 'camoufox';
 
@@ -48,7 +48,7 @@ function redactHeaders(headers: Record<string, string>): Record<string, string> 
 
 function redactPostData(raw: string | undefined | null): string | undefined {
   if (raw == null || raw === '') return undefined;
-  let s = raw.length > POST_DATA_CAP ? raw.slice(0, POST_DATA_CAP) + '...[truncated]' : raw;
+  let s = raw.length > POST_DATA_CAP ? `${raw.slice(0, POST_DATA_CAP)}...[truncated]` : raw;
   if (/["']?(?:password|token|secret|api[_-]?key)["']?\s*[:=]/i.test(s)) {
     s = '[REDACTED - may contain secret]';
   }
@@ -120,9 +120,8 @@ function entryToCompact(entry: NetworkEntry): NetworkEntryCompact {
   };
   if (entry.responseBodySnippet) {
     const preview = entry.responseBodySnippet.slice(0, COMPACT_RESPONSE_PREVIEW_LENGTH);
-    result.responsePreview = preview.length < entry.responseBodySnippet.length
-      ? preview + '...'
-      : preview;
+    result.responsePreview =
+      preview.length < entry.responseBodySnippet.length ? `${preview}...` : preview;
   }
   return result;
 }
@@ -187,7 +186,7 @@ function attachNetworkCapture(
     const postDataForReplay =
       rawPostData != null && rawPostData.length > 0
         ? rawPostData.length > POST_DATA_REPLAY_CAP
-          ? rawPostData.slice(0, POST_DATA_REPLAY_CAP) + '...[truncated]'
+          ? `${rawPostData.slice(0, POST_DATA_REPLAY_CAP)}...[truncated]`
           : rawPostData
         : undefined;
     const entry: NetworkEntry = {
@@ -224,7 +223,10 @@ function attachNetworkCapture(
       try {
         const body = await response.body();
         const maxBytes = Math.min(body.length, RESPONSE_BODY_CAPTURE_MAX * 4);
-        entry.responseBodySnippet = body.subarray(0, maxBytes).toString('utf8').slice(0, RESPONSE_BODY_CAPTURE_MAX);
+        entry.responseBodySnippet = body
+          .subarray(0, maxBytes)
+          .toString('utf8')
+          .slice(0, RESPONSE_BODY_CAPTURE_MAX);
       } catch {
         // ignore body read errors (e.g. already consumed)
       }
@@ -246,36 +248,42 @@ export async function startBrowserSession(
 
   if (engine === 'camoufox') {
     // Dynamic import to avoid loading Camoufox when not needed
-    let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean }) => Promise<Browser | BrowserContext>;
+    let Camoufox: (options: {
+      headless?: boolean;
+      user_data_dir?: string;
+      humanize?: number | boolean;
+    }) => Promise<Browser | BrowserContext>;
     try {
       const camoufoxModule = await import('camoufox-js');
       Camoufox = camoufoxModule.Camoufox;
     } catch (error) {
       throw new Error(
         'Camoufox is not available. Run "npx camoufox-js fetch" to download the browser. ' +
-        `Error: ${error instanceof Error ? error.message : String(error)}`
+          `Error: ${error instanceof Error ? error.message : String(error)}`
       );
     }
 
     if (persistentContextDir) {
       // Ensure directory exists
-      const { mkdirSync } = await import('fs');
+      const { mkdirSync } = await import('node:fs');
       mkdirSync(persistentContextDir, { recursive: true });
 
       // With user_data_dir, Camoufox returns BrowserContext directly (persistent context)
       // humanize: adds human-like cursor movement delays (up to 2 seconds)
-      context = await Camoufox({
+      context = (await Camoufox({
         headless: !headful,
         humanize: 2.0,
         user_data_dir: persistentContextDir,
-      }) as unknown as BrowserContext;
-      page = context.pages()[0] || await context.newPage();
+      })) as unknown as BrowserContext;
+      page = context.pages()[0] || (await context.newPage());
       browser = null;
-      console.log(`[BrowserInspector] Started camoufox with persistent context: ${persistentContextDir}`);
+      console.log(
+        `[BrowserInspector] Started camoufox with persistent context: ${persistentContextDir}`
+      );
     } else {
       // Ephemeral session - Camoufox returns Browser
       // humanize: adds human-like cursor movement delays (up to 2 seconds)
-      browser = await Camoufox({ headless: !headful, humanize: 2.0 }) as Browser;
+      browser = (await Camoufox({ headless: !headful, humanize: 2.0 })) as Browser;
       context = await browser.newContext();
       page = await context.newPage();
     }
@@ -283,16 +291,18 @@ export async function startBrowserSession(
     // Default: Chromium
     if (persistentContextDir) {
       // Ensure directory exists
-      const { mkdirSync } = await import('fs');
+      const { mkdirSync } = await import('node:fs');
       mkdirSync(persistentContextDir, { recursive: true });
 
       // Use persistent context for Chromium
       context = await chromium.launchPersistentContext(persistentContextDir, {
         headless: !headful,
       });
-      page = context.pages()[0] || await context.newPage();
+      page = context.pages()[0] || (await context.newPage());
       browser = null;
-      console.log(`[BrowserInspector] Started chromium with persistent context: ${persistentContextDir}`);
+      console.log(
+        `[BrowserInspector] Started chromium with persistent context: ${persistentContextDir}`
+      );
     } else {
       // Ephemeral session
       browser = await chromium.launch({
@@ -324,7 +334,7 @@ export async function startBrowserSession(
 
   attachNetworkCapture(sessionId, page, networkBuffer, networkMap, replayDataMap);
 
-  sessions.get(sessionId)!.actions.push({
+  sessions.get(sessionId)?.actions.push({
     timestamp: Date.now(),
     action: 'start_session',
     details: { headful, engine, persistentContextDir, packId },
@@ -448,7 +458,12 @@ export async function typeInElement(
   session.actions.push({
     timestamp: Date.now(),
     action: 'type',
-    details: { label: label ?? undefined, selector: selector ?? undefined, textLength: text.length, url: page.url() },
+    details: {
+      label: label ?? undefined,
+      selector: selector ?? undefined,
+      textLength: text.length,
+      url: page.url(),
+    },
   });
   return { url: page.url(), typed: true };
 }
@@ -687,9 +702,10 @@ async function getElementFingerprint(page: Page, elementHandle: any): Promise<El
     while (current && depth < 5) {
       const tag = current.tagName.toLowerCase();
       const id = current.id ? `#${current.id}` : '';
-      const classes = current.className && typeof current.className === 'string' 
-        ? `.${current.className.split(' ').filter(Boolean).join('.')}` 
-        : '';
+      const classes =
+        current.className && typeof current.className === 'string'
+          ? `.${current.className.split(' ').filter(Boolean).join('.')}`
+          : '';
       pathParts.unshift(tag + id + classes);
       current = current.parentElement;
       depth++;
@@ -732,7 +748,11 @@ async function getElementFingerprint(page: Page, elementHandle: any): Promise<El
     });
   }
 
-  if (elementInfo.visibleText && elementInfo.visibleText.length > 0 && elementInfo.visibleText.length < 100) {
+  if (
+    elementInfo.visibleText &&
+    elementInfo.visibleText.length > 0 &&
+    elementInfo.visibleText.length < 100
+  ) {
     candidates.push({
       kind: 'text',
       text: elementInfo.visibleText,
@@ -831,7 +851,9 @@ export function networkList(
   const buf = session.networkBuffer ?? [];
   let list = buf.slice(-limit);
   if (filter === 'api' || filter === 'xhr') {
-    list = list.filter((e) => e.isLikelyApi || e.resourceType === 'xhr' || e.resourceType === 'fetch');
+    list = list.filter(
+      (e) => e.isLikelyApi || e.resourceType === 'xhr' || e.resourceType === 'fetch'
+    );
   }
   return compact ? list.map(entryToCompact) : list.map(entryToSummary);
 }
@@ -874,7 +896,10 @@ export function networkSearch(
   return matches.slice(-limit).map(entryToSummary);
 }
 
-export function networkGet(sessionId: string, requestId: string): { entry: NetworkEntrySummary; replayPossible: boolean } {
+export function networkGet(
+  sessionId: string,
+  requestId: string
+): { entry: NetworkEntrySummary; replayPossible: boolean } {
   const session = sessions.get(sessionId);
   if (!session) {
     throw new Error(`Session not found: ${sessionId}`);
@@ -937,13 +962,31 @@ export async function networkReplay(
     throw new Error(`Replay data not found for request: ${requestId}`);
   }
   for (const key of SENSITIVE_HEADER_NAMES) {
-    if (overrides?.setHeaders && Object.keys(overrides.setHeaders).some((k) => k.toLowerCase() === key)) {
+    if (
+      overrides?.setHeaders &&
+      Object.keys(overrides.setHeaders).some((k) => k.toLowerCase() === key)
+    ) {
       throw new Error(`Cannot set sensitive header: ${key}`);
     }
   }
-  const requestContext = (session.page as { request?: { fetch: (url: string, options?: object) => Promise<{ status: () => number; headers: () => Record<string, string>; body: () => Promise<Buffer> }> } }).request;
+  const requestContext = (
+    session.page as {
+      request?: {
+        fetch: (
+          url: string,
+          options?: object
+        ) => Promise<{
+          status: () => number;
+          headers: () => Record<string, string>;
+          body: () => Promise<Buffer>;
+        }>;
+      };
+    }
+  ).request;
   if (!requestContext || typeof requestContext.fetch !== 'function') {
-    throw new Error('Browser context does not support API request (replay). Playwright version may be too old.');
+    throw new Error(
+      'Browser context does not support API request (replay). Playwright version may be too old.'
+    );
   }
   let url = entry.url;
   if (overrides?.urlReplace) {
@@ -951,7 +994,9 @@ export async function networkReplay(
       const re = new RegExp(overrides.urlReplace.find, 'g');
       url = url.replace(re, overrides.urlReplace.replace);
     } catch (e) {
-      throw new Error(`overrides.urlReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+      throw new Error(
+        `overrides.urlReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
   }
   if (overrides?.url != null) url = overrides.url;
@@ -961,7 +1006,9 @@ export async function networkReplay(
       const re = new RegExp(overrides.bodyReplace.find, 'g');
       body = body.replace(re, overrides.bodyReplace.replace);
     } catch (e) {
-      throw new Error(`overrides.bodyReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+      throw new Error(
+        `overrides.bodyReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`
+      );
     }
   }
   if (overrides?.body != null) body = overrides.body;
@@ -992,7 +1039,7 @@ export async function networkReplay(
   const bodyText =
     bodySize <= 256 * 1024
       ? respBody.toString('utf8')
-      : respBody.toString('utf8').slice(0, 2048) + '...[truncated]';
+      : `${respBody.toString('utf8').slice(0, 2048)}...[truncated]`;
   return {
     status: response.status(),
     contentType,
@@ -1183,7 +1230,7 @@ function addElementRefs(yaml: string, maxDepth?: number): string {
       if (trimmed.includes(':')) {
         // Element has children or inline text, insert ref before the colon
         const colonIndex = line.indexOf(':');
-        const modified = line.slice(0, colonIndex) + ` ${ref}` + line.slice(colonIndex);
+        const modified = `${line.slice(0, colonIndex)} ${ref}${line.slice(colonIndex)}`;
         result.push(modified);
       } else {
         // Element is a leaf, append ref at the end

@@ -2,8 +2,8 @@
  * showrun serve - Start MCP server for AI agents
  */
 
-import { resolve } from 'path';
-import { discoverPacks, createMCPServer, createMCPServerOverHTTP } from '@showrun/mcp-server';
+import { resolve } from 'node:path';
+import { createMCPServer, createMCPServerOverHTTP, discoverPacks } from '@showrun/mcp-server';
 
 export interface ServeCommandOptions {
   packs: string[];
@@ -38,7 +38,7 @@ export function parseServeArgs(args: string[]): ServeCommandOptions {
       headful = false;
     } else if (arg === '--concurrency' && next) {
       concurrency = parseInt(next, 10);
-      if (isNaN(concurrency) || concurrency < 1) {
+      if (Number.isNaN(concurrency) || concurrency < 1) {
         console.error('Error: --concurrency must be a positive integer');
         process.exit(1);
       }
@@ -50,7 +50,7 @@ export function parseServeArgs(args: string[]): ServeCommandOptions {
       http = true;
     } else if (arg === '--port' && next) {
       port = parseInt(next, 10);
-      if (isNaN(port) || port < 1 || port > 65535) {
+      if (Number.isNaN(port) || port < 1 || port > 65535) {
         console.error('Error: --port must be a valid port number (1-65535)');
         process.exit(1);
       }
@@ -67,7 +67,10 @@ export function parseServeArgs(args: string[]): ServeCommandOptions {
     process.exit(1);
   }
 
-  const packs = packsStr.split(',').map((dir) => dir.trim()).filter(Boolean);
+  const packs = packsStr
+    .split(',')
+    .map((dir) => dir.trim())
+    .filter(Boolean);
 
   if (packs.length === 0) {
     console.error('Error: At least one pack directory is required');
@@ -111,7 +114,7 @@ export async function cmdServe(args: string[]): Promise<void> {
     if (options.headful && !process.env.DISPLAY) {
       console.error(
         '[MCP Server] Warning: Headful mode requested but DISPLAY not set. ' +
-        'Will fall back to headless. Set DISPLAY or use xvfb-run to enable headful mode.'
+          'Will fall back to headless. Set DISPLAY or use xvfb-run to enable headful mode.'
       );
     }
 

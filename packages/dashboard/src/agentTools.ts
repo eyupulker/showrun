@@ -2,19 +2,16 @@
  * Agent tools: MCP wrappers exposed to the LLM as function tools
  */
 
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { resolveTemplates, saveVersion, TaskPackLoader } from '@showrun/core';
+import * as browserInspector from './browserInspector.js';
+import { closeSession, isSessionAlive, startBrowserSession } from './browserInspector.js';
+import { executePlanTool } from './contextManager.js';
+import { type Conversation, updateConversation } from './db.js';
 import type { ToolDef } from './llm/provider.js';
 import type { TaskPackEditorWrapper } from './mcpWrappers.js';
-import * as browserInspector from './browserInspector.js';
-import { isSessionAlive, startBrowserSession, closeSession } from './browserInspector.js';
 import { getSecretNamesWithValues } from './secretsUtils.js';
-import { resolveTemplates, TaskPackLoader, saveVersion } from '@showrun/core';
-import { executePlanTool } from './contextManager.js';
-import {
-  updateConversation,
-  type Conversation,
-} from './db.js';
-import { join } from 'path';
-import { mkdirSync } from 'fs';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Browser Session Management (per-conversation, in-memory)
@@ -29,7 +26,10 @@ export function getConversationBrowserSession(conversationId: string): string | 
 }
 
 /** Set the browser session for a conversation */
-export function setConversationBrowserSession(conversationId: string, sessionId: string | null): void {
+export function setConversationBrowserSession(
+  conversationId: string,
+  sessionId: string | null
+): void {
   if (sessionId) {
     conversationBrowserSessions.set(conversationId, sessionId);
   } else {
@@ -43,7 +43,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'editor_read_pack',
-      description: 'Read the linked pack: returns taskpack.json and flow.json. MUST call first before proposing any flow changes.',
+      description:
+        'Read the linked pack: returns taskpack.json and flow.json. MUST call first before proposing any flow changes.',
       parameters: {
         type: 'object',
         properties: {},
@@ -55,7 +56,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'editor_list_secrets',
-      description: 'List secrets for the linked pack. Returns secret names, descriptions, and whether values are set (no actual values for security). Use {{secret.NAME}} in templates to reference secret values.',
+      description:
+        'List secrets for the linked pack. Returns secret names, descriptions, and whether values are set (no actual values for security). Use {{secret.NAME}} in templates to reference secret values.',
       parameters: {
         type: 'object',
         properties: {},
@@ -67,7 +69,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'editor_validate_flow',
-      description: 'Validate flow JSON text (DSL steps and collectibles). Returns ok, errors, warnings.',
+      description:
+        'Validate flow JSON text (DSL steps and collectibles). Returns ok, errors, warnings.',
       parameters: {
         type: 'object',
         properties: { flowJsonText: { type: 'string', description: 'Flow JSON as string' } },
@@ -87,9 +90,13 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
           op: {
             type: 'string',
             enum: ['append', 'insert', 'replace', 'delete', 'update_collectibles', 'update_inputs'],
-            description: 'append=add step at end; insert=add at index; replace=replace step at index; delete=remove at index; update_collectibles=replace collectibles array; update_inputs=add/update input fields',
+            description:
+              'append=add step at end; insert=add at index; replace=replace step at index; delete=remove at index; update_collectibles=replace collectibles array; update_inputs=add/update input fields',
           },
-          index: { type: 'number', description: 'Required for insert, replace, delete. Step index (0-based).' },
+          index: {
+            type: 'number',
+            description: 'Required for insert, replace, delete. Step index (0-based).',
+          },
           step: {
             type: 'object',
             description: 'Step object { id, type, params }. Required for append, insert, replace.',
@@ -108,7 +115,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
           },
           inputs: {
             type: 'object',
-            description: 'Required for update_inputs. Object of { fieldName: { type, description?, required?, default? } }. Merges with existing inputs.',
+            description:
+              'Required for update_inputs. Object of { fieldName: { type, description?, required?, default? } }. Merges with existing inputs.',
             additionalProperties: {
               type: 'object',
               properties: {
@@ -135,9 +143,13 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
         properties: {
           id: {
             type: 'string',
-            description: 'Pack ID (e.g., "mycompany.sitename.collector"). Use reverse domain notation. Only alphanumeric, dots, underscores, hyphens.',
+            description:
+              'Pack ID (e.g., "mycompany.sitename.collector"). Use reverse domain notation. Only alphanumeric, dots, underscores, hyphens.',
           },
-          name: { type: 'string', description: 'Human-readable name (e.g., "Site Name Collector")' },
+          name: {
+            type: 'string',
+            description: 'Human-readable name (e.g., "Site Name Collector")',
+          },
           description: { type: 'string', description: 'Brief description of what this pack does' },
         },
         required: ['id', 'name'],
@@ -163,7 +175,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_goto',
-      description: 'Navigate browser to URL. Browser session is managed automatically. IMPORTANT: After navigating, always call browser_network_list to check for API endpoints before using DOM tools.',
+      description:
+        'Navigate browser to URL. Browser session is managed automatically. IMPORTANT: After navigating, always call browser_network_list to check for API endpoints before using DOM tools.',
       parameters: {
         type: 'object',
         properties: {
@@ -177,7 +190,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_go_back',
-      description: 'Navigate the browser back one step in history. Use when the user asks to go back.',
+      description:
+        'Navigate the browser back one step in history. Use when the user asks to go back.',
       parameters: {
         type: 'object',
         properties: {},
@@ -189,12 +203,16 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_type',
-      description: 'Type text into an input field. Use label for the accessible name of the field (e.g. "Search", "Email") or selector. Clears the field by default before typing.',
+      description:
+        'Type text into an input field. Use label for the accessible name of the field (e.g. "Search", "Email") or selector. Clears the field by default before typing.',
       parameters: {
         type: 'object',
         properties: {
           text: { type: 'string', description: 'Text to type' },
-          label: { type: 'string', description: 'Accessible name/label of the input (e.g. "Search")' },
+          label: {
+            type: 'string',
+            description: 'Accessible name/label of the input (e.g. "Search")',
+          },
           selector: { type: 'string', description: 'CSS selector when label is not enough' },
           clear: { type: 'boolean', description: 'Clear field before typing (default true)' },
         },
@@ -206,7 +224,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_screenshot',
-      description: 'Take a screenshot of the current page. Returns { imageBase64, mimeType, url, timestamp }. When you need page context (e.g. user asks "what page am I on?", "what buttons do you see?", "look at the page"), call this first; the image will be attached for you to analyze.',
+      description:
+        'Take a screenshot of the current page. Returns { imageBase64, mimeType, url, timestamp }. When you need page context (e.g. user asks "what page am I on?", "what buttons do you see?", "look at the page"), call this first; the image will be attached for you to analyze.',
       parameters: {
         type: 'object',
         properties: {},
@@ -218,7 +237,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_get_links',
-      description: 'Get all links on the current page (href, visible text, title). Use this to find which link to click instead of screenshot + vision; cheaper and accurate.',
+      description:
+        'Get all links on the current page (href, visible text, title). Use this to find which link to click instead of screenshot + vision; cheaper and accurate.',
       parameters: {
         type: 'object',
         properties: {},
@@ -231,13 +251,22 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_network_list',
-      description: 'IMPORTANT: Call this after EVERY browser_goto or page navigation to check for API endpoints. List recent network requests. Returns compact format (id, method, url, status, responsePreview) by default. responsePreview shows first ~100 chars of response body. If APIs exist that return the data you need, ALWAYS prefer using them via browser_network_replay instead of extracting from DOM. Use filter "all" to include static resources. Use browser_network_get for full headers or browser_network_get_response for full body.',
+      description:
+        'IMPORTANT: Call this after EVERY browser_goto or page navigation to check for API endpoints. List recent network requests. Returns compact format (id, method, url, status, responsePreview) by default. responsePreview shows first ~100 chars of response body. If APIs exist that return the data you need, ALWAYS prefer using them via browser_network_replay instead of extracting from DOM. Use filter "all" to include static resources. Use browser_network_get for full headers or browser_network_get_response for full body.',
       parameters: {
         type: 'object',
         properties: {
           limit: { type: 'number', description: 'Max requests to return (default 50)' },
-          filter: { type: 'string', enum: ['all', 'api', 'xhr'], description: 'Filter type (default "api" - likely API calls only)' },
-          compact: { type: 'boolean', description: 'If true (default), return minimal fields. Set false to include request/response headers.' },
+          filter: {
+            type: 'string',
+            enum: ['all', 'api', 'xhr'],
+            description: 'Filter type (default "api" - likely API calls only)',
+          },
+          compact: {
+            type: 'boolean',
+            description:
+              'If true (default), return minimal fields. Set false to include request/response headers.',
+          },
         },
         required: [],
       },
@@ -247,11 +276,16 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_network_search',
-      description: 'Search network requests by query (case-insensitive). Matches URL, method, resourceType, status, request/response headers, postData, and response body. Use this to find requests by company name, text in the response, or URL. Returns matching entries (capped at 20). Prefer over network_list when the user asks for a specific request or content (e.g. "request that contains Martini").',
+      description:
+        'Search network requests by query (case-insensitive). Matches URL, method, resourceType, status, request/response headers, postData, and response body. Use this to find requests by company name, text in the response, or URL. Returns matching entries (capped at 20). Prefer over network_list when the user asks for a specific request or content (e.g. "request that contains Martini").',
       parameters: {
         type: 'object',
         properties: {
-          query: { type: 'string', description: 'Substring to match in URL, headers, postData, or response body (case-insensitive)' },
+          query: {
+            type: 'string',
+            description:
+              'Substring to match in URL, headers, postData, or response body (case-insensitive)',
+          },
           limit: { type: 'number', description: 'Max results to return (default 20)' },
         },
         required: ['query'],
@@ -262,11 +296,15 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_network_get',
-      description: 'Get one network request by id (metadata only; no response body). Use when the user provides a request ID (e.g. from the Network list). Call browser_network_get_response when you need the response body. replayPossible indicates replay with browser context is possible.',
+      description:
+        'Get one network request by id (metadata only; no response body). Use when the user provides a request ID (e.g. from the Network list). Call browser_network_get_response when you need the response body. replayPossible indicates replay with browser context is possible.',
       parameters: {
         type: 'object',
         properties: {
-          requestId: { type: 'string', description: 'Request ID the user selected (e.g. req-1-123)' },
+          requestId: {
+            type: 'string',
+            description: 'Request ID the user selected (e.g. req-1-123)',
+          },
         },
         required: ['requestId'],
       },
@@ -276,12 +314,17 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_network_get_response',
-      description: 'Get the response body for a request. Returns first 200 characters by default; set full=true to return the full captured snippet (up to 2000 chars). Use this to inspect API responses before deciding whether to extract data via API replay or DOM.',
+      description:
+        'Get the response body for a request. Returns first 200 characters by default; set full=true to return the full captured snippet (up to 2000 chars). Use this to inspect API responses before deciding whether to extract data via API replay or DOM.',
       parameters: {
         type: 'object',
         properties: {
           requestId: { type: 'string', description: 'Request ID from network list or network_get' },
-          full: { type: 'boolean', description: 'If true, return full captured snippet (up to 2000 chars); default false returns first 200 chars' },
+          full: {
+            type: 'boolean',
+            description:
+              'If true, return full captured snippet (up to 2000 chars); default false returns first 200 chars',
+          },
         },
         required: ['requestId'],
       },
@@ -291,21 +334,31 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_network_replay',
-      description: 'Replay a captured request using the browser context (cookies apply). This is the PREFERRED way to extract data when an API endpoint exists — replay the API call and use the structured response instead of parsing DOM. Overrides: url, setQuery, setHeaders, body (Nunjucks: {{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Optional urlReplace/bodyReplace: { find, replace }; replace can use $1, $2 and Nunjucks (e.g. {{inputs.page | urlencode }}). Returns status, contentType, and bounded response body.',
+      description:
+        'Replay a captured request using the browser context (cookies apply). This is the PREFERRED way to extract data when an API endpoint exists — replay the API call and use the structured response instead of parsing DOM. Overrides: url, setQuery, setHeaders, body (Nunjucks: {{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Optional urlReplace/bodyReplace: { find, replace }; replace can use $1, $2 and Nunjucks (e.g. {{inputs.page | urlencode }}). Returns status, contentType, and bounded response body.',
       parameters: {
         type: 'object',
         properties: {
           requestId: { type: 'string', description: 'Request ID from network list or network_get' },
           overrides: {
             type: 'object',
-            description: 'Optional overrides (url, setQuery, setHeaders, body; or urlReplace/bodyReplace { find, replace })',
+            description:
+              'Optional overrides (url, setQuery, setHeaders, body; or urlReplace/bodyReplace { find, replace })',
             properties: {
               url: { type: 'string' },
               setQuery: { type: 'object', description: 'Query params to set (merge/replace)' },
               setHeaders: { type: 'object', description: 'Non-sensitive headers only' },
               body: { type: 'string' },
-              urlReplace: { type: 'object', properties: { find: { type: 'string' }, replace: { type: 'string' } }, description: 'Regex find/replace on captured URL' },
-              bodyReplace: { type: 'object', properties: { find: { type: 'string' }, replace: { type: 'string' } }, description: 'Regex find/replace on captured body' },
+              urlReplace: {
+                type: 'object',
+                properties: { find: { type: 'string' }, replace: { type: 'string' } },
+                description: 'Regex find/replace on captured URL',
+              },
+              bodyReplace: {
+                type: 'object',
+                properties: { find: { type: 'string' }, replace: { type: 'string' } },
+                description: 'Regex find/replace on captured body',
+              },
             },
           },
         },
@@ -342,7 +395,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
           },
           maxDepth: {
             type: 'number',
-            description: 'Max tree depth to return (default: unlimited). Only applies to yaml format.',
+            description:
+              'Max tree depth to return (default: unlimited). Only applies to yaml format.',
           },
         },
         required: [],
@@ -353,12 +407,21 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_click',
-      description: 'Click an element on the page. Use linkText for the visible text. Use role: "link" for links, "button" for buttons, "text" for other clickables (batch names, tabs, list items, divs/spans). If the item is not a link or button (e.g. "Winter 2026" in a filter), use role "text".',
+      description:
+        'Click an element on the page. Use linkText for the visible text. Use role: "link" for links, "button" for buttons, "text" for other clickables (batch names, tabs, list items, divs/spans). If the item is not a link or button (e.g. "Winter 2026" in a filter), use role "text".',
       parameters: {
         type: 'object',
         properties: {
-          linkText: { type: 'string', description: 'Visible text of the element to click (e.g. "Sign in", "Winter 2026")' },
-          role: { type: 'string', enum: ['link', 'button', 'text'], description: 'Use "link" (default) for <a>, "button" for buttons, "text" for divs/spans/list items (batch names, tabs)' },
+          linkText: {
+            type: 'string',
+            description: 'Visible text of the element to click (e.g. "Sign in", "Winter 2026")',
+          },
+          role: {
+            type: 'string',
+            enum: ['link', 'button', 'text'],
+            description:
+              'Use "link" (default) for <a>, "button" for buttons, "text" for divs/spans/list items (batch names, tabs)',
+          },
           selector: { type: 'string', description: 'CSS selector if linkText is not sufficient' },
         },
         required: [],
@@ -369,14 +432,22 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_click_coordinates',
-      description: 'Click at exact x,y coordinates on the page. Use for clicking on elements inside iframes (like reCAPTCHA checkbox) where normal selectors don\'t work across iframe boundaries. Get coordinates from browser_get_element_bounds or by analyzing a screenshot. With Camoufox engine, cursor movements appear human-like.',
+      description:
+        "Click at exact x,y coordinates on the page. Use for clicking on elements inside iframes (like reCAPTCHA checkbox) where normal selectors don't work across iframe boundaries. Get coordinates from browser_get_element_bounds or by analyzing a screenshot. With Camoufox engine, cursor movements appear human-like.",
       parameters: {
         type: 'object',
         properties: {
           x: { type: 'number', description: 'X coordinate (pixels from left edge of viewport)' },
           y: { type: 'number', description: 'Y coordinate (pixels from top edge of viewport)' },
-          button: { type: 'string', enum: ['left', 'right', 'middle'], description: 'Mouse button to click (default "left")' },
-          clickCount: { type: 'number', description: '1 for single click, 2 for double click (default 1)' },
+          button: {
+            type: 'string',
+            enum: ['left', 'right', 'middle'],
+            description: 'Mouse button to click (default "left")',
+          },
+          clickCount: {
+            type: 'number',
+            description: '1 for single click, 2 for double click (default 1)',
+          },
         },
         required: ['x', 'y'],
       },
@@ -386,11 +457,16 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_get_element_bounds',
-      description: 'Get the bounding box of an element by CSS selector. Returns position (x, y), dimensions (width, height), and center point (centerX, centerY) for clicking. Use this to find coordinates for elements that are difficult to target with normal selectors, such as iframe contents or positioned elements.',
+      description:
+        'Get the bounding box of an element by CSS selector. Returns position (x, y), dimensions (width, height), and center point (centerX, centerY) for clicking. Use this to find coordinates for elements that are difficult to target with normal selectors, such as iframe contents or positioned elements.',
       parameters: {
         type: 'object',
         properties: {
-          selector: { type: 'string', description: 'CSS selector for the element (e.g., "iframe[title*=\'reCAPTCHA\']", "#my-element")' },
+          selector: {
+            type: 'string',
+            description:
+              'CSS selector for the element (e.g., "iframe[title*=\'reCAPTCHA\']", "#my-element")',
+          },
         },
         required: ['selector'],
       },
@@ -414,7 +490,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_close_session',
-      description: 'Close the browser session and free resources. Note: Browser is automatically closed when pack is marked as ready.',
+      description:
+        'Close the browser session and free resources. Note: Browser is automatically closed when pack is marked as ready.',
       parameters: {
         type: 'object',
         properties: {},
@@ -427,7 +504,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'agent_save_plan',
-      description: 'Save your current plan/strategy. Use this whenever you formulate a multi-step plan. The plan survives conversation summarization, so include: (1) the user\'s goal, (2) your planned steps, (3) current progress, (4) key decisions made. Call this proactively when working on complex tasks.',
+      description:
+        "Save your current plan/strategy. Use this whenever you formulate a multi-step plan. The plan survives conversation summarization, so include: (1) the user's goal, (2) your planned steps, (3) current progress, (4) key decisions made. Call this proactively when working on complex tasks.",
       parameters: {
         type: 'object',
         properties: {
@@ -444,7 +522,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'agent_get_plan',
-      description: 'Retrieve your saved plan. Use this if you need to recall your strategy or after the conversation was summarized.',
+      description:
+        'Retrieve your saved plan. Use this if you need to recall your strategy or after the conversation was summarized.',
       parameters: {
         type: 'object',
         properties: {},
@@ -457,13 +536,14 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'conversation_update_title',
-      description: 'Update the conversation title based on the user\'s goal. Call after the first user message to set a concise title (e.g., "Gmail Email Scraper", "YC Batch Collector").',
+      description:
+        'Update the conversation title based on the user\'s goal. Call after the first user message to set a concise title (e.g., "Gmail Email Scraper", "YC Batch Collector").',
       parameters: {
         type: 'object',
         properties: {
           title: {
             type: 'string',
-            description: 'A concise title (3-6 words) describing the user\'s goal.',
+            description: "A concise title (3-6 words) describing the user's goal.",
           },
         },
         required: ['title'],
@@ -474,7 +554,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'conversation_update_description',
-      description: 'Update the conversation description/summary. Call when progress is made to reflect current status (e.g., "Creating login flow", "Ready to collect emails").',
+      description:
+        'Update the conversation description/summary. Call when progress is made to reflect current status (e.g., "Creating login flow", "Ready to collect emails").',
       parameters: {
         type: 'object',
         properties: {
@@ -491,7 +572,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'conversation_set_status',
-      description: 'Set the conversation status. Use "ready" ONLY when the flow has been fully implemented with DSL steps and tested with editor_run_pack. The pack must have actual flow steps — extracting data during exploration does NOT count. Use "needs_input" when waiting for user decision, "error" on failure. Status defaults to "active" during work.',
+      description:
+        'Set the conversation status. Use "ready" ONLY when the flow has been fully implemented with DSL steps and tested with editor_run_pack. The pack must have actual flow steps — extracting data during exploration does NOT count. Use "needs_input" when waiting for user decision, "error" on failure. Status defaults to "active" during work.',
       parameters: {
         type: 'object',
         properties: {
@@ -509,7 +591,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'conversation_link_pack',
-      description: 'Link the conversation to a created/edited pack. Call when you create or complete editing a pack to associate it with this conversation.',
+      description:
+        'Link the conversation to a created/edited pack. Call when you create or complete editing a pack to associate it with this conversation.',
       parameters: {
         type: 'object',
         properties: {
@@ -526,7 +609,8 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'request_secrets',
-      description: 'Request the user to provide secret values needed for the automation (e.g., passwords, API keys, TOTP secrets). This will show a modal to the user where they can enter the values securely. The AI never sees the actual values - only knows when they have been provided. Use this when the pack needs credentials that are not yet set.',
+      description:
+        'Request the user to provide secret values needed for the automation (e.g., passwords, API keys, TOTP secrets). This will show a modal to the user where they can enter the values securely. The AI never sees the actual values - only knows when they have been provided. Use this when the pack needs credentials that are not yet set.',
       parameters: {
         type: 'object',
         properties: {
@@ -536,9 +620,18 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
             items: {
               type: 'object',
               properties: {
-                name: { type: 'string', description: 'Secret name (must match the secret defined in taskpack.json)' },
-                description: { type: 'string', description: 'Description of what this secret is used for' },
-                required: { type: 'boolean', description: 'Whether this secret is required (default true)' },
+                name: {
+                  type: 'string',
+                  description: 'Secret name (must match the secret defined in taskpack.json)',
+                },
+                description: {
+                  type: 'string',
+                  description: 'Description of what this secret is used for',
+                },
+                required: {
+                  type: 'boolean',
+                  description: 'Whether this secret is required (default true)',
+                },
               },
               required: ['name'],
             },
@@ -563,7 +656,10 @@ export interface AgentToolContext {
   /** Current conversation ID (optional; needed for conversation_* and browser_* tools) */
   conversationId?: string | null;
   /** Callback to trigger secrets request modal (set by server) */
-  onSecretsRequest?: (request: { secrets: Array<{ name: string; description?: string; required?: boolean }>; message: string }) => void;
+  onSecretsRequest?: (request: {
+    secrets: Array<{ name: string; description?: string; required?: boolean }>;
+    message: string;
+  }) => void;
   /** Whether to run browser in headful mode (default: true for dashboard) */
   headful?: boolean;
   /** Pack map for version auto-save (optional; provided by dashboard) */
@@ -574,10 +670,7 @@ export interface AgentToolContext {
  * Resolve templates in a string value using pack secrets.
  * Falls back to returning the original value if resolution fails.
  */
-async function resolveTemplateValue(
-  value: string,
-  ctx: AgentToolContext
-): Promise<string> {
+async function resolveTemplateValue(value: string, ctx: AgentToolContext): Promise<string> {
   if (!value || typeof value !== 'string') return value;
   // Only attempt resolution if the value contains template syntax
   if (!value.includes('{{')) return value;
@@ -588,10 +681,14 @@ async function resolveTemplateValue(
     try {
       const packs = await ctx.taskPackEditor.listPacks();
       const pack = packs.find((p: { id: string; path?: string }) => p.id === ctx.packId);
-      console.log(`[resolveTemplateValue] packId=${ctx.packId}, packFound=${!!pack}, packPath=${pack?.path}`);
+      console.log(
+        `[resolveTemplateValue] packId=${ctx.packId}, packFound=${!!pack}, packPath=${pack?.path}`
+      );
       if (pack?.path) {
         secrets = TaskPackLoader.loadSecrets(pack.path);
-        console.log(`[resolveTemplateValue] Loaded ${Object.keys(secrets).length} secrets: ${Object.keys(secrets).join(', ')}`);
+        console.log(
+          `[resolveTemplateValue] Loaded ${Object.keys(secrets).length} secrets: ${Object.keys(secrets).join(', ')}`
+        );
       } else {
         console.warn(`[resolveTemplateValue] Pack not found or no path for packId=${ctx.packId}`);
       }
@@ -599,7 +696,9 @@ async function resolveTemplateValue(
       console.warn('[agentTools] Failed to load secrets for template resolution:', e);
     }
   } else {
-    console.warn(`[resolveTemplateValue] No packId in context, cannot load secrets for template: ${value}`);
+    console.warn(
+      `[resolveTemplateValue] No packId in context, cannot load secrets for template: ${value}`
+    );
   }
 
   try {
@@ -643,7 +742,7 @@ function truncateToolOutput(output: string, label?: string): string {
     _totalChars: output.length,
     _shownChars: MAX_TOOL_OUTPUT_CHARS,
     _message: `Output truncated from ${output.length.toLocaleString()} to ${MAX_TOOL_OUTPUT_CHARS.toLocaleString()} characters.${label ? ` (${label})` : ''} The operation completed successfully.`,
-    partialOutput: truncated + '\n... (truncated)',
+    partialOutput: `${truncated}\n... (truncated)`,
   };
   return JSON.stringify(result, null, 2);
 }
@@ -659,14 +758,11 @@ export interface ExecuteToolResult {
  * Returns string for LLM and optional browser snapshot for response.
  */
 /** Tools that only the initializer agent should use (pack creation is automatic now) */
-const INITIALIZER_ONLY_TOOLS = new Set([
-  'editor_create_pack',
-  'conversation_link_pack',
-]);
+const INITIALIZER_ONLY_TOOLS = new Set(['editor_create_pack', 'conversation_link_pack']);
 
 /** Tool definitions for the main agent (excludes pack creation/linking - handled by initializer) */
 export const MAIN_AGENT_TOOL_DEFINITIONS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
-  t => !INITIALIZER_ONLY_TOOLS.has(t.function.name)
+  (t) => !INITIALIZER_ONLY_TOOLS.has(t.function.name)
 );
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -699,7 +795,8 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
         },
         testInputs: {
           type: 'object',
-          description: 'Input values for testing the flow with editor_run_pack (e.g., {"batch": "W24"}).',
+          description:
+            'Input values for testing the flow with editor_run_pack (e.g., {"batch": "W24"}).',
         },
       },
       required: ['instruction', 'explorationContext'],
@@ -716,24 +813,38 @@ const EDITOR_TOOL_NAMES = new Set([
 ]);
 
 /** Editor Agent tools: editor tools only (no browser, no conversation) */
-export const EDITOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
-  t => EDITOR_TOOL_NAMES.has(t.function.name)
+export const EDITOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter((t) =>
+  EDITOR_TOOL_NAMES.has(t.function.name)
 );
 
 /** Exploration Agent tool names — browser + network + context + conversation + read_pack + agent_build_flow */
 const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   // Browser tools
-  'browser_goto', 'browser_go_back', 'browser_type', 'browser_screenshot',
-  'browser_get_links', 'browser_get_dom_snapshot', 'browser_click',
-  'browser_click_coordinates', 'browser_get_element_bounds',
-  'browser_last_actions', 'browser_close_session',
+  'browser_goto',
+  'browser_go_back',
+  'browser_type',
+  'browser_screenshot',
+  'browser_get_links',
+  'browser_get_dom_snapshot',
+  'browser_click',
+  'browser_click_coordinates',
+  'browser_get_element_bounds',
+  'browser_last_actions',
+  'browser_close_session',
   // Network tools
-  'browser_network_list', 'browser_network_search', 'browser_network_get',
-  'browser_network_get_response', 'browser_network_replay', 'browser_network_clear',
+  'browser_network_list',
+  'browser_network_search',
+  'browser_network_get',
+  'browser_network_get_response',
+  'browser_network_replay',
+  'browser_network_clear',
   // Context management
-  'agent_save_plan', 'agent_get_plan',
+  'agent_save_plan',
+  'agent_get_plan',
   // Conversation management
-  'conversation_update_title', 'conversation_update_description', 'conversation_set_status',
+  'conversation_update_title',
+  'conversation_update_description',
+  'conversation_set_status',
   // Secrets
   'request_secrets',
   // Read-only pack inspection
@@ -742,7 +853,7 @@ const EXPLORATION_ONLY_TOOL_NAMES = new Set([
 
 /** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow */
 export const EXPLORATION_AGENT_TOOLS: ToolDef[] = [
-  ...MCP_AGENT_TOOL_DEFINITIONS.filter(t => EXPLORATION_ONLY_TOOL_NAMES.has(t.function.name)),
+  ...MCP_AGENT_TOOL_DEFINITIONS.filter((t) => EXPLORATION_ONLY_TOOL_NAMES.has(t.function.name)),
   AGENT_BUILD_FLOW_TOOL,
 ];
 
@@ -806,11 +917,15 @@ async function ensureBrowserSession(ctx: AgentToolContext): Promise<string> {
     if (pack?.path) {
       persistentContextDir = join(pack.path, '.browser-profile');
       mkdirSync(persistentContextDir, { recursive: true });
-      console.log(`[BrowserAuto] Using persistent profile for pack ${ctx.packId}: ${persistentContextDir}`);
+      console.log(
+        `[BrowserAuto] Using persistent profile for pack ${ctx.packId}: ${persistentContextDir}`
+      );
     }
   }
 
-  console.log(`[BrowserAuto] Starting camoufox session for conversation ${ctx.conversationId}${persistentContextDir ? ' (persistent)' : ''}`);
+  console.log(
+    `[BrowserAuto] Starting camoufox session for conversation ${ctx.conversationId}${persistentContextDir ? ' (persistent)' : ''}`
+  );
   const sessionId = await startBrowserSession(headful, engine, {
     persistentContextDir,
     packId: ctx.packId ?? undefined,
@@ -833,7 +948,8 @@ export async function executeAgentTool(
   const wrap = (
     s: string,
     snapshot?: { screenshotBase64: string; mimeType: string; url: string }
-  ): ExecuteToolResult => (snapshot ? { stringForLlm: s, browserSnapshot: snapshot } : { stringForLlm: s });
+  ): ExecuteToolResult =>
+    snapshot ? { stringForLlm: s, browserSnapshot: snapshot } : { stringForLlm: s };
 
   // Auto-inject sessionId for browser tools
   let effectiveArgs = args;
@@ -842,10 +958,12 @@ export async function executeAgentTool(
       const sessionId = await ensureBrowserSession(ctx);
       effectiveArgs = { ...args, sessionId };
     } catch (err) {
-      return wrap(JSON.stringify({
-        error: `Browser session failed: ${err instanceof Error ? err.message : String(err)}`,
-        hint: 'The browser may have been closed. Try the operation again to auto-restart.',
-      }));
+      return wrap(
+        JSON.stringify({
+          error: `Browser session failed: ${err instanceof Error ? err.message : String(err)}`,
+          hint: 'The browser may have been closed. Try the operation again to auto-restart.',
+        })
+      );
     }
   }
 
@@ -861,7 +979,7 @@ export async function executeAgentTool(
         const packId = (args.packId as string) || ctx.packId;
         if (!packId) throw new Error('No pack linked to this conversation');
         // Get pack path from editor
-        const packInfo = await taskPackEditor.readPack(packId);
+        const _packInfo = await taskPackEditor.readPack(packId);
         // Extract path from taskpackJson - we need to get it from the wrapper
         // For now, use a workaround: list packs and find path
         const packs = await taskPackEditor.listPacks();
@@ -870,7 +988,16 @@ export async function executeAgentTool(
           throw new Error(`Pack ${packId} not found or path not available`);
         }
         const secrets = getSecretNamesWithValues(pack.path);
-        return wrap(JSON.stringify({ secrets, note: 'Use {{secret.NAME}} in templates to reference secret values. Never ask for secret values - they are managed through the UI.' }, null, 2));
+        return wrap(
+          JSON.stringify(
+            {
+              secrets,
+              note: 'Use {{secret.NAME}} in templates to reference secret values. Never ask for secret values - they are managed through the UI.',
+            },
+            null,
+            2
+          )
+        );
       }
       case 'validate_flow': {
         const flowJsonText = args.flowJsonText as string;
@@ -892,18 +1019,28 @@ export async function executeAgentTool(
               ...(args.collectibles !== undefined && { collectibles: args.collectibles }),
               ...(args.inputs !== undefined && { inputs: args.inputs }),
             };
-        if (!patch.op) throw new Error('op required (append, insert, replace, delete, update_collectibles, or update_inputs)');
+        if (!patch.op)
+          throw new Error(
+            'op required (append, insert, replace, delete, update_collectibles, or update_inputs)'
+          );
         const result = await taskPackEditor.applyFlowPatch(packId, patch as any);
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'create_pack': {
         // Check if conversation already has a linked pack
         if (ctx.packId) {
-          return wrap(JSON.stringify({
-            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to see the current flow, then use editor_apply_flow_patch to modify it.`,
-            existingPackId: ctx.packId,
-            suggestion: 'Call editor_read_pack() first to understand the existing flow, then use editor_apply_flow_patch to make changes.',
-          }, null, 2));
+          return wrap(
+            JSON.stringify(
+              {
+                error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to see the current flow, then use editor_apply_flow_patch to modify it.`,
+                existingPackId: ctx.packId,
+                suggestion:
+                  'Call editor_read_pack() first to understand the existing flow, then use editor_apply_flow_patch to make changes.',
+              },
+              null,
+              2
+            )
+          );
         }
 
         const id = args.id as string;
@@ -912,10 +1049,16 @@ export async function executeAgentTool(
         if (!id) throw new Error('id required');
         if (!name) throw new Error('name required');
         const result = await taskPackEditor.createPack(id, name, description);
-        return wrap(JSON.stringify({
-          ...result,
-          message: `Pack "${id}" created successfully. Use editor_apply_flow_patch to add steps, and conversation_link_pack to associate it with this conversation.`,
-        }, null, 2));
+        return wrap(
+          JSON.stringify(
+            {
+              ...result,
+              message: `Pack "${id}" created successfully. Use editor_apply_flow_patch to add steps, and conversation_link_pack to associate it with this conversation.`,
+            },
+            null,
+            2
+          )
+        );
       }
       case 'run_pack': {
         const packId = (args.packId as string) || ctx.packId;
@@ -984,7 +1127,10 @@ export async function executeAgentTool(
         }
         const button = (args.button as 'left' | 'right' | 'middle') ?? 'left';
         const clickCount = (args.clickCount as number) ?? 1;
-        const result = await browserInspector.clickAtCoordinates(sessionId, x, y, { button, clickCount });
+        const result = await browserInspector.clickAtCoordinates(sessionId, x, y, {
+          button,
+          clickCount,
+        });
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'get_element_bounds': {
@@ -993,7 +1139,9 @@ export async function executeAgentTool(
         if (!selector) throw new Error('selector required');
         const result = await browserInspector.getElementBounds(sessionId, selector);
         if (result === null) {
-          return wrap(JSON.stringify({ found: false, message: 'Element not found or not visible' }, null, 2));
+          return wrap(
+            JSON.stringify({ found: false, message: 'Element not found or not visible' }, null, 2)
+          );
         }
         return wrap(JSON.stringify({ found: true, ...result }, null, 2));
       }
@@ -1068,7 +1216,11 @@ export async function executeAgentTool(
         const requestId = args.requestId as string;
         if (!requestId) throw new Error('requestId required');
         const overrides = args.overrides as Record<string, unknown> | undefined;
-        const result = await browserInspector.networkReplay(sessionId, requestId, overrides as Parameters<typeof browserInspector.networkReplay>[2]);
+        const result = await browserInspector.networkReplay(
+          sessionId,
+          requestId,
+          overrides as Parameters<typeof browserInspector.networkReplay>[2]
+        );
         return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'network replay'));
       }
       case 'network_clear': {
@@ -1094,7 +1246,9 @@ export async function executeAgentTool(
         const title = args.title as string;
         if (!title) throw new Error('title required');
         if (!ctx.conversationId) {
-          return wrap(JSON.stringify({ warning: 'No conversation context, title not saved but noted' }));
+          return wrap(
+            JSON.stringify({ warning: 'No conversation context, title not saved but noted' })
+          );
         }
         const updated = updateConversation(ctx.conversationId, { title });
         if (!updated) throw new Error('Conversation not found');
@@ -1104,7 +1258,9 @@ export async function executeAgentTool(
         const description = args.description as string;
         if (!description) throw new Error('description required');
         if (!ctx.conversationId) {
-          return wrap(JSON.stringify({ warning: 'No conversation context, description not saved but noted' }));
+          return wrap(
+            JSON.stringify({ warning: 'No conversation context, description not saved but noted' })
+          );
         }
         const updated = updateConversation(ctx.conversationId, { description });
         if (!updated) throw new Error('Conversation not found');
@@ -1116,23 +1272,30 @@ export async function executeAgentTool(
           throw new Error('status must be active, ready, needs_input, or error');
         }
         if (!ctx.conversationId) {
-          return wrap(JSON.stringify({ warning: 'No conversation context, status not saved but noted' }));
+          return wrap(
+            JSON.stringify({ warning: 'No conversation context, status not saved but noted' })
+          );
         }
 
         // Guard: "ready" requires a pack with actual flow steps and collectibles
         if (status === 'ready') {
           if (!ctx.packId) {
-            return wrap(JSON.stringify({
-              error: 'Cannot set status to "ready" without a linked pack. Create a pack and implement flow steps first.',
-            }));
+            return wrap(
+              JSON.stringify({
+                error:
+                  'Cannot set status to "ready" without a linked pack. Create a pack and implement flow steps first.',
+              })
+            );
           }
           try {
             const { flowJson } = await ctx.taskPackEditor.readPack(ctx.packId);
             const stepCount = flowJson?.flow?.length ?? 0;
             if (stepCount === 0) {
-              return wrap(JSON.stringify({
-                error: `Cannot set status to "ready": the pack "${ctx.packId}" has 0 flow steps. You must implement DSL steps in the flow using editor_apply_flow_patch before marking as ready. Exploration alone is not enough — the goal is a reusable, deterministic flow.`,
-              }));
+              return wrap(
+                JSON.stringify({
+                  error: `Cannot set status to "ready": the pack "${ctx.packId}" has 0 flow steps. You must implement DSL steps in the flow using editor_apply_flow_patch before marking as ready. Exploration alone is not enough — the goal is a reusable, deterministic flow.`,
+                })
+              );
             }
           } catch (readErr) {
             console.warn(`[Agent] Could not verify pack "${ctx.packId}" for ready guard:`, readErr);
@@ -1144,7 +1307,9 @@ export async function executeAgentTool(
         if (status === 'ready') {
           const existingSessionId = getConversationBrowserSession(ctx.conversationId);
           if (existingSessionId) {
-            console.log(`[BrowserAuto] Closing browser for completed pack (conversation ${ctx.conversationId})`);
+            console.log(
+              `[BrowserAuto] Closing browser for completed pack (conversation ${ctx.conversationId})`
+            );
             await closeSession(existingSessionId);
             setConversationBrowserSession(ctx.conversationId, null);
           }
@@ -1175,7 +1340,9 @@ export async function executeAgentTool(
         const packId = args.packId as string;
         if (!packId) throw new Error('packId required');
         if (!ctx.conversationId) {
-          return wrap(JSON.stringify({ warning: 'No conversation context, pack link not saved but noted' }));
+          return wrap(
+            JSON.stringify({ warning: 'No conversation context, pack link not saved but noted' })
+          );
         }
         const updated = updateConversation(ctx.conversationId, { packId });
         if (!updated) throw new Error('Conversation not found');
@@ -1183,7 +1350,11 @@ export async function executeAgentTool(
       }
       // Secrets request tool
       case 'request_secrets': {
-        const secrets = args.secrets as Array<{ name: string; description?: string; required?: boolean }>;
+        const secrets = args.secrets as Array<{
+          name: string;
+          description?: string;
+          required?: boolean;
+        }>;
         const message = args.message as string;
         if (!Array.isArray(secrets) || secrets.length === 0) {
           throw new Error('secrets array is required and must not be empty');
@@ -1193,12 +1364,14 @@ export async function executeAgentTool(
         }
         // The actual secret request is handled by the server via streaming event
         // This tool just returns a signal that the agent should wait
-        return wrap(JSON.stringify({
-          _type: 'secrets_request',
-          secrets,
-          message,
-          note: 'Secrets request sent to user. The agent loop will pause and resume when secrets are provided.',
-        }));
+        return wrap(
+          JSON.stringify({
+            _type: 'secrets_request',
+            secrets,
+            message,
+            note: 'Secrets request sent to user. The agent loop will pause and resume when secrets are provided.',
+          })
+        );
       }
       default:
         return wrap(JSON.stringify({ error: `Unknown tool: ${name}` }));
@@ -1219,7 +1392,11 @@ export async function executeAgentTool(
  * Parse Playwright error messages into structured, actionable feedback.
  * Strips ANSI codes, extracts the call log, and adds hints for common failures.
  */
-export function parsePlaywrightError(raw: string): { error: string; hint?: string; callLog?: string[] } {
+export function parsePlaywrightError(raw: string): {
+  error: string;
+  hint?: string;
+  callLog?: string[];
+} {
   // Strip ANSI escape codes
   const clean = raw.replace(/\u001b\[\d+m/g, '');
 
@@ -1240,22 +1417,26 @@ export function parsePlaywrightError(raw: string): { error: string; hint?: strin
 
   // Pattern: element found + click attempted but timed out → intercepted click
   if (/timeout.*exceeded/i.test(firstLine)) {
-    const resolved = callLogLines.some(l => /locator resolved to/.test(l));
-    const performingClick = callLogLines.some(l => /performing click action/.test(l));
-    const waitingVisible = callLogLines.some(l => /waiting for element to be visible/.test(l));
-    const isVisible = callLogLines.some(l => /element is visible, enabled and stable/.test(l));
-    const intercepted = callLogLines.some(l => /intercept/i.test(l));
+    const resolved = callLogLines.some((l) => /locator resolved to/.test(l));
+    const performingClick = callLogLines.some((l) => /performing click action/.test(l));
+    const waitingVisible = callLogLines.some((l) => /waiting for element to be visible/.test(l));
+    const isVisible = callLogLines.some((l) => /element is visible, enabled and stable/.test(l));
+    const _intercepted = callLogLines.some((l) => /intercept/i.test(l));
 
     if (resolved && performingClick) {
       // Element was found, click was attempted, but timed out after "performing click action"
       // This means another element intercepted the click (overlay, sticky nav, cookie banner, etc.)
-      hint = 'The element was found and visible, but the click was intercepted by another element covering it (overlay, sticky header, cookie banner, popup). Try: (1) scroll the page first, (2) close any overlays/popups, (3) use browser_click_coordinates with coordinates from browser_get_element_bounds, or (4) use a more specific CSS selector.';
+      hint =
+        'The element was found and visible, but the click was intercepted by another element covering it (overlay, sticky header, cookie banner, popup). Try: (1) scroll the page first, (2) close any overlays/popups, (3) use browser_click_coordinates with coordinates from browser_get_element_bounds, or (4) use a more specific CSS selector.';
     } else if (resolved && isVisible && !performingClick) {
-      hint = 'The element was found and visible but the click could not be performed. An overlay or another element may be blocking it. Try using browser_click_coordinates or closing overlays first.';
+      hint =
+        'The element was found and visible but the click could not be performed. An overlay or another element may be blocking it. Try using browser_click_coordinates or closing overlays first.';
     } else if (resolved && waitingVisible && !isVisible) {
-      hint = 'The element was found in the DOM but is not visible (hidden, off-screen, or display:none). Try scrolling to it, waiting for it to appear, or checking if the page state is correct.';
+      hint =
+        'The element was found in the DOM but is not visible (hidden, off-screen, or display:none). Try scrolling to it, waiting for it to appear, or checking if the page state is correct.';
     } else if (!resolved) {
-      hint = 'The element was not found on the page. Check that: (1) the text/selector is correct, (2) the page has finished loading, (3) the element is not inside an iframe (use frame step first).';
+      hint =
+        'The element was not found on the page. Check that: (1) the text/selector is correct, (2) the page has finished loading, (3) the element is not inside an iframe (use frame step first).';
     }
   }
 
@@ -1268,12 +1449,14 @@ export function parsePlaywrightError(raw: string): { error: string; hint?: strin
 
   // Pattern: element is not attached to the DOM
   if (/not attached/i.test(clean) || /detached/i.test(clean)) {
-    hint = 'The element was removed from the DOM before the action completed. The page may have re-rendered. Try adding a wait_for step before this action, or retry after the page stabilizes.';
+    hint =
+      'The element was removed from the DOM before the action completed. The page may have re-rendered. Try adding a wait_for step before this action, or retry after the page stabilizes.';
   }
 
   // Pattern: navigation / frame detached
   if (/frame.*detached/i.test(clean) || /navigating/i.test(clean)) {
-    hint = 'A navigation occurred during the action, causing the page context to change. Add a wait_for step (waitUntil: "networkidle" or a specific element) after navigation before interacting.';
+    hint =
+      'A navigation occurred during the action, causing the page context to change. Add a wait_for step (waitUntil: "networkidle" or a specific element) after navigation before interacting.';
   }
 
   return {

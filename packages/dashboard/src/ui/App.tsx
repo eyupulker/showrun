@@ -1,12 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import Sidebar, { type Conversation } from './Sidebar.js';
-import ChatView, { type Message } from './ChatView.js';
 import BottomNav, { type NavView } from './BottomNav.js';
-import RunsView from './RunsView.js';
+import ChatView, { type Message } from './ChatView.js';
 import MCPServerView from './MCPServerView.js';
 import PacksView from './PacksView.js';
+import RunsView from './RunsView.js';
 import { ShowRunLogo } from './ShowRunLogo.js';
+import Sidebar, { type Conversation } from './Sidebar.js';
 
 interface Pack {
   id: string;
@@ -58,7 +58,9 @@ function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [selectedConversation, setSelectedConversation] = useState<ConversationWithMessages | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<ConversationWithMessages | null>(
+    null
+  );
   const [activeView, setActiveView] = useState<NavView>('chat');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -141,7 +143,7 @@ function App() {
         socket.disconnect();
       }
     };
-  }, []);
+  }, [socket]);
 
   // Load full conversation when selection changes
   useEffect(() => {
@@ -194,7 +196,7 @@ function App() {
         );
       }
     }
-  }, [conversations, selectedConversationId]);
+  }, [conversations, selectedConversationId, selectedConversation]);
 
   const handleNewChat = async () => {
     if (!config) return;
@@ -243,9 +245,7 @@ function App() {
 
       if (res.ok) {
         const updated = (await res.json()) as Conversation;
-        setConversations((prev) =>
-          prev.map((c) => (c.id === id ? updated : c))
-        );
+        setConversations((prev) => prev.map((c) => (c.id === id ? updated : c)));
         if (selectedConversation?.id === id) {
           setSelectedConversation((prev) => (prev ? { ...prev, title } : null));
         }
@@ -328,7 +328,10 @@ function App() {
     return (
       <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
         <div className="loading">
-          <span className="spinner" style={{ width: '24px', height: '24px', marginBottom: '16px' }} />
+          <span
+            className="spinner"
+            style={{ width: '24px', height: '24px', marginBottom: '16px' }}
+          />
           <div>Loading...</div>
         </div>
       </div>
@@ -360,7 +363,7 @@ function App() {
             <MCPServerView
               packs={packs}
               token={config.token}
-              conversations={conversations.filter(c => c.status === 'ready')}
+              conversations={conversations.filter((c) => c.status === 'ready')}
             />
           </div>
         );
@@ -418,7 +421,9 @@ function App() {
               </svg>
             </button>
           )}
-          <div className="header-logo"><ShowRunLogo size="md" /></div>
+          <div className="header-logo">
+            <ShowRunLogo size="md" />
+          </div>
         </div>
 
         {/* Main content */}

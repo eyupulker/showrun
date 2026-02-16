@@ -1,7 +1,16 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type {
+  DslStep,
+  ExtractTextStep,
+  NavigateStep,
+  NetworkExtractStep,
+  NetworkFindStep,
+  NetworkReplayStep,
+  SetVarStep,
+  SleepStep,
+} from '../dsl/types.js';
 import { isFlowHttpCompatible, replayFromSnapshot } from '../httpReplay.js';
-import type { DslStep, NetworkReplayStep, NetworkFindStep, NavigateStep, SetVarStep, ExtractTextStep, SleepStep, NetworkExtractStep } from '../dsl/types.js';
-import type { SnapshotFile, RequestSnapshot } from '../requestSnapshot.js';
+import type { RequestSnapshot, SnapshotFile } from '../requestSnapshot.js';
 
 function makeSnapshotFile(stepIds: string[]): SnapshotFile {
   const snapshots: Record<string, RequestSnapshot> = {};
@@ -35,10 +44,20 @@ describe('isFlowHttpCompatible', () => {
   it('returns true when all network_replay steps have snapshots and no DOM extraction', () => {
     const steps: DslStep[] = [
       { id: 'nav1', type: 'navigate', params: { url: 'https://example.com' } } as NavigateStep,
-      { id: 'find1', type: 'network_find', params: { where: { urlIncludes: '/api/' }, saveAs: 'reqId' } } as NetworkFindStep,
       {
-        id: 'replay1', type: 'network_replay',
-        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+        id: 'find1',
+        type: 'network_find',
+        params: { where: { urlIncludes: '/api/' }, saveAs: 'reqId' },
+      } as NetworkFindStep,
+      {
+        id: 'replay1',
+        type: 'network_replay',
+        params: {
+          requestId: '{{vars.reqId}}',
+          auth: 'browser_context',
+          out: 'data',
+          response: { as: 'json' },
+        },
       } as NetworkReplayStep,
       { id: 'var1', type: 'set_var', params: { name: 'x', value: 'y' } } as SetVarStep,
     ];
@@ -49,8 +68,14 @@ describe('isFlowHttpCompatible', () => {
   it('returns false when snapshots is null', () => {
     const steps: DslStep[] = [
       {
-        id: 'replay1', type: 'network_replay',
-        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+        id: 'replay1',
+        type: 'network_replay',
+        params: {
+          requestId: '{{vars.reqId}}',
+          auth: 'browser_context',
+          out: 'data',
+          response: { as: 'json' },
+        },
       } as NetworkReplayStep,
     ];
     expect(isFlowHttpCompatible(steps, null)).toBe(false);
@@ -59,12 +84,24 @@ describe('isFlowHttpCompatible', () => {
   it('returns false when a replay step has no snapshot', () => {
     const steps: DslStep[] = [
       {
-        id: 'replay1', type: 'network_replay',
-        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+        id: 'replay1',
+        type: 'network_replay',
+        params: {
+          requestId: '{{vars.reqId}}',
+          auth: 'browser_context',
+          out: 'data',
+          response: { as: 'json' },
+        },
       } as NetworkReplayStep,
       {
-        id: 'replay2', type: 'network_replay',
-        params: { requestId: '{{vars.reqId2}}', auth: 'browser_context', out: 'data2', response: { as: 'json' } },
+        id: 'replay2',
+        type: 'network_replay',
+        params: {
+          requestId: '{{vars.reqId2}}',
+          auth: 'browser_context',
+          out: 'data2',
+          response: { as: 'json' },
+        },
       } as NetworkReplayStep,
     ];
     const snapshots = makeSnapshotFile(['replay1']); // Missing replay2
@@ -74,11 +111,18 @@ describe('isFlowHttpCompatible', () => {
   it('returns false when flow contains extract_text step', () => {
     const steps: DslStep[] = [
       {
-        id: 'replay1', type: 'network_replay',
-        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+        id: 'replay1',
+        type: 'network_replay',
+        params: {
+          requestId: '{{vars.reqId}}',
+          auth: 'browser_context',
+          out: 'data',
+          response: { as: 'json' },
+        },
       } as NetworkReplayStep,
       {
-        id: 'extract1', type: 'extract_text',
+        id: 'extract1',
+        type: 'extract_text',
         params: { target: { kind: 'css', selector: '.title' }, out: 'title' },
       } as ExtractTextStep,
     ];
@@ -97,13 +141,19 @@ describe('isFlowHttpCompatible', () => {
 
   it('returns false when a snapshot is stale (TTL expired)', () => {
     const snapshots = makeSnapshotFile(['replay1']);
-    snapshots.snapshots['replay1'].capturedAt = Date.now() - 120_000;
-    snapshots.snapshots['replay1'].ttl = 60_000;
+    snapshots.snapshots.replay1.capturedAt = Date.now() - 120_000;
+    snapshots.snapshots.replay1.ttl = 60_000;
 
     const steps: DslStep[] = [
       {
-        id: 'replay1', type: 'network_replay',
-        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+        id: 'replay1',
+        type: 'network_replay',
+        params: {
+          requestId: '{{vars.reqId}}',
+          auth: 'browser_context',
+          out: 'data',
+          response: { as: 'json' },
+        },
       } as NetworkReplayStep,
     ];
     expect(isFlowHttpCompatible(steps, snapshots)).toBe(false);
@@ -112,13 +162,20 @@ describe('isFlowHttpCompatible', () => {
   it('allows sleep, set_var, and network_extract in HTTP mode', () => {
     const steps: DslStep[] = [
       {
-        id: 'replay1', type: 'network_replay',
-        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+        id: 'replay1',
+        type: 'network_replay',
+        params: {
+          requestId: '{{vars.reqId}}',
+          auth: 'browser_context',
+          out: 'data',
+          response: { as: 'json' },
+        },
       } as NetworkReplayStep,
       { id: 'sleep1', type: 'sleep', params: { durationMs: 100 } } as SleepStep,
       { id: 'var1', type: 'set_var', params: { name: 'x', value: 'y' } } as SetVarStep,
       {
-        id: 'extract1', type: 'network_extract',
+        id: 'extract1',
+        type: 'network_extract',
         params: { fromVar: 'data', as: 'json', path: 'results', out: 'items' },
       } as NetworkExtractStep,
     ];
@@ -168,7 +225,7 @@ describe('replayFromSnapshot', () => {
 
     expect(globalThis.fetch).toHaveBeenCalledWith(
       'https://api.example.com/items',
-      expect.objectContaining({ method: 'GET' }),
+      expect.objectContaining({ method: 'GET' })
     );
     expect(result.status).toBe(200);
     expect(result.body).toBe('{"results":[]}');
@@ -207,7 +264,7 @@ describe('replayFromSnapshot', () => {
       expect.objectContaining({
         method: 'POST',
         body: '{"query":"test"}',
-      }),
+      })
     );
   });
 
@@ -246,7 +303,7 @@ describe('replayFromSnapshot', () => {
       'https://api.example.com/search',
       expect.objectContaining({
         body: '{"batch":"S25"}',
-      }),
+      })
     );
   });
 
@@ -330,7 +387,7 @@ describe('replayFromSnapshot', () => {
             err.name = 'AbortError';
             reject(err);
           });
-        }),
+        })
     );
 
     const snapshot: RequestSnapshot = {
@@ -351,8 +408,8 @@ describe('replayFromSnapshot', () => {
       sensitiveHeaders: [],
     };
 
-    await expect(
-      replayFromSnapshot(snapshot, {}, {}, { timeoutMs: 50 }),
-    ).rejects.toThrow('HTTP replay timed out');
+    await expect(replayFromSnapshot(snapshot, {}, {}, { timeoutMs: 50 })).rejects.toThrow(
+      'HTTP replay timed out'
+    );
   });
 });

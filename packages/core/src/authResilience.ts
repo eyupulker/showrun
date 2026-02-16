@@ -2,13 +2,12 @@
  * Auth resilience module: handles "run once" steps, auth failure detection, and recovery
  */
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Page } from 'playwright';
 import type { DslStep } from './dsl/types.js';
-import type { AuthPolicy, AuthGuard, Logger } from './types.js';
-import type { NetworkCaptureApi } from './networkCapture.js';
+import type { AuthGuard, AuthPolicy, Logger } from './types.js';
 
 const ONCE_CACHE_DIR_ENV = 'SHOWRUN_ONCE_CACHE_DIR';
 
@@ -184,7 +183,11 @@ export class OnceCache {
   /**
    * Mark a step as executed with its outputs
    */
-  markExecuted(stepId: string, scope: 'session' | 'profile', outputs: StepOutput = { vars: {}, collectibles: {} }): void {
+  markExecuted(
+    stepId: string,
+    scope: 'session' | 'profile',
+    outputs: StepOutput = { vars: {}, collectibles: {} }
+  ): void {
     if (scope === 'session') {
       this.sessionCache.set(stepId, outputs);
     } else {
@@ -433,7 +436,7 @@ export function shouldSkipStep(
   step: DslStep,
   onceCache: OnceCache,
   sessionId?: string,
-  profileId?: string
+  _profileId?: string
 ): boolean {
   if (!step.once) return false;
 

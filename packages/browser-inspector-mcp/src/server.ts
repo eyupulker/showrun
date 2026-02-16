@@ -5,10 +5,10 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { chromium, type Browser, type Page } from 'playwright';
-import * as z from 'zod';
 import type { Target } from '@showrun/core';
-import type { ElementFingerprint, ActionLog, NetworkEntry } from './types.js';
+import { type Browser, chromium, type Page } from 'playwright';
+import * as z from 'zod';
+import type { ActionLog, ElementFingerprint, NetworkEntry } from './types.js';
 
 const SENSITIVE_HEADER_NAMES = new Set([
   'authorization',
@@ -31,7 +31,7 @@ function redactHeaders(headers: Record<string, string>): Record<string, string> 
 
 function redactPostData(raw: string | undefined | null): string | undefined {
   if (raw == null || raw === '') return undefined;
-  let s = raw.length > POST_DATA_CAP ? raw.slice(0, POST_DATA_CAP) + '...[truncated]' : raw;
+  let s = raw.length > POST_DATA_CAP ? `${raw.slice(0, POST_DATA_CAP)}...[truncated]` : raw;
   if (/["']?(?:password|token|secret|api[_-]?key)["']?\s*[:=]/i.test(s)) {
     s = '[REDACTED - may contain secret]';
   }
@@ -50,7 +50,9 @@ function isLikelyApi(url: string, resourceType?: string): boolean {
 }
 
 /** Strip response body from entry to avoid filling context; use network_get_response for body when needed */
-function entryToSummary(entry: NetworkEntry): Omit<NetworkEntry, 'responseBodySnippet'> & { responseBodyAvailable?: boolean } {
+function entryToSummary(
+  entry: NetworkEntry
+): Omit<NetworkEntry, 'responseBodySnippet'> & { responseBodyAvailable?: boolean } {
   const { responseBodySnippet, ...rest } = entry;
   return { ...rest, responseBodyAvailable: !!responseBodySnippet };
 }
@@ -106,7 +108,7 @@ function generateSuggestedPatterns(entry: NetworkEntry): SuggestedPattern[] {
     }
     if (segments.length >= 1) {
       const lastOne = segments[segments.length - 1];
-      if (lastOne && !patterns.some(p => p.where.urlIncludes === lastOne)) {
+      if (lastOne && !patterns.some((p) => p.where.urlIncludes === lastOne)) {
         patterns.push({
           where: { urlIncludes: lastOne, method },
           description: `Last path segment: "${lastOne}"`,
@@ -130,7 +132,6 @@ function generateSuggestedPatterns(entry: NetworkEntry): SuggestedPattern[] {
         doubleSlashPattern.description += ' (note: URL contains double slash)';
       }
     }
-
   } catch {
     // URL parsing failed, use simple string matching
     patterns.push({
@@ -173,7 +174,7 @@ function attachNetworkCapture(
     const postDataForReplay =
       rawPostData != null && rawPostData.length > 0
         ? rawPostData.length > POST_DATA_REPLAY_CAP
-          ? rawPostData.slice(0, POST_DATA_REPLAY_CAP) + '...[truncated]'
+          ? `${rawPostData.slice(0, POST_DATA_REPLAY_CAP)}...[truncated]`
           : rawPostData
         : undefined;
     const entry: NetworkEntry = {
@@ -212,7 +213,10 @@ function attachNetworkCapture(
       try {
         const body = await response.body();
         const maxBytes = Math.min(body.length, RESPONSE_BODY_CAPTURE_MAX * 4);
-        entry.responseBodySnippet = body.subarray(0, maxBytes).toString('utf8').slice(0, RESPONSE_BODY_CAPTURE_MAX);
+        entry.responseBodySnippet = body
+          .subarray(0, maxBytes)
+          .toString('utf8')
+          .slice(0, RESPONSE_BODY_CAPTURE_MAX);
       } catch {
         // ignore body read errors
       }
@@ -238,7 +242,7 @@ export interface BrowserInspectorOptions {
 }
 
 export async function createBrowserInspectorServer(
-  options: BrowserInspectorOptions = {}
+  _options: BrowserInspectorOptions = {}
 ): Promise<void> {
   const sessions = new Map<string, BrowserSession>();
 
@@ -248,7 +252,10 @@ export async function createBrowserInspectorServer(
   });
 
   // Helper: Get element fingerprint from Playwright element handle
-  async function getElementFingerprint(page: Page, elementHandle: any): Promise<ElementFingerprint> {
+  async function _getElementFingerprint(
+    page: Page,
+    elementHandle: any
+  ): Promise<ElementFingerprint> {
     // Evaluate element properties in the browser context
     const elementInfo = await page.evaluate((el: Element) => {
       const getVisibleText = (elem: Element): string => {
@@ -306,9 +313,10 @@ export async function createBrowserInspectorServer(
       while (current && depth < 5) {
         const tag = current.tagName.toLowerCase();
         const id = current.id ? `#${current.id}` : '';
-        const classes = current.className && typeof current.className === 'string' 
-          ? `.${current.className.split(' ').filter(Boolean).join('.')}` 
-          : '';
+        const classes =
+          current.className && typeof current.className === 'string'
+            ? `.${current.className.split(' ').filter(Boolean).join('.')}`
+            : '';
         pathParts.unshift(tag + id + classes);
         current = current.parentElement;
         depth++;
@@ -355,7 +363,11 @@ export async function createBrowserInspectorServer(
     }
 
     // 3. Visible text (if meaningful)
-    if (elementInfo.visibleText && elementInfo.visibleText.length > 0 && elementInfo.visibleText.length < 100) {
+    if (
+      elementInfo.visibleText &&
+      elementInfo.visibleText.length > 0 &&
+      elementInfo.visibleText.length < 100
+    ) {
       candidates.push({
         kind: 'text',
         text: elementInfo.visibleText,
@@ -463,7 +475,7 @@ export async function createBrowserInspectorServer(
 
       attachNetworkCapture(page, networkBuffer, networkMap, replayDataMap);
 
-      sessions.get(sessionId)!.actions.push({
+      sessions.get(sessionId)?.actions.push({
         timestamp: Date.now(),
         action: 'start_session',
         details: { headful },
@@ -560,16 +572,26 @@ export async function createBrowserInspectorServer(
     'type',
     {
       title: 'Type in Element',
-      description: 'Types text into an input field. Target the field by label (accessible name) or CSS selector.',
+      description:
+        'Types text into an input field. Target the field by label (accessible name) or CSS selector.',
       inputSchema: z.object({
         sessionId: z.string().describe('Session ID'),
         text: z.string().describe('Text to type'),
-        label: z.string().optional().describe('Accessible name/label of the input (e.g. "Search", "Email")'),
+        label: z
+          .string()
+          .optional()
+          .describe('Accessible name/label of the input (e.g. "Search", "Email")'),
         selector: z.string().optional().describe('CSS selector when label is not enough'),
         clear: z.boolean().optional().default(true).describe('Clear the field before typing'),
       }),
     },
-    async (args: { sessionId: string; text: string; label?: string; selector?: string; clear?: boolean }) => {
+    async (args: {
+      sessionId: string;
+      text: string;
+      label?: string;
+      selector?: string;
+      clear?: boolean;
+    }) => {
       const { sessionId, text, label, selector, clear = true } = args;
       const session = sessions.get(sessionId);
       if (!session) {
@@ -610,7 +632,8 @@ export async function createBrowserInspectorServer(
     'get_links',
     {
       title: 'Get Links',
-      description: 'Returns all links on the current page (href, visible text, title). Cheaper than screenshot + vision when you need to find or click a link.',
+      description:
+        'Returns all links on the current page (href, visible text, title). Cheaper than screenshot + vision when you need to find or click a link.',
       inputSchema: z.object({
         sessionId: z.string().describe('Session ID'),
       }),
@@ -753,7 +776,9 @@ export async function createBrowserInspectorServer(
       }
       let list = session.networkBuffer.slice(-limit);
       if (filter === 'api' || filter === 'xhr') {
-        list = list.filter((e) => e.isLikelyApi || e.resourceType === 'xhr' || e.resourceType === 'fetch');
+        list = list.filter(
+          (e) => e.isLikelyApi || e.resourceType === 'xhr' || e.resourceType === 'fetch'
+        );
       }
       const summaryList = list.map(entryToSummary);
       return {
@@ -785,7 +810,8 @@ export async function createBrowserInspectorServer(
     'network_search',
     {
       title: 'Search Network Requests',
-      description: 'Search network requests by query (case-insensitive). Matches URL, method, resourceType, status, request/response headers, and postData. Returns only matching entries (capped at 20).',
+      description:
+        'Search network requests by query (case-insensitive). Matches URL, method, resourceType, status, request/response headers, and postData. Returns only matching entries (capped at 20).',
       inputSchema: z.object({
         sessionId: z.string().describe('Session ID'),
         query: z.string().describe('Substring to match in URL, method, headers, body, or status'),
@@ -819,7 +845,8 @@ export async function createBrowserInspectorServer(
     'network_get',
     {
       title: 'Get Network Request',
-      description: 'Returns one request by id (metadata only; no response body). Use network_get_response when you need the response body. replayPossible indicates replay with browser context is possible.',
+      description:
+        'Returns one request by id (metadata only; no response body). Use network_get_response when you need the response body. replayPossible indicates replay with browser context is possible.',
       inputSchema: z.object({
         sessionId: z.string().describe('Session ID'),
         requestId: z.string().describe('Request ID from network_list'),
@@ -854,11 +881,16 @@ export async function createBrowserInspectorServer(
     'network_get_response',
     {
       title: 'Get Response Body',
-      description: 'Get the response body for a request. Returns first 200 characters by default; set full=true to return the full captured snippet (up to 2000 chars).',
+      description:
+        'Get the response body for a request. Returns first 200 characters by default; set full=true to return the full captured snippet (up to 2000 chars).',
       inputSchema: z.object({
         sessionId: z.string().describe('Session ID'),
         requestId: z.string().describe('Request ID from network_list or network_get'),
-        full: z.boolean().optional().default(false).describe('If true, return full captured snippet (up to 2000 chars)'),
+        full: z
+          .boolean()
+          .optional()
+          .default(false)
+          .describe('If true, return full captured snippet (up to 2000 chars)'),
       }),
     },
     async (args: { sessionId: string; requestId: string; full?: boolean }) => {
@@ -912,7 +944,8 @@ export async function createBrowserInspectorServer(
     'network_replay',
     {
       title: 'Replay Network Request',
-      description: 'Replay a captured request using the browser context (cookies apply). Optionally override url, query params, headers (non-sensitive), or body. Returns status, contentType, and bounded response body.',
+      description:
+        'Replay a captured request using the browser context (cookies apply). Optionally override url, query params, headers (non-sensitive), or body. Returns status, contentType, and bounded response body.',
       inputSchema: z.object({
         sessionId: z.string().describe('Session ID'),
         requestId: z.string().describe('Request ID from network_list or network_get'),
@@ -926,7 +959,16 @@ export async function createBrowserInspectorServer(
           .optional(),
       }),
     },
-    async (args: { sessionId: string; requestId: string; overrides?: { url?: string; setQuery?: Record<string, string | number>; setHeaders?: Record<string, string>; body?: string } }) => {
+    async (args: {
+      sessionId: string;
+      requestId: string;
+      overrides?: {
+        url?: string;
+        setQuery?: Record<string, string | number>;
+        setHeaders?: Record<string, string>;
+        body?: string;
+      };
+    }) => {
       const { sessionId, requestId, overrides } = args;
       const session = sessions.get(sessionId);
       if (!session) {
@@ -941,13 +983,31 @@ export async function createBrowserInspectorServer(
         throw new Error(`Replay data not found for request: ${requestId}`);
       }
       for (const key of SENSITIVE_HEADER_NAMES) {
-        if (overrides?.setHeaders && Object.keys(overrides.setHeaders).some((k) => k.toLowerCase() === key)) {
+        if (
+          overrides?.setHeaders &&
+          Object.keys(overrides.setHeaders).some((k) => k.toLowerCase() === key)
+        ) {
           throw new Error(`Cannot set sensitive header: ${key}`);
         }
       }
-      const requestContext = (session.page as { request?: { fetch: (url: string, options?: object) => Promise<{ status: () => number; headers: () => Record<string, string>; body: () => Promise<Buffer> }> } }).request;
+      const requestContext = (
+        session.page as {
+          request?: {
+            fetch: (
+              url: string,
+              options?: object
+            ) => Promise<{
+              status: () => number;
+              headers: () => Record<string, string>;
+              body: () => Promise<Buffer>;
+            }>;
+          };
+        }
+      ).request;
       if (!requestContext || typeof requestContext.fetch !== 'function') {
-        throw new Error('Browser context does not support API request (replay). Playwright version may be too old.');
+        throw new Error(
+          'Browser context does not support API request (replay). Playwright version may be too old.'
+        );
       }
       let url = overrides?.url ?? entry.url;
       const method = entry.method;
@@ -978,7 +1038,7 @@ export async function createBrowserInspectorServer(
       const bodyText =
         bodySize <= 256 * 1024
           ? respBody.toString('utf8')
-          : respBody.toString('utf8').slice(0, 2048) + '...[truncated]';
+          : `${respBody.toString('utf8').slice(0, 2048)}...[truncated]`;
       const result = { status: response.status(), contentType, body: bodyText, bodySize };
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],

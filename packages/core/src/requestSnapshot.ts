@@ -5,8 +5,8 @@
  * so they can be replayed at runtime via direct HTTP calls — no browser needed.
  */
 
-import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { join } from 'path';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { resolveTemplate } from './dsl/templating.js';
 import type { VariableContext } from './dsl/types.js';
 
@@ -77,7 +77,7 @@ export interface ValidationResult {
  */
 export function validateResponse(
   snapshot: RequestSnapshot,
-  response: { status: number; contentType?: string; body: string },
+  response: { status: number; contentType?: string; body: string }
 ): ValidationResult {
   const v = snapshot.responseValidation;
 
@@ -132,10 +132,7 @@ export function validateResponse(
  * Resolve a template string using Nunjucks (same engine as the DSL interpreter).
  * Supports {{inputs.x}}, {{vars.x}}, {{secret.x}} and filters like `| urlencode`.
  */
-function resolveTemplateValue(
-  template: string,
-  ctx: VariableContext,
-): string {
+function resolveTemplateValue(template: string, ctx: VariableContext): string {
   return resolveTemplate(template, ctx);
 }
 
@@ -148,7 +145,7 @@ export function applyOverrides(
   snapshot: RequestSnapshot,
   inputs: Record<string, unknown>,
   vars: Record<string, unknown>,
-  secrets?: Record<string, string>,
+  secrets?: Record<string, string>
 ): { url: string; method: string; headers: Record<string, string>; body: string | null } {
   const ov = snapshot.overrides;
   let url = snapshot.request.url;
@@ -241,7 +238,7 @@ export function loadSnapshots(packPath: string): SnapshotFile | null {
     return data;
   } catch (err) {
     console.warn(
-      `[requestSnapshot] Failed to load snapshots.json: ${err instanceof Error ? err.message : String(err)}`,
+      `[requestSnapshot] Failed to load snapshots.json: ${err instanceof Error ? err.message : String(err)}`
     );
     return null;
   }
@@ -259,7 +256,13 @@ export function writeSnapshots(packPath: string, snapshots: SnapshotFile): void 
 // Capture helpers
 // ---------------------------------------------------------------------------
 
-const SENSITIVE_HEADER_NAMES = ['authorization', 'cookie', 'set-cookie', 'x-api-key', 'proxy-authorization'];
+const SENSITIVE_HEADER_NAMES = [
+  'authorization',
+  'cookie',
+  'set-cookie',
+  'x-api-key',
+  'proxy-authorization',
+];
 
 /**
  * Extract top-level keys from a JSON string. Returns empty array on parse failure.

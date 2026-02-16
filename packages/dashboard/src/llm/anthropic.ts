@@ -5,13 +5,13 @@
  */
 
 import type {
-  LlmProvider,
-  ToolDef,
-  ToolCall,
-  ChatWithToolsResult,
   ChatMessage,
+  ChatWithToolsResult,
   ContentPart,
+  LlmProvider,
   StreamEvent,
+  ToolCall,
+  ToolDef,
 } from './provider.js';
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
@@ -31,7 +31,8 @@ function parseRateLimitWaitSeconds(response: Response, bodyText: string): number
   const retryAfter = response.headers.get('Retry-After');
   if (retryAfter) {
     const sec = parseInt(retryAfter, 10);
-    if (!Number.isNaN(sec)) return Math.min(Math.max(sec, RATE_LIMIT_WAIT_MIN_SECONDS), RATE_LIMIT_WAIT_CAP_SECONDS);
+    if (!Number.isNaN(sec))
+      return Math.min(Math.max(sec, RATE_LIMIT_WAIT_MIN_SECONDS), RATE_LIMIT_WAIT_CAP_SECONDS);
   }
   try {
     const json = JSON.parse(bodyText) as { error?: { message?: string } };
@@ -93,9 +94,14 @@ function convertToolDef(tool: ToolDef): AnthropicTool {
 }
 
 function convertMessages(
-  messages: Array<ChatMessage | { role: 'tool'; content: string; tool_call_id: string } | { role: 'assistant'; content: string | null; tool_calls: ToolCall[] }>
+  messages: Array<
+    | ChatMessage
+    | { role: 'tool'; content: string; tool_call_id: string }
+    | { role: 'assistant'; content: string | null; tool_calls: ToolCall[] }
+  >
 ): Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> {
-  const result: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> = [];
+  const result: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> =
+    [];
 
   for (const msg of messages) {
     if (msg.role === 'system') {
@@ -115,7 +121,11 @@ function convertMessages(
         ],
       });
     } else if (msg.role === 'assistant' && 'tool_calls' in msg && msg.tool_calls) {
-      const assistantMsg = msg as { role: 'assistant'; content: string | null; tool_calls: ToolCall[] };
+      const assistantMsg = msg as {
+        role: 'assistant';
+        content: string | null;
+        tool_calls: ToolCall[];
+      };
       const content: AnthropicContentBlock[] = [];
 
       if (assistantMsg.content) {
@@ -183,7 +193,7 @@ export class AnthropicProvider implements LlmProvider {
     }
     this.apiKey = apiKey;
     this.baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
-    console.log("Anthropic base url: " + process.env.ANTHROPIC_BASE_URL);
+    console.log(`Anthropic base url: ${process.env.ANTHROPIC_BASE_URL}`);
     this.model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
   }
 
@@ -222,7 +232,9 @@ export class AnthropicProvider implements LlmProvider {
         // Handle rate limits (429) and overloaded (529)
         if ((response.status === 429 || response.status === 529) && attempt < maxRetries - 1) {
           const waitSec = parseRateLimitWaitSeconds(response, bodyText);
-          console.log(`[Anthropic] Rate limited, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
+          console.log(
+            `[Anthropic] Rate limited, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`
+          );
           await sleep(waitSec * 1000);
           continue;
         }
@@ -235,7 +247,9 @@ export class AnthropicProvider implements LlmProvider {
         // 5xx errors (except 529) - retry with backoff
         if (response.status >= 500 && attempt < maxRetries - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Server error ${response.status}, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
+          console.log(
+            `[Anthropic] Server error ${response.status}, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`
+          );
           await sleep(waitSec * 1000);
           continue;
         }
@@ -247,7 +261,9 @@ export class AnthropicProvider implements LlmProvider {
         const isNetworkError = !lastError.message.startsWith('Anthropic API error:');
         if (isNetworkError && attempt < maxRetries - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
+          console.log(
+            `[Anthropic] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`
+          );
           await sleep(waitSec * 1000);
           continue;
         }
@@ -258,11 +274,7 @@ export class AnthropicProvider implements LlmProvider {
     throw lastError || new Error('Max retries exceeded');
   }
 
-  async generateJson<T>(args: {
-    system: string;
-    prompt: string;
-    schema: object;
-  }): Promise<T> {
+  async generateJson<T>(args: { system: string; prompt: string; schema: object }): Promise<T> {
     const { system, prompt } = args;
 
     const response = await this.fetchWithRetry(`${this.baseUrl}/v1/messages`, {
@@ -281,19 +293,18 @@ export class AnthropicProvider implements LlmProvider {
     const content = textBlock?.text || '';
 
     const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || content.match(/\{[\s\S]*\}/);
-    const jsonStr = jsonMatch ? (jsonMatch[1] || jsonMatch[0]) : content;
+    const jsonStr = jsonMatch ? jsonMatch[1] || jsonMatch[0] : content;
 
     try {
       return JSON.parse(jsonStr) as T;
     } catch (error) {
-      throw new Error(`Failed to parse JSON from Anthropic response: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to parse JSON from Anthropic response: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
-  async chat(args: {
-    systemPrompt?: string;
-    messages: ChatMessage[];
-  }): Promise<string> {
+  async chat(args: { systemPrompt?: string; messages: ChatMessage[] }): Promise<string> {
     const { systemPrompt, messages } = args;
     const anthropicMessages = convertMessages(messages);
 
@@ -418,9 +429,14 @@ export class AnthropicProvider implements LlmProvider {
         }
 
         // Handle rate limits (429) and overloaded (529)
-        if ((fetchResponse.status === 429 || fetchResponse.status === 529) && attempt < RATE_LIMIT_MAX_RETRIES - 1) {
+        if (
+          (fetchResponse.status === 429 || fetchResponse.status === 529) &&
+          attempt < RATE_LIMIT_MAX_RETRIES - 1
+        ) {
           const waitSec = parseRateLimitWaitSeconds(fetchResponse, bodyText);
-          console.log(`[Anthropic] Rate limited, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
+          console.log(
+            `[Anthropic] Rate limited, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`
+          );
           await sleep(waitSec * 1000);
           continue;
         }
@@ -433,7 +449,9 @@ export class AnthropicProvider implements LlmProvider {
         // 5xx errors (except 529) - retry with backoff
         if (fetchResponse.status >= 500 && attempt < RATE_LIMIT_MAX_RETRIES - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Server error ${fetchResponse.status}, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
+          console.log(
+            `[Anthropic] Server error ${fetchResponse.status}, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`
+          );
           await sleep(waitSec * 1000);
           continue;
         }
@@ -445,7 +463,9 @@ export class AnthropicProvider implements LlmProvider {
         const isNetworkError = !lastError.message.startsWith('Anthropic API error:');
         if (isNetworkError && attempt < RATE_LIMIT_MAX_RETRIES - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
+          console.log(
+            `[Anthropic] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`
+          );
           await sleep(waitSec * 1000);
           continue;
         }
@@ -467,7 +487,10 @@ export class AnthropicProvider implements LlmProvider {
 
     let content: string | null = null;
     const toolCalls: ToolCall[] = [];
-    const contentBlocks: Map<number, { type: string; text: string; id?: string; name?: string; input: string }> = new Map();
+    const contentBlocks: Map<
+      number,
+      { type: string; text: string; id?: string; name?: string; input: string }
+    > = new Map();
 
     try {
       reader = response.body.getReader();
