@@ -13,15 +13,24 @@ export class RunContextFactory {
     browser: Browser,
     logger: Logger,
     artifactsDir: string,
-    networkCapture?: NetworkCaptureApi
+    networkCapture?: NetworkCaptureApi,
+    screenshotQuality?: number
   ): RunContext {
     // Ensure artifacts directory exists
     mkdirSync(artifactsDir, { recursive: true });
 
+    const quality = screenshotQuality ?? 80;
+
     const artifacts: ArtifactManager = {
       async saveScreenshot(name: string): Promise<string> {
-        const path = join(artifactsDir, `${name}.png`);
-        await page.screenshot({ path, fullPage: true });
+        let path = join(artifactsDir, `${name}.webp`);
+        try {
+          await page.screenshot({ path, type: 'webp' as any, quality, fullPage: true });
+        } catch (e) {
+          // Fallback to JPEG if WebP is not supported
+          path = join(artifactsDir, `${name}.jpg`);
+          await page.screenshot({ path, type: 'jpeg', quality, fullPage: true });
+        }
         return path;
       },
       async saveHTML(name: string, html: string): Promise<string> {

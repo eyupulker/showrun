@@ -86,7 +86,7 @@ export default function ChatView({
 
   // UI state
   const [showNetwork, setShowNetwork] = useState(true);
-  const [rightPanelTab, setRightPanelTab] = useState<'network' | 'secrets' | 'versions'>('network');
+  const [rightPanelTab, setRightPanelTab] = useState<'screenshot' | 'network' | 'secrets' | 'versions'>('screenshot');
 
   // Secrets request modal state (AI-triggered)
   const [secretsRequest, setSecretsRequest] = useState<{
@@ -808,6 +808,45 @@ export default function ChatView({
           overflow: 'hidden',
           backgroundColor: 'var(--bg-sidebar)',
         }}>
+          {/* Screenshot panel */}
+          {rightPanelTab === 'screenshot' && (
+            <div style={{ margin: '12px', flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+              <div className="network-panel-header">
+                <span>Screenshot</span>
+                {sessionId && (
+                  <button
+                    className="btn-secondary"
+                    style={{ padding: '4px 12px', fontSize: '12px' }}
+                    onClick={async () => {
+                      const screenshotResult = await apiCall('/api/teach/browser/screenshot', {
+                        method: 'POST',
+                        body: JSON.stringify({ sessionId }),
+                      });
+                      const mime = screenshotResult.mimeType || 'image/webp';
+                      setScreenshot(`data:${mime};base64,${screenshotResult.imageBase64}`);
+                    }}
+                  >
+                    Refresh
+                  </button>
+                )}
+              </div>
+              <div style={{ marginTop: '12px' }}>
+                {screenshot ? (
+                  <img
+                    src={screenshot}
+                    alt="Latest Screenshot"
+                    loading="lazy"
+                    style={{ maxWidth: '100%', border: '1px solid var(--border-subtle)', borderRadius: '4px' }}
+                  />
+                ) : (
+                  <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+                    {sessionId ? 'No screenshot captured yet' : 'Start a browser session to see screenshots'}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Network panel */}
           {rightPanelTab === 'network' && sessionId && (
             <div className="network-panel" style={{ margin: '12px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
@@ -910,6 +949,18 @@ export default function ChatView({
             padding: '12px',
             borderTop: '1px solid var(--border-subtle)',
           }}>
+            <button
+              className="btn-secondary"
+              style={{
+                flex: 1,
+                padding: '8px',
+                fontSize: '12px',
+                backgroundColor: rightPanelTab === 'screenshot' ? 'var(--bg-card-active)' : undefined,
+              }}
+              onClick={() => setRightPanelTab('screenshot')}
+            >
+              Browser
+            </button>
             <button
               className="btn-secondary"
               style={{

@@ -475,7 +475,12 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
 
       {screenshot && (
         <div style={{ marginBottom: '20px' }}>
-          <img src={screenshot} alt="Screenshot" style={{ maxWidth: '100%', border: '1px solid #ccc' }} />
+          <img
+            src={screenshot}
+            alt="Screenshot"
+            loading="lazy"
+            style={{ maxWidth: '100%', border: '1px solid #ccc' }}
+          />
         </div>
       )}
 
