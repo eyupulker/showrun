@@ -23,4 +23,4 @@ echo "// benchmark comment" >> packages/core/src/index.ts
 run_build "Small Change Build (core)"
 
 # Cleanup small change (portable way to remove last line)
-head -n -1 packages/core/src/index.ts > packages/core/src/index.ts.tmp && mv packages/core/src/index.ts.tmp packages/core/src/index.ts
+sed '$d' packages/core/src/index.ts > packages/core/src/index.ts.tmp && mv packages/core/src/index.ts.tmp packages/core/src/index.ts

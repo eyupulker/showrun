@@ -9,5 +9,16 @@
   },
   "include": [
     "src/**/*"
+  ],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../harness"
+    },
+    {
+      "path": "../mcp-server"
+    }
   ]
 }

@@ -11,7 +11,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup && tsc --emitDeclarationOnly && node scripts/copy-assets.js",
+    "build": "tsc --emitDeclarationOnly && tsup && node scripts/copy-assets.js",
     "build:tsc": "tsc",
     "prepublishOnly": "pnpm build"
   },

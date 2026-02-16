@@ -2,7 +2,9 @@
   "compilerOptions": {
     "target": "ES2022",
     "module": "Node16",
-    "lib": ["ES2022"],
+    "lib": [
+      "ES2022"
+    ],
     "moduleResolution": "node16",
     "strict": true,
     "esModuleInterop": true,
@@ -15,5 +17,35 @@
     "composite": true,
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "exclude": ["node_modules", "dist", "runs", "**/*.js", "**/*.d.ts", "**/ui/**"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "runs",
+    "**/*.js",
+    "**/*.d.ts",
+    "**/ui/**"
+  ],
+  "references": [
+    {
+      "path": "packages/browser-inspector-mcp"
+    },
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/dashboard"
+    },
+    {
+      "path": "packages/harness"
+    },
+    {
+      "path": "packages/mcp-server"
+    },
+    {
+      "path": "packages/showrun"
+    },
+    {
+      "path": "packages/taskpack-editor-mcp"
+    }
+  ]
 }

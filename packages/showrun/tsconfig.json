@@ -9,5 +9,25 @@
   },
   "include": [
     "src/**/*"
+  ],
+  "references": [
+    {
+      "path": "../core"
+    },
+    {
+      "path": "../harness"
+    },
+    {
+      "path": "../mcp-server"
+    },
+    {
+      "path": "../dashboard"
+    },
+    {
+      "path": "../browser-inspector-mcp"
+    },
+    {
+      "path": "../taskpack-editor-mcp"
+    }
   ]
 }
