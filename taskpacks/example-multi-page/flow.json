@@ -1,0 +1,87 @@
+{
+  "inputs": {},
+  "collectibles": [
+    {
+      "name": "browser_links",
+      "type": "string",
+      "description": "Links to browser pages"
+    },
+    {
+      "name": "browser1_title",
+      "type": "string",
+      "description": "Title of the first browser page"
+    },
+    {
+      "name": "browser2_title",
+      "type": "string",
+      "description": "Title of the second browser page"
+    }
+  ],
+  "flow": [
+    {
+      "id": "navigate_category",
+      "type": "navigate",
+      "label": "Navigate to Web Browsers category",
+      "params": {
+        "url": "https://en.wikipedia.org/wiki/Category:Web_browsers",
+        "waitUntil": "networkidle"
+      }
+    },
+    {
+      "id": "extract_links",
+      "type": "extract_attribute",
+      "label": "Extract browser links",
+      "params": {
+        "target": { "kind": "css", "selector": "#mw-pages a" },
+        "attribute": "href",
+        "out": "browser_links",
+        "first": false
+      }
+    },
+    {
+      "id": "open_browser1",
+      "type": "new_tab",
+      "label": "Open first browser in new tab",
+      "params": {
+        "url": "https://en.wikipedia.org{{ collectibles.browser_links[0] }}"
+      }
+    },
+    {
+      "id": "extract_browser1_title",
+      "type": "extract_text",
+      "label": "Extract first browser title",
+      "params": {
+        "target": { "kind": "css", "selector": "h1#firstHeading" },
+        "out": "browser1_title",
+        "first": true
+      }
+    },
+    {
+      "id": "switch_back",
+      "type": "switch_tab",
+      "label": "Close browser tab and switch back",
+      "params": {
+        "tab": 0,
+        "closeCurrentTab": true
+      }
+    },
+    {
+      "id": "open_browser2",
+      "type": "new_tab",
+      "label": "Open second browser in new tab",
+      "params": {
+        "url": "https://en.wikipedia.org{{ collectibles.browser_links[1] }}"
+      }
+    },
+    {
+      "id": "extract_browser2_title",
+      "type": "extract_text",
+      "label": "Extract second browser title",
+      "params": {
+        "target": { "kind": "css", "selector": "h1#firstHeading" },
+        "out": "browser2_title",
+        "first": true
+      }
+    }
+  ]
+}

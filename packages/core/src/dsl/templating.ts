@@ -42,6 +42,7 @@ export function resolveTemplate(template: string, context: VariableContext): str
     return env.renderString(template, {
       inputs: context.inputs,
       vars: context.vars,
+      collectibles: context.collectibles || {},
       secret: context.secrets || {},
     });
   } catch (err) {
