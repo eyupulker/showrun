@@ -1,0 +1,5 @@
+
+> showrun@0.1.1a lint /app
+> biome check
+
+Checked 137 files in 451ms. No fixes applied.
