@@ -3,7 +3,7 @@
   "collectibles": [
     {
       "name": "browser_links",
-      "type": "string",
+      "type": "json",
       "description": "Links to browser pages"
     },
     {
