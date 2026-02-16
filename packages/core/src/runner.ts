@@ -283,7 +283,7 @@ export async function runTaskPack(
           let screenshotPath = join(artifactsDir, 'error.webp');
           const quality = options.screenshotQuality ?? taskPack.browser?.screenshotQuality ?? 80;
           try {
-            await page.screenshot({ path: screenshotPath, type: 'webp', quality, fullPage: true });
+            await page.screenshot({ path: screenshotPath, type: 'webp' as any, quality, fullPage: true });
           } catch (e) {
             screenshotPath = join(artifactsDir, 'error.jpg');
             await page.screenshot({ path: screenshotPath, type: 'jpeg', quality, fullPage: true });
