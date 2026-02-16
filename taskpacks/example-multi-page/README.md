@@ -1,12 +1,12 @@
 # Multi-page Data Collection Example
 
-This taskpack demonstrates how to collect data across multiple pages using the `collectibles` array and tab management steps.
+This taskpack demonstrates how to collect data across multiple pages using the `collectibles` object/map and tab management steps.
 
 ## Key Features Demonstrated
 
 - **`new_tab`**: Opens a new browser tab and navigates to a URL.
 - **`switch_tab`**: Switches between open tabs, optionally closing the current tab.
-- **Collectible Access in Templates**: Uses previously extracted data from the `collectibles` array in subsequent step parameters (e.g., navigating to URLs extracted from a listing page).
+- **Collectible Access in Templates**: Uses previously extracted data from the `collectibles` object/map in subsequent step parameters (e.g., navigating to URLs extracted from a listing page).
 - **Data Aggregation**: Aggregates extracted data from multiple pages into a single set of collectibles.
 
 ## How it Works
