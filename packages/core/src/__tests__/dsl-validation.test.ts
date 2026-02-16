@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { validateFlow, ValidationError } from '../dsl/validation.js';
+import { describe, expect, it } from 'vitest';
+import { ValidationError, validateFlow } from '../dsl/validation.js';
 
 describe('validateFlow — collect-all errors', () => {
   it('collects multiple errors from a single step', () => {
@@ -27,8 +27,12 @@ describe('validateFlow — collect-all errors', () => {
     // Errors from step 0
     expect(errors.some((e) => e.includes('Step 0') && e.includes('Navigate'))).toBe(true);
     // Errors from step 1
-    expect(errors.some((e) => e.includes('Step 1') && e.includes('Click step must have either'))).toBe(true);
-    expect(errors.some((e) => e.includes('Step 1') && e.includes('"first" must be a boolean'))).toBe(true);
+    expect(
+      errors.some((e) => e.includes('Step 1') && e.includes('Click step must have either'))
+    ).toBe(true);
+    expect(
+      errors.some((e) => e.includes('Step 1') && e.includes('"first" must be a boolean'))
+    ).toBe(true);
   });
 
   it('reports nested target errors alongside param errors', () => {
@@ -102,10 +106,7 @@ describe('validateFlow — collect-all errors', () => {
 
   it('error prefix includes step index, id, and type', () => {
     const errors: string[] = [];
-    validateFlow(
-      [{ id: 'my_step', type: 'navigate', params: {} }],
-      errors
-    );
+    validateFlow([{ id: 'my_step', type: 'navigate', params: {} }], errors);
 
     expect(errors.length).toBe(1);
     expect(errors[0]).toMatch(/^Step 0 \(id="my_step", type="navigate"\):/);

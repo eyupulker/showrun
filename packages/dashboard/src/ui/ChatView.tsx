@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
-import MessageBubble, { type ToolCall } from './MessageBubble.js';
+import { useEffect, useRef, useState } from 'react';
 import ChatInput from './ChatInput.js';
+import { type CommandContext, findCommand, parseCommand } from './chatCommands.js';
+import McpUsageModal from './McpUsageModal.js';
+import MessageBubble from './MessageBubble.js';
 import SecretsPanel from './SecretsPanel.js';
 import SecretsRequestModal from './SecretsRequestModal.js';
-import VersionPanel from './VersionPanel.js';
-import McpUsageModal from './McpUsageModal.js';
-import { parseCommand, findCommand, COMMAND_REGISTRY, type CommandContext } from './chatCommands.js';
 import { ShowRunLogo } from './ShowRunLogo.js';
+import VersionPanel from './VersionPanel.js';
 
 export interface Message {
   id: string;
@@ -68,7 +68,7 @@ export default function ChatView({
 
   // Browser session state
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [_screenshot, setScreenshot] = useState<string | null>(null);
 
   // Tool trace for current request
   const [toolTrace, setToolTrace] = useState<ToolTraceEntry[]>([]);
@@ -85,7 +85,7 @@ export default function ChatView({
   const [isSummarizing, setIsSummarizing] = useState(false);
 
   // UI state
-  const [showNetwork, setShowNetwork] = useState(true);
+  const [_showNetwork, _setShowNetwork] = useState(true);
   const [rightPanelTab, setRightPanelTab] = useState<'network' | 'secrets' | 'versions'>('network');
 
   // Secrets request modal state (AI-triggered)
@@ -120,17 +120,17 @@ export default function ChatView({
     } else {
       setMessages([]);
     }
-  }, [conversation?.id]);
+  }, [conversation?.id, conversation.messages, loadMessages]);
 
   // Clear secrets request state when conversation changes to prevent modal from showing with wrong packId
   useEffect(() => {
     setSecretsRequest(null);
-  }, [conversation?.id]);
+  }, []);
 
   // Scroll to bottom on new messages
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingContent]);
+  }, []);
 
   // Load network requests when session changes
   useEffect(() => {
@@ -139,7 +139,7 @@ export default function ChatView({
     } else {
       setNetworkRequests([]);
     }
-  }, [sessionId]);
+  }, [sessionId, loadNetworkRequests]);
 
   const apiCall = async (endpoint: string, options: RequestInit = {}) => {
     const response = await fetch(endpoint, {
@@ -184,7 +184,7 @@ export default function ChatView({
     }
   };
 
-  const handleStartSession = async () => {
+  const _handleStartSession = async () => {
     try {
       setIsLoading(true);
       setError(null);
@@ -237,12 +237,14 @@ export default function ChatView({
         setInputValue('');
 
         const cmdCtx: CommandContext = {
-          conversation: conversation ? {
-            id: conversation.id,
-            title: conversation.title,
-            packId: conversation.packId,
-            status: conversation.status,
-          } : null,
+          conversation: conversation
+            ? {
+                id: conversation.id,
+                title: conversation.title,
+                packId: conversation.packId,
+                status: conversation.status,
+              }
+            : null,
           token,
           messages,
           addSystemMessage,
@@ -269,7 +271,9 @@ export default function ChatView({
           createdAt: Date.now(),
         };
         setMessages((prev) => [...prev, userMsg]);
-        addSystemMessage(`Unknown command \`/${parsed.command}\`. Type **/help** to see available commands.`);
+        addSystemMessage(
+          `Unknown command \`/${parsed.command}\`. Type **/help** to see available commands.`
+        );
         return;
       }
     }
@@ -609,9 +613,12 @@ export default function ChatView({
   if (!conversation) {
     return (
       <div className="welcome-screen">
-        <div className="welcome-logo"><ShowRunLogo size="xl" /></div>
+        <div className="welcome-logo">
+          <ShowRunLogo size="xl" />
+        </div>
         <div className="welcome-subtitle">
-          Create browser automation flows through conversation. Select a conversation or start a new chat.
+          Create browser automation flows through conversation. Select a conversation or start a new
+          chat.
         </div>
       </div>
     );
@@ -627,22 +634,26 @@ export default function ChatView({
       `}</style>
 
       {/* Conversation header */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '12px 16px',
-        borderBottom: '1px solid var(--border-subtle)',
-        backgroundColor: 'var(--bg-sidebar)',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 16px',
+          borderBottom: '1px solid var(--border-subtle)',
+          backgroundColor: 'var(--bg-sidebar)',
+        }}
+      >
         <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0 }}>
-          <div style={{
-            fontWeight: 600,
-            fontSize: '14px',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-          }}>
+          <div
+            style={{
+              fontWeight: 600,
+              fontSize: '14px',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
             {conversation.title}
           </div>
           {conversation.packId && (
@@ -652,17 +663,25 @@ export default function ChatView({
           )}
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          <span style={{
-            fontSize: '11px',
-            padding: '2px 8px',
-            borderRadius: '4px',
-            backgroundColor: conversation.status === 'ready' ? 'rgba(34, 197, 94, 0.1)' :
-                           conversation.status === 'error' ? 'rgba(239, 68, 68, 0.1)' :
-                           'rgba(59, 130, 246, 0.1)',
-            color: conversation.status === 'ready' ? 'var(--accent-green)' :
-                   conversation.status === 'error' ? 'var(--accent-red)' :
-                   'var(--accent-blue)',
-          }}>
+          <span
+            style={{
+              fontSize: '11px',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              backgroundColor:
+                conversation.status === 'ready'
+                  ? 'rgba(34, 197, 94, 0.1)'
+                  : conversation.status === 'error'
+                    ? 'rgba(239, 68, 68, 0.1)'
+                    : 'rgba(59, 130, 246, 0.1)',
+              color:
+                conversation.status === 'ready'
+                  ? 'var(--accent-green)'
+                  : conversation.status === 'error'
+                    ? 'var(--accent-red)'
+                    : 'var(--accent-blue)',
+            }}
+          >
             {conversation.status}
           </span>
           {conversation.packId && conversation.status === 'ready' && (
@@ -711,7 +730,8 @@ export default function ChatView({
               <div className="empty-state">
                 <div className="empty-state-title">Start a conversation</div>
                 <div className="empty-state-description">
-                  Describe what you want to automate. The AI will help you create a flow step by step.
+                  Describe what you want to automate. The AI will help you create a flow step by
+                  step.
                 </div>
               </div>
             )}
@@ -739,16 +759,19 @@ export default function ChatView({
             {/* Streaming AI response */}
             {isLoading && (
               <MessageBubble
-                role="assistant"
                 content={streamingContent || ''}
                 toolCalls={[
                   ...toolTrace,
-                  ...(activeToolExecution ? [{
-                    tool: activeToolExecution.tool,
-                    args: activeToolExecution.args as Record<string, unknown>,
-                    result: '(executing...)',
-                    success: true,
-                  }] : []),
+                  ...(activeToolExecution
+                    ? [
+                        {
+                          tool: activeToolExecution.tool,
+                          args: activeToolExecution.args as Record<string, unknown>,
+                          result: '(executing...)',
+                          success: true,
+                        },
+                      ]
+                    : []),
                 ]}
                 thinking={streamingThinking || (isThinking ? '...' : undefined)}
                 isStreaming={true}
@@ -757,32 +780,47 @@ export default function ChatView({
 
             {/* Additional status indicators */}
             {isLoading && (
-              <div style={{ alignSelf: 'flex-start', maxWidth: '85%', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div
+                style={{
+                  alignSelf: 'flex-start',
+                  maxWidth: '85%',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
                 {/* Summarization indicator */}
                 {isSummarizing && (
-                  <div style={{
-                    padding: '10px 14px',
-                    backgroundColor: 'rgba(255, 103, 26, 0.1)',
-                    border: '1px solid rgba(255, 103, 26, 0.2)',
-                    borderRadius: '8px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    color: 'var(--accent-orange)',
-                    fontSize: '13px',
-                  }}>
+                  <div
+                    style={{
+                      padding: '10px 14px',
+                      backgroundColor: 'rgba(255, 103, 26, 0.1)',
+                      border: '1px solid rgba(255, 103, 26, 0.2)',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      color: 'var(--accent-orange)',
+                      fontSize: '13px',
+                    }}
+                  >
                     <span className="spinner" />
                     <span>Summarizing conversation...</span>
                   </div>
                 )}
 
                 {/* Show processing only when nothing else is happening */}
-                {!streamingThinking && !isThinking && !streamingContent && !activeToolExecution && !isSummarizing && toolTrace.length === 0 && (
-                  <div className="message-bubble assistant" style={{ opacity: 0.7 }}>
-                    <span className="spinner" style={{ marginRight: '8px' }} />
-                    Processing...
-                  </div>
-                )}
+                {!streamingThinking &&
+                  !isThinking &&
+                  !streamingContent &&
+                  !activeToolExecution &&
+                  !isSummarizing &&
+                  toolTrace.length === 0 && (
+                    <div className="message-bubble assistant" style={{ opacity: 0.7 }}>
+                      <span className="spinner" style={{ marginRight: '8px' }} />
+                      Processing...
+                    </div>
+                  )}
               </div>
             )}
 
@@ -800,17 +838,28 @@ export default function ChatView({
         </div>
 
         {/* Right side panel (network / secrets) */}
-        <div style={{
-          width: '400px',
-          borderLeft: '1px solid var(--border-subtle)',
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          backgroundColor: 'var(--bg-sidebar)',
-        }}>
+        <div
+          style={{
+            width: '400px',
+            borderLeft: '1px solid var(--border-subtle)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            backgroundColor: 'var(--bg-sidebar)',
+          }}
+        >
           {/* Network panel */}
           {rightPanelTab === 'network' && sessionId && (
-            <div className="network-panel" style={{ margin: '12px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div
+              className="network-panel"
+              style={{
+                margin: '12px',
+                flex: 1,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
               <div className="network-panel-header">
                 <span>Network</span>
                 <button
@@ -824,7 +873,14 @@ export default function ChatView({
               </div>
               <div style={{ flex: 1, overflow: 'auto' }}>
                 {networkRequests.length === 0 && !networkLoading && (
-                  <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+                  <div
+                    style={{
+                      padding: '16px',
+                      color: 'var(--text-muted)',
+                      fontSize: '13px',
+                      textAlign: 'center',
+                    }}
+                  >
                     No requests yet
                   </div>
                 )}
@@ -836,7 +892,9 @@ export default function ChatView({
                         {req.status}
                       </span>
                     )}
-                    <span className="network-url" title={req.url}>{req.url}</span>
+                    <span className="network-url" title={req.url}>
+                      {req.url}
+                    </span>
                     <button
                       className="btn-secondary"
                       style={{ padding: '2px 8px', fontSize: '11px' }}
@@ -852,7 +910,15 @@ export default function ChatView({
 
           {/* Network placeholder when no session */}
           {rightPanelTab === 'network' && !sessionId && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '16px',
+              }}
+            >
               <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
                 Start a browser session to view network requests
               </div>
@@ -861,17 +927,30 @@ export default function ChatView({
 
           {/* Secrets panel */}
           {rightPanelTab === 'secrets' && conversation?.packId && (
-            <div style={{ margin: '12px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              <SecretsPanel
-                packId={conversation.packId}
-                token={token}
-              />
+            <div
+              style={{
+                margin: '12px',
+                flex: 1,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <SecretsPanel packId={conversation.packId} token={token} />
             </div>
           )}
 
           {/* Secrets placeholder when no pack linked */}
           {rightPanelTab === 'secrets' && !conversation?.packId && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '16px',
+              }}
+            >
               <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
                 No pack linked to this conversation.
                 <div style={{ marginTop: '8px', fontSize: '11px' }}>
@@ -883,17 +962,30 @@ export default function ChatView({
 
           {/* Versions panel */}
           {rightPanelTab === 'versions' && conversation?.packId && (
-            <div style={{ margin: '12px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-              <VersionPanel
-                packId={conversation.packId}
-                token={token}
-              />
+            <div
+              style={{
+                margin: '12px',
+                flex: 1,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+              }}
+            >
+              <VersionPanel packId={conversation.packId} token={token} />
             </div>
           )}
 
           {/* Versions placeholder when no pack linked */}
           {rightPanelTab === 'versions' && !conversation?.packId && (
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}>
+            <div
+              style={{
+                flex: 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '16px',
+              }}
+            >
               <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
                 No pack linked to this conversation.
                 <div style={{ marginTop: '8px', fontSize: '11px' }}>
@@ -904,12 +996,14 @@ export default function ChatView({
           )}
 
           {/* Tab buttons */}
-          <div style={{
-            display: 'flex',
-            gap: '8px',
-            padding: '12px',
-            borderTop: '1px solid var(--border-subtle)',
-          }}>
+          <div
+            style={{
+              display: 'flex',
+              gap: '8px',
+              padding: '12px',
+              borderTop: '1px solid var(--border-subtle)',
+            }}
+          >
             <button
               className="btn-secondary"
               style={{
@@ -929,7 +1023,8 @@ export default function ChatView({
                   flex: 1,
                   padding: '8px',
                   fontSize: '12px',
-                  backgroundColor: rightPanelTab === 'secrets' ? 'var(--bg-card-active)' : undefined,
+                  backgroundColor:
+                    rightPanelTab === 'secrets' ? 'var(--bg-card-active)' : undefined,
                 }}
                 onClick={() => setRightPanelTab('secrets')}
               >
@@ -943,7 +1038,8 @@ export default function ChatView({
                   flex: 1,
                   padding: '8px',
                   fontSize: '12px',
-                  backgroundColor: rightPanelTab === 'versions' ? 'var(--bg-card-active)' : undefined,
+                  backgroundColor:
+                    rightPanelTab === 'versions' ? 'var(--bg-card-active)' : undefined,
                 }}
                 onClick={() => setRightPanelTab('versions')}
               >
@@ -971,7 +1067,7 @@ export default function ChatView({
       {showMcpUsage && conversation?.packId && (
         <McpUsageModal
           packId={conversation.packId}
-          packPath={packs?.find(p => p.id === conversation.packId)?.path ?? ''}
+          packPath={packs?.find((p) => p.id === conversation.packId)?.path ?? ''}
           onClose={() => setShowMcpUsage(false)}
           token={token}
         />

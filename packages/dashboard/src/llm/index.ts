@@ -3,14 +3,14 @@
  * Creates the appropriate LLM provider based on environment configuration
  */
 
-import type { LlmProvider } from './provider.js';
-import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
+import { OpenAIProvider } from './openai.js';
+import type { LlmProvider } from './provider.js';
 
 export function createLlmProvider(): LlmProvider {
   // Auto-detect provider based on available API keys
-  const provider = process.env.LLM_PROVIDER ||
-    (process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'openai');
+  const provider =
+    process.env.LLM_PROVIDER || (process.env.ANTHROPIC_API_KEY ? 'anthropic' : 'openai');
 
   switch (provider) {
     case 'openai':
@@ -22,4 +22,4 @@ export function createLlmProvider(): LlmProvider {
   }
 }
 
-export type { LlmProvider, ChatMessage, StreamEvent } from './provider.js';
+export type { ChatMessage, LlmProvider, StreamEvent } from './provider.js';

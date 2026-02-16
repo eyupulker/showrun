@@ -85,7 +85,7 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
     try {
       // Validate JSON
       JSON.parse(inputsJson);
-    } catch (e) {
+    } catch (_e) {
       setError('Invalid JSON in inputs');
       return;
     }
@@ -206,9 +206,14 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
               Are you sure you want to delete <strong>{deleteConfirm}</strong>?
             </p>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
-              This will permanently delete the pack directory and all its files. This action cannot be undone.
+              This will permanently delete the pack directory and all its files. This action cannot
+              be undone.
             </p>
-            {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+            {error && (
+              <div className="error" style={{ marginBottom: '16px' }}>
+                {error}
+              </div>
+            )}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button
                 className="btn-secondary"
@@ -233,65 +238,76 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
         </div>
       )}
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px',
+          }}
+        >
           <h2 style={{ margin: 0 }}>Available Task Packs</h2>
-          <button className="btn-primary" onClick={() => setShowNewModal(true)}>New JSON Pack</button>
+          <button className="btn-primary" onClick={() => setShowNewModal(true)}>
+            New JSON Pack
+          </button>
         </div>
         <div className="pack-list">
           {packsList.length === 0 ? (
             <div className="loading">No task packs found</div>
           ) : (
             packsList.map((pack) => (
-            <div
-              key={pack.id}
-              className={`pack-item ${selectedPack?.id === pack.id ? 'selected' : ''}`}
-              onClick={() => setSelectedPack(pack)}
-            >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-                <div style={{ flex: 1 }}>
-                  <h3>{pack.name}</h3>
-                  <div className="meta">
-                    {pack.id} • v{pack.version}
-                    {pack.kind === 'json-dsl' && (
-                      <span style={{ marginLeft: '8px', color: '#007bff', fontSize: '11px' }}>[JSON]</span>
-                    )}
+              <div
+                key={pack.id}
+                className={`pack-item ${selectedPack?.id === pack.id ? 'selected' : ''}`}
+                onClick={() => setSelectedPack(pack)}
+              >
+                <div
+                  style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <h3>{pack.name}</h3>
+                    <div className="meta">
+                      {pack.id} • v{pack.version}
+                      {pack.kind === 'json-dsl' && (
+                        <span style={{ marginLeft: '8px', color: '#007bff', fontSize: '11px' }}>
+                          [JSON]
+                        </span>
+                      )}
+                    </div>
+                    <div className="description">{pack.description || 'No description'}</div>
                   </div>
-                  <div className="description">
-                    {pack.description || 'No description'}
-                  </div>
+                  {pack.kind === 'json-dsl' && (
+                    <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
+                      <button
+                        className="btn-secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingPackId(pack.id);
+                        }}
+                        style={{ padding: '6px 12px', fontSize: '12px' }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        className="btn-secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteConfirm(pack.id);
+                        }}
+                        style={{
+                          padding: '6px 12px',
+                          fontSize: '12px',
+                          color: 'var(--error)',
+                          borderColor: 'var(--error)',
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
-                {pack.kind === 'json-dsl' && (
-                  <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
-                    <button
-                      className="btn-secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingPackId(pack.id);
-                      }}
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteConfirm(pack.id);
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        color: 'var(--error)',
-                        borderColor: 'var(--error)',
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
               </div>
-            </div>
-          ))
+            ))
           )}
         </div>
       </div>
@@ -309,7 +325,11 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
               onChange={(e) => setInputsJson((e.target as HTMLTextAreaElement).value)}
               placeholder='{"key": "value"}'
             />
-            <button className="btn-primary" onClick={() => handleRun(selectedPack.id)} disabled={isRunning}>
+            <button
+              className="btn-primary"
+              onClick={() => handleRun(selectedPack.id)}
+              disabled={isRunning}
+            >
               {isRunning ? 'Running...' : 'Run Task Pack'}
             </button>
           </div>

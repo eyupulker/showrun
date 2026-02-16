@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface McpUsageModalProps {
   packId: string;
@@ -129,8 +129,7 @@ function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps)
     {
       key: 'cursor',
       title: 'Cursor',
-      configPath:
-        '.cursor/mcp.json in project root, or ~/.cursor/mcp.json globally',
+      configPath: '.cursor/mcp.json in project root, or ~/.cursor/mcp.json globally',
       note: 'Restart Cursor after config change.',
     },
   ];
@@ -156,7 +155,14 @@ function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps)
         style={{ maxWidth: '620px', width: '90%', maxHeight: '80vh', overflow: 'auto' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px',
+          }}
+        >
           <h2 style={{ margin: 0 }}>MCP Usage</h2>
           <button
             className="btn-secondary"
@@ -168,7 +174,8 @@ function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps)
         </div>
 
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-          Use these configuration snippets to connect <strong>{packId}</strong> as an MCP server in your AI tool.
+          Use these configuration snippets to connect <strong>{packId}</strong> as an MCP server in
+          your AI tool.
         </p>
 
         {loading && (
@@ -225,8 +232,16 @@ function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps)
 
                   {/* Accordion body */}
                   {isOpen && (
-                    <div style={{ padding: '12px 14px', borderTop: '1px solid var(--border-subtle)' }}>
-                      <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '8px' }}>
+                    <div
+                      style={{ padding: '12px 14px', borderTop: '1px solid var(--border-subtle)' }}
+                    >
+                      <div
+                        style={{
+                          fontSize: '12px',
+                          color: 'var(--text-muted)',
+                          marginBottom: '8px',
+                        }}
+                      >
                         Config file: <code style={{ fontSize: '11px' }}>{configPath}</code>
                       </div>
 
@@ -262,7 +277,13 @@ function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps)
                         </button>
                       </div>
 
-                      <div style={{ fontSize: '11px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                      <div
+                        style={{
+                          fontSize: '11px',
+                          color: 'var(--text-muted)',
+                          fontStyle: 'italic',
+                        }}
+                      >
                         {note}
                       </div>
                     </div>

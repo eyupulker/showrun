@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { Socket } from 'socket.io-client';
 
 interface Run {
@@ -88,7 +88,14 @@ function RunsView({ runs, socket }: RunsViewProps) {
   return (
     <div>
       <div className="card">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px',
+          }}
+        >
           <h2 style={{ margin: 0 }}>Run History</h2>
           <select
             value={sourceFilter}
@@ -129,7 +136,9 @@ function RunsView({ runs, socket }: RunsViewProps) {
                   {run.source && (
                     <>
                       <span style={{ margin: '0 8px' }}>|</span>
-                      <span style={{ color: 'var(--accent-orange)' }}>{getSourceLabel(run.source)}</span>
+                      <span style={{ color: 'var(--accent-orange)' }}>
+                        {getSourceLabel(run.source)}
+                      </span>
                     </>
                   )}
                 </div>
@@ -246,8 +255,8 @@ function RunsView({ runs, socket }: RunsViewProps) {
                       event.type === 'error'
                         ? 'error'
                         : event.type === 'run_finished' && event.data.success
-                        ? 'success'
-                        : 'info'
+                          ? 'success'
+                          : 'info'
                     }`}
                   >
                     [{event.timestamp}] {event.type}: {JSON.stringify(event.data)}

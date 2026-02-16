@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import type { InputSchema } from '@showrun/core';
+import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { inputSchemaToZodSchema } from '../server.js';
-import type { InputSchema } from '@showrun/core';
 
 describe('inputSchemaToZodSchema', () => {
   describe('string fields', () => {

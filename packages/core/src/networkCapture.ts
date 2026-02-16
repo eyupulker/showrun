@@ -4,7 +4,7 @@
  * Full request headers kept in-memory for replay only; redacted everywhere else.
  */
 
-import { gunzipSync } from 'zlib';
+import { gunzipSync } from 'node:zlib';
 import type { Page } from 'playwright';
 
 const SENSITIVE_HEADER_NAMES = new Set([
@@ -32,11 +32,7 @@ function redactHeaders(headers: Record<string, string>): Record<string, string> 
 function isTextOrJsonContentType(ct: string | undefined): boolean {
   if (!ct) return false;
   const lower = ct.toLowerCase();
-  return (
-    lower.includes('application/json') ||
-    lower.includes('+json') ||
-    lower.includes('text/')
-  );
+  return lower.includes('application/json') || lower.includes('+json') || lower.includes('text/');
 }
 
 const GZIP_MAGIC = Buffer.from([0x1f, 0x8b]);
@@ -62,7 +58,8 @@ function looksLikeJson(body: Buffer): boolean {
   const len = body.length;
   if (len === 0) return false;
   let i = 0;
-  while (i < len && (body[i] === 0x20 || body[i] === 0x0a || body[i] === 0x0d || body[i] === 0x09)) i++;
+  while (i < len && (body[i] === 0x20 || body[i] === 0x0a || body[i] === 0x0d || body[i] === 0x09))
+    i++;
   if (i >= len) return false;
   const first = body[i];
   return first === 0x7b || first === 0x5b; // { or [
@@ -170,7 +167,7 @@ function nextId(): string {
 function truncatePostData(raw: string | undefined | null): string | undefined {
   if (raw == null || raw === '') return undefined;
   if (raw.length > POST_DATA_TRUNCATE) {
-    return raw.slice(0, POST_DATA_TRUNCATE) + '...[truncated]';
+    return `${raw.slice(0, POST_DATA_TRUNCATE)}...[truncated]`;
   }
   return raw;
 }
@@ -187,7 +184,8 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
 
   function dropOldest(): void {
     while (
-      (buffer.length >= NETWORK_BUFFER_MAX_ENTRIES || totalBytesEstimate > NETWORK_BUFFER_MAX_BYTES) &&
+      (buffer.length >= NETWORK_BUFFER_MAX_ENTRIES ||
+        totalBytesEstimate > NETWORK_BUFFER_MAX_BYTES) &&
       buffer.length > 0
     ) {
       const removed = buffer.shift()!;
@@ -215,13 +213,16 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
       responseHeaders: entry.responseHeaders,
       contentType: entry.contentType,
       responseBodySnippet: snippet,
-      responseBodyAvailable:
-        entry.responseBodyText != null || entry.responseBodyBase64 != null,
+      responseBodyAvailable: entry.responseBodyText != null || entry.responseBodyBase64 != null,
     };
   }
 
   function matchesWhere(entry: NetworkEntryInternal, where: NetworkFindWhere): boolean {
-    if (where.urlIncludes != null && !entry.url.toLowerCase().includes(where.urlIncludes.toLowerCase())) return false;
+    if (
+      where.urlIncludes != null &&
+      !entry.url.toLowerCase().includes(where.urlIncludes.toLowerCase())
+    )
+      return false;
     if (where.urlRegex != null) {
       try {
         const re = new RegExp(where.urlRegex);
@@ -234,7 +235,8 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
     if (where.status != null && entry.status !== where.status) return false;
     if (
       where.contentTypeIncludes != null &&
-      (!entry.contentType || !entry.contentType.toLowerCase().includes(where.contentTypeIncludes.toLowerCase()))
+      (!entry.contentType ||
+        !entry.contentType.toLowerCase().includes(where.contentTypeIncludes.toLowerCase()))
     )
       return false;
     if (where.responseContains != null) {
@@ -278,10 +280,7 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
       bytesEstimate: 0,
     };
     entry.bytesEstimate =
-      url.length +
-      JSON.stringify(entry.requestHeaders).length +
-      (postData?.length ?? 0) +
-      200;
+      url.length + JSON.stringify(entry.requestHeaders).length + (postData?.length ?? 0) + 200;
     requestToEntry.set(request as object, entry);
     mapById.set(id, entry);
     buffer.push(entry);
@@ -383,7 +382,20 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
       }
 
       // Playwright: page.request is APIRequestContext sharing cookies with the browser context
-      const requestContext = (page as { request?: { fetch: (url: string, options?: object) => Promise<{ status: () => number; headers: () => Record<string, string>; body: () => Promise<Buffer> }> } }).request;
+      const requestContext = (
+        page as {
+          request?: {
+            fetch: (
+              url: string,
+              options?: object
+            ) => Promise<{
+              status: () => number;
+              headers: () => Record<string, string>;
+              body: () => Promise<Buffer>;
+            }>;
+          };
+        }
+      ).request;
       if (!requestContext || typeof requestContext.fetch !== 'function') {
         throw new Error(
           'Browser context does not support API request (replay). Playwright version may be too old.'
@@ -396,7 +408,9 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
           const re = new RegExp(overrides.urlReplace.find, 'g');
           url = url.replace(re, overrides.urlReplace.replace);
         } catch (e) {
-          throw new Error(`overrides.urlReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+          throw new Error(
+            `overrides.urlReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`
+          );
         }
       }
       if (overrides?.url != null) url = overrides.url;
@@ -407,7 +421,9 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
           const re = new RegExp(overrides.bodyReplace.find, 'g');
           body = body.replace(re, overrides.bodyReplace.replace);
         } catch (e) {
-          throw new Error(`overrides.bodyReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+          throw new Error(
+            `overrides.bodyReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`
+          );
         }
       }
       if (overrides?.body != null) body = overrides.body;

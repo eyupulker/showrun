@@ -1,8 +1,14 @@
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 
 interface NewPackModalProps {
   onClose: () => void;
-  onCreate: (pack: { id: string; name: string; version: string; description: string }) => Promise<void>;
+  onCreate: (pack: {
+    id: string;
+    name: string;
+    version: string;
+    description: string;
+  }) => Promise<void>;
   token: string;
 }
 

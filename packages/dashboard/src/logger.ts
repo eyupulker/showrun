@@ -1,8 +1,8 @@
-import { mkdirSync } from 'fs';
-import { join } from 'path';
-import winston from 'winston';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import type { LogEvent, Logger } from '@showrun/core';
 import type { Server as SocketIOServer } from 'socket.io';
-import type { Logger, LogEvent } from '@showrun/core';
+import winston from 'winston';
 
 /**
  * Custom Winston format that transforms log info to match our LogEvent structure

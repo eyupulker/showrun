@@ -1,11 +1,14 @@
-import type { TaskPack, CollectibleDefinition } from './types.js';
 import type { DslStep } from './dsl/types.js';
-import { validateFlow, ValidationError } from './dsl/validation.js';
+import { ValidationError, validateFlow } from './dsl/validation.js';
+import type { CollectibleDefinition, TaskPack } from './types.js';
 
 /** Step types that produce collectible output via an "out" parameter */
 const STEPS_WITH_OUT = new Set([
-  'extract_title', 'extract_text', 'extract_attribute',
-  'network_replay', 'network_extract',
+  'extract_title',
+  'extract_text',
+  'extract_attribute',
+  'network_replay',
+  'network_extract',
 ]);
 
 /**

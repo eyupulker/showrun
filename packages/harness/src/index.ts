@@ -2,10 +2,10 @@
  * @showrun/harness - Public API
  */
 
-import { resolve, join } from 'path';
-import { existsSync, mkdirSync } from 'fs';
-import { TaskPackLoader } from '@showrun/core';
+import { existsSync, mkdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { RunResult } from '@showrun/core';
+import { TaskPackLoader } from '@showrun/core';
 import { TaskPackRunner } from './runner.js';
 
 export { JSONLLogger } from './logger.js';

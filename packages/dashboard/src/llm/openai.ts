@@ -5,12 +5,12 @@
  */
 
 import type {
-  LlmProvider,
-  ToolDef,
-  ToolCall,
-  ChatWithToolsResult,
   ChatMessage,
+  ChatWithToolsResult,
   ContentPart,
+  LlmProvider,
+  ToolCall,
+  ToolDef,
 } from './provider.js';
 
 const RATE_LIMIT_MAX_RETRIES = 5;
@@ -29,7 +29,8 @@ function parseRateLimitWaitSeconds(response: Response, bodyText: string): number
   const retryAfter = response.headers.get('Retry-After');
   if (retryAfter) {
     const sec = parseInt(retryAfter, 10);
-    if (!Number.isNaN(sec)) return Math.min(Math.max(sec, RATE_LIMIT_WAIT_MIN_SECONDS), RATE_LIMIT_WAIT_CAP_SECONDS);
+    if (!Number.isNaN(sec))
+      return Math.min(Math.max(sec, RATE_LIMIT_WAIT_MIN_SECONDS), RATE_LIMIT_WAIT_CAP_SECONDS);
   }
   try {
     const json = JSON.parse(bodyText) as { error?: { message?: string } };
@@ -38,7 +39,10 @@ function parseRateLimitWaitSeconds(response: Response, bodyText: string): number
     if (match) {
       const sec = parseFloat(match[1]);
       if (!Number.isNaN(sec) && sec > 0) {
-        return Math.min(Math.max(Math.ceil(sec), RATE_LIMIT_WAIT_MIN_SECONDS), RATE_LIMIT_WAIT_CAP_SECONDS);
+        return Math.min(
+          Math.max(Math.ceil(sec), RATE_LIMIT_WAIT_MIN_SECONDS),
+          RATE_LIMIT_WAIT_CAP_SECONDS
+        );
       }
     }
   } catch {
@@ -103,11 +107,7 @@ export class OpenAIProvider implements LlmProvider {
     this.baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
   }
 
-  async generateJson<T>(args: {
-    system: string;
-    prompt: string;
-    schema: object;
-  }): Promise<T> {
+  async generateJson<T>(args: { system: string; prompt: string; schema: object }): Promise<T> {
     const { system, prompt, schema } = args;
 
     // Use OpenAI's structured outputs (response_format)
@@ -145,7 +145,9 @@ export class OpenAIProvider implements LlmProvider {
     try {
       return JSON.parse(content) as T;
     } catch (error) {
-      throw new Error(`Failed to parse JSON from OpenAI response: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(
+        `Failed to parse JSON from OpenAI response: ${error instanceof Error ? error.message : String(error)}`
+      );
     }
   }
 
@@ -191,7 +193,15 @@ export class OpenAIProvider implements LlmProvider {
     const { systemPrompt, messages, tools } = args;
     const apiMessages: Array<
       | { role: 'system' | 'user' | 'assistant'; content: string | ContentPart[] }
-      | { role: 'assistant'; content: string | null; tool_calls: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }> }
+      | {
+          role: 'assistant';
+          content: string | null;
+          tool_calls: Array<{
+            id: string;
+            type: 'function';
+            function: { name: string; arguments: string };
+          }>;
+        }
       | { role: 'tool'; content: string; tool_call_id: string }
     > = [];
     if (systemPrompt) {
@@ -200,7 +210,11 @@ export class OpenAIProvider implements LlmProvider {
     for (const m of messages) {
       if (m.role === 'tool') {
         apiMessages.push({ role: 'tool', content: m.content, tool_call_id: m.tool_call_id });
-      } else if ('tool_calls' in m && m.role === 'assistant' && Array.isArray((m as any).tool_calls)) {
+      } else if (
+        'tool_calls' in m &&
+        m.role === 'assistant' &&
+        Array.isArray((m as any).tool_calls)
+      ) {
         const am = m as { role: 'assistant'; content: string | null; tool_calls: ToolCall[] };
         apiMessages.push({
           role: 'assistant',

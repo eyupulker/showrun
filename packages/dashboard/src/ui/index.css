@@ -1,6 +1,6 @@
 /* ShowRun Dashboard - Brand Theme */
 
-@import url('https://fonts.googleapis.com/css2?family=Host+Grotesk:ital,wght@0,300..800;1,300..800&family=Inter:wght@300;400;500;600;700&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Host+Grotesk:ital,wght@0,300..800;1,300..800&family=Inter:wght@300;400;500;600;700&display=swap");
 
 * {
   margin: 0;
@@ -11,7 +11,7 @@
 :root {
   /* Background colors — based on brand dark #1F2937 */
   --bg-main: #1e2530;
-  --bg-sidebar: #1F2937;
+  --bg-sidebar: #1f2937;
   --bg-card: #2c3544;
   --bg-card-active: #374151;
   --bg-input: #252e3b;
@@ -23,17 +23,17 @@
   --text-muted: #6b7280;
 
   /* Brand accent colors — from brand guidelines */
-  --brand-base: #FF671A;
-  --brand-700: #802B00;
-  --brand-600: #B33C00;
-  --brand-500: #E64D00;
-  --brand-300: #FF894D;
-  --brand-200: #FFAA80;
-  --brand-100: #FFCCB3;
+  --brand-base: #ff671a;
+  --brand-700: #802b00;
+  --brand-600: #b33c00;
+  --brand-500: #e64d00;
+  --brand-300: #ff894d;
+  --brand-200: #ffaa80;
+  --brand-100: #ffccb3;
 
   /* Accent aliases */
   --accent-orange: var(--brand-base);
-  --gradient-accent: linear-gradient(135deg, #FF671A 0%, #E64D00 100%);
+  --gradient-accent: linear-gradient(135deg, #ff671a 0%, #e64d00 100%);
 
   /* Status colors */
   --status-active: var(--brand-base);
@@ -44,7 +44,7 @@
 
   /* Border colors */
   --border-subtle: #374151;
-  --border-accent: #4B5563;
+  --border-accent: #4b5563;
 
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -55,9 +55,10 @@
   --sidebar-width: 320px;
 
   /* Typography — Host Grotesk (brand) + Inter (body) */
-  --font-family: 'Host Grotesk', 'Inter', -apple-system, BlinkMacSystemFont,
-    'Segoe UI', 'Helvetica Neue', sans-serif;
-  --font-mono: 'SF Mono', 'Fira Code', 'Fira Mono', 'Roboto Mono', monospace;
+  --font-family:
+    "Host Grotesk", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+    sans-serif;
+  --font-mono: "SF Mono", "Fira Code", "Fira Mono", "Roboto Mono", monospace;
 }
 
 body {
@@ -69,7 +70,8 @@ body {
   line-height: 1.5;
 }
 
-code, pre {
+code,
+pre {
   font-family: var(--font-mono);
 }
 
@@ -186,8 +188,9 @@ code, pre {
 
 .conversation-item.active {
   border: 2px solid transparent;
-  background: linear-gradient(var(--bg-card-active), var(--bg-card-active)) padding-box,
-              var(--gradient-accent) border-box;
+  background:
+    linear-gradient(var(--bg-card-active), var(--bg-card-active)) padding-box,
+    var(--gradient-accent) border-box;
 }
 
 .conversation-title {
@@ -223,10 +226,18 @@ code, pre {
   flex-shrink: 0;
 }
 
-.status-dot.active { background-color: var(--status-active); }
-.status-dot.ready { background-color: var(--status-ready); }
-.status-dot.needs_input { background-color: var(--status-needs-input); }
-.status-dot.error { background-color: var(--status-error); }
+.status-dot.active {
+  background-color: var(--status-active);
+}
+.status-dot.ready {
+  background-color: var(--status-ready);
+}
+.status-dot.needs_input {
+  background-color: var(--status-needs-input);
+}
+.status-dot.error {
+  background-color: var(--status-error);
+}
 
 .status-badge {
   padding: 3px 8px;
@@ -271,7 +282,9 @@ code, pre {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
 .new-chat-btn:hover {
@@ -776,7 +789,9 @@ input[type="checkbox"] {
 
 /* Spinner animation */
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .spinner {
@@ -831,9 +846,15 @@ input[type="checkbox"] {
   color: var(--text-primary);
 }
 
-.markdown-content h1 { font-size: 1.5em; }
-.markdown-content h2 { font-size: 1.3em; }
-.markdown-content h3 { font-size: 1.1em; }
+.markdown-content h1 {
+  font-size: 1.5em;
+}
+.markdown-content h2 {
+  font-size: 1.3em;
+}
+.markdown-content h3 {
+  font-size: 1.1em;
+}
 
 .markdown-content p {
   margin-bottom: 1em;
@@ -993,8 +1014,12 @@ input[type="checkbox"] {
   min-width: 35px;
 }
 
-.network-status.success { color: var(--status-ready); }
-.network-status.error { color: var(--status-error); }
+.network-status.success {
+  color: var(--status-ready);
+}
+.network-status.error {
+  color: var(--status-error);
+}
 
 .network-url {
   flex: 1;

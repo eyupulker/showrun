@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { cwd } from 'node:process';
 import { config } from 'dotenv';
-import { resolve, dirname } from 'path';
-import { existsSync } from 'fs';
-import { cwd } from 'process';
 
 // Load .env from cwd or nearest ancestor
 (function loadEnv() {
@@ -25,18 +25,18 @@ import { initConfig } from '@showrun/core';
 initConfig();
 
 import {
-  cmdRun,
-  printRunHelp,
-  cmdServe,
-  printServeHelp,
-  cmdDashboard,
-  printDashboardHelp,
-  cmdPack,
-  printPackHelp,
-  cmdMcp,
-  printMcpHelp,
   cmdConfig,
+  cmdDashboard,
+  cmdMcp,
+  cmdPack,
+  cmdRun,
+  cmdServe,
   printConfigHelp,
+  printDashboardHelp,
+  printMcpHelp,
+  printPackHelp,
+  printRunHelp,
+  printServeHelp,
 } from './commands/index.js';
 
 function printHelp(): void {

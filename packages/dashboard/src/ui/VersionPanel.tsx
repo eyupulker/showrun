@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface FlowVersion {
   number: number;
@@ -65,7 +65,7 @@ export default function VersionPanel({ packId, token }: VersionPanelProps) {
 
   useEffect(() => {
     loadVersions();
-  }, [packId]);
+  }, [loadVersions]);
 
   const handleSaveSnapshot = async () => {
     setSaving(true);
@@ -104,12 +104,14 @@ export default function VersionPanel({ packId, token }: VersionPanelProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '12px',
-      }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '12px',
+        }}
+      >
         <span style={{ fontWeight: 600, fontSize: '13px' }}>Versions</span>
         <button
           className="btn-secondary"
@@ -122,17 +124,21 @@ export default function VersionPanel({ packId, token }: VersionPanelProps) {
       </div>
 
       {showLabelInput && (
-        <div style={{
-          display: 'flex',
-          gap: '6px',
-          marginBottom: '12px',
-        }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '6px',
+            marginBottom: '12px',
+          }}
+        >
           <input
             type="text"
             placeholder="Label (optional)"
             value={snapshotLabel}
             onChange={(e) => setSnapshotLabel(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveSnapshot(); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleSaveSnapshot();
+            }}
             style={{
               flex: 1,
               padding: '4px 8px',
@@ -155,28 +161,44 @@ export default function VersionPanel({ packId, token }: VersionPanelProps) {
       )}
 
       {error && (
-        <div style={{
-          padding: '8px',
-          marginBottom: '8px',
-          backgroundColor: 'rgba(239, 68, 68, 0.1)',
-          border: '1px solid rgba(239, 68, 68, 0.2)',
-          borderRadius: '4px',
-          color: 'var(--accent-red)',
-          fontSize: '12px',
-        }}>
+        <div
+          style={{
+            padding: '8px',
+            marginBottom: '8px',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.2)',
+            borderRadius: '4px',
+            color: 'var(--accent-red)',
+            fontSize: '12px',
+          }}
+        >
           {error}
         </div>
       )}
 
       <div style={{ flex: 1, overflow: 'auto' }}>
         {loading && (
-          <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+          <div
+            style={{
+              padding: '16px',
+              color: 'var(--text-muted)',
+              fontSize: '13px',
+              textAlign: 'center',
+            }}
+          >
             Loading...
           </div>
         )}
 
         {!loading && sortedVersions.length === 0 && (
-          <div style={{ padding: '16px', color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center' }}>
+          <div
+            style={{
+              padding: '16px',
+              color: 'var(--text-muted)',
+              fontSize: '13px',
+              textAlign: 'center',
+            }}
+          >
             No versions saved yet.
             <div style={{ marginTop: '4px', fontSize: '11px' }}>
               Versions are auto-saved when a flow is marked as ready.
@@ -195,22 +217,37 @@ export default function VersionPanel({ packId, token }: VersionPanelProps) {
               border: '1px solid var(--border-subtle)',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '4px',
+              }}
+            >
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{ fontWeight: 600, fontSize: '12px', color: 'var(--text-primary)' }}>
                   v{v.version}
                 </span>
-                <span style={{
-                  fontSize: '10px',
-                  padding: '1px 6px',
-                  borderRadius: '3px',
-                  backgroundColor: v.source === 'agent' ? 'rgba(255, 103, 26, 0.15)' :
-                                   v.source === 'cli' ? 'rgba(59, 130, 246, 0.15)' :
-                                   'rgba(34, 197, 94, 0.15)',
-                  color: v.source === 'agent' ? 'var(--brand-300)' :
-                         v.source === 'cli' ? 'var(--accent-blue)' :
-                         'var(--accent-green)',
-                }}>
+                <span
+                  style={{
+                    fontSize: '10px',
+                    padding: '1px 6px',
+                    borderRadius: '3px',
+                    backgroundColor:
+                      v.source === 'agent'
+                        ? 'rgba(255, 103, 26, 0.15)'
+                        : v.source === 'cli'
+                          ? 'rgba(59, 130, 246, 0.15)'
+                          : 'rgba(34, 197, 94, 0.15)',
+                    color:
+                      v.source === 'agent'
+                        ? 'var(--brand-300)'
+                        : v.source === 'cli'
+                          ? 'var(--accent-blue)'
+                          : 'var(--accent-green)',
+                  }}
+                >
                   {v.source}
                 </span>
               </div>
@@ -224,7 +261,9 @@ export default function VersionPanel({ packId, token }: VersionPanelProps) {
               </button>
             </div>
             {v.label && (
-              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}>
+              <div
+                style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '2px' }}
+              >
                 {v.label}
               </div>
             )}

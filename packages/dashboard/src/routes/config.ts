@@ -1,8 +1,8 @@
-import { Router, type Request, type Response } from 'express';
-import { resolve } from 'path';
-import type { DashboardContext } from '../types/context.js';
-import { discoverPacks } from '@showrun/mcp-server';
+import { resolve } from 'node:path';
 import { TaskPackLoader } from '@showrun/core';
+import { discoverPacks } from '@showrun/mcp-server';
+import { type Request, type Response, Router } from 'express';
+import type { DashboardContext } from '../types/context.js';
 
 export function createConfigRouter(ctx: DashboardContext): Router {
   const router = Router();
@@ -55,7 +55,7 @@ export function createConfigRouter(ctx: DashboardContext): Router {
     // Detect whether showrun was launched via npx / global install or directly via node
     const isNpx = Boolean(
       process.env.npm_execpath || // running under npm/npx/pnpm
-      process.env.npm_lifecycle_event
+        process.env.npm_lifecycle_event
     );
 
     // process.argv[1] is the actual entry script that Node is running

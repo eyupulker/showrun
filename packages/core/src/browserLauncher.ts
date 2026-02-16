@@ -5,11 +5,11 @@
  * (Chromium, Camoufox) and persistence modes.
  */
 
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
-import { existsSync } from 'fs';
-import { join } from 'path';
-import type { BrowserEngine, BrowserSettings, BrowserPersistence } from './types.js';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { type Browser, type BrowserContext, chromium, type Page } from 'playwright';
 import { resolveBrowserDataDir } from './browserPersistence.js';
+import type { BrowserEngine, BrowserPersistence, BrowserSettings } from './types.js';
 
 /**
  * Browser session returned by launchBrowser
@@ -74,12 +74,7 @@ export interface LaunchBrowserConfig {
  * @returns Browser session with context, page, and close function
  */
 export async function launchBrowser(config: LaunchBrowserConfig): Promise<BrowserSession> {
-  const {
-    browserSettings = {},
-    headless = true,
-    sessionId,
-    packPath,
-  } = config;
+  const { browserSettings = {}, headless = true, sessionId, packPath } = config;
 
   const engine = browserSettings.engine ?? 'camoufox';
   let persistence: BrowserPersistence = browserSettings.persistence ?? 'none';
@@ -132,7 +127,7 @@ async function launchChromium(config: {
       headless,
     });
     browser = null as unknown as Browser; // Persistent context doesn't expose browser
-    page = context.pages()[0] || await context.newPage();
+    page = context.pages()[0] || (await context.newPage());
   } else {
     // Ephemeral browser
     browser = await chromium.launch({ headless });
@@ -174,33 +169,38 @@ async function launchCamoufox(config: {
   const screen = { minWidth: 1024, minHeight: 768 };
 
   // Dynamic import to avoid loading Camoufox when not needed
-  let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean; screen?: { minWidth?: number; maxWidth?: number; minHeight?: number; maxHeight?: number } }) => Promise<Browser | BrowserContext>;
+  let Camoufox: (options: {
+    headless?: boolean;
+    user_data_dir?: string;
+    humanize?: number | boolean;
+    screen?: { minWidth?: number; maxWidth?: number; minHeight?: number; maxHeight?: number };
+  }) => Promise<Browser | BrowserContext>;
   try {
     const camoufoxModule = await import('camoufox-js');
     Camoufox = camoufoxModule.Camoufox;
   } catch (error) {
     throw new Error(
       'Camoufox is not available. Run "npx camoufox-js fetch" to download the browser. ' +
-      `Error: ${error instanceof Error ? error.message : String(error)}`
+        `Error: ${error instanceof Error ? error.message : String(error)}`
     );
   }
 
   if (userDataDir) {
     // With user_data_dir, Camoufox returns BrowserContext directly (persistent context)
     // humanize: adds human-like cursor movement delays (up to 2 seconds)
-    const context = await Camoufox({
+    const context = (await Camoufox({
       headless,
       humanize: 2.0,
       screen,
       user_data_dir: userDataDir,
-    }) as unknown as BrowserContext;
+    })) as unknown as BrowserContext;
 
-    const page = context.pages()[0] || await context.newPage();
+    const page = context.pages()[0] || (await context.newPage());
 
     return {
       context,
       page,
-      browser: null,  // No browser instance with persistent context
+      browser: null, // No browser instance with persistent context
       engine: 'camoufox',
       persistence,
       userDataDir,
@@ -212,11 +212,11 @@ async function launchCamoufox(config: {
 
   // Without user_data_dir, Camoufox returns Browser (ephemeral)
   // humanize: adds human-like cursor movement delays (up to 2 seconds)
-  const browser = await Camoufox({
+  const browser = (await Camoufox({
     headless,
     humanize: 2.0,
     screen,
-  }) as Browser;
+  })) as Browser;
 
   const context = await browser.newContext();
   const page = await context.newPage();

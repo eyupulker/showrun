@@ -1,7 +1,7 @@
-import { mkdirSync } from 'fs';
-import { join } from 'path';
+import { mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import type { LogEvent, Logger } from '@showrun/core';
 import winston from 'winston';
-import type { Logger, LogEvent } from '@showrun/core';
 
 /**
  * Custom Winston format that transforms log info to match our LogEvent structure
@@ -11,21 +11,21 @@ import type { Logger, LogEvent } from '@showrun/core';
 const logEventFormat = winston.format((info) => {
   // Extract type and data from metadata (we pass these when calling logger.info)
   const { level, message, timestamp, splat, type, ...rest } = info;
-  
+
   // The type is passed both as message and in metadata, prefer metadata.type
   const eventType = type || message;
-  
+
   // All remaining fields in rest are the event data
   const eventData = rest;
-  
+
   // Clear the info object and rebuild with only our structure
-  Object.keys(info).forEach(key => delete (info as any)[key]);
-  
+  Object.keys(info).forEach((key) => delete (info as any)[key]);
+
   // Set our custom structure: { timestamp, type, data }
   (info as any).timestamp = timestamp || new Date().toISOString();
   (info as any).type = eventType;
   (info as any).data = eventData;
-  
+
   return info;
 });
 

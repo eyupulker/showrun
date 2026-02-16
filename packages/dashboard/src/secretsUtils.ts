@@ -2,10 +2,10 @@
  * Secrets utilities for task pack secrets management
  */
 
-import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs';
-import { join } from 'path';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { SecretDefinition, TaskPackManifest } from '@showrun/core';
-import { TaskPackLoader, type SecretsFile } from '@showrun/core';
+import { type SecretsFile, TaskPackLoader } from '@showrun/core';
 
 /**
  * Information about a secret (no actual value exposed)
@@ -55,7 +55,7 @@ function writeSecretsFile(packPath: string, secretsFile: SecretsFile): void {
   const tempPath = `${secretsPath}.tmp`;
 
   try {
-    const content = JSON.stringify(secretsFile, null, 2) + '\n';
+    const content = `${JSON.stringify(secretsFile, null, 2)}\n`;
     writeFileSync(tempPath, content, 'utf-8');
     renameSync(tempPath, secretsPath);
   } catch (error) {
@@ -151,10 +151,12 @@ export function updateSecretDefinitions(packPath: string, definitions: SecretDef
 
     // Write atomically
     const tempPath = `${manifestPath}.tmp`;
-    const newContent = JSON.stringify(manifest, null, 2) + '\n';
+    const newContent = `${JSON.stringify(manifest, null, 2)}\n`;
     writeFileSync(tempPath, newContent, 'utf-8');
     renameSync(tempPath, manifestPath);
   } catch (error) {
-    throw new Error(`Failed to update manifest: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to update manifest: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * Bootstrap script for running showrun from a git clone.
  *
@@ -7,10 +8,10 @@
  * Published npm releases use packages/showrun/dist/cli.js directly.
  */
 
-import { existsSync } from 'fs';
-import { resolve, dirname } from 'path';
-import { fileURLToPath } from 'url';
-import { spawn, execSync } from 'child_process';
+import { execSync, spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = resolve(__dirname, '..');
@@ -26,7 +27,7 @@ if (!existsSync(cliPath)) {
       execSync('pnpm install && pnpm build', { cwd: root, stdio: 'inherit' });
     } catch {
       console.error('[showrun] Build failed. Please run manually:');
-      console.error('  cd ' + root);
+      console.error(`  cd ${root}`);
       console.error('  pnpm install && pnpm build');
       process.exit(1);
     }

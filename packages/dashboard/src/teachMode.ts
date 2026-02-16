@@ -3,8 +3,8 @@
  * Orchestrates AI-assisted step proposal using LLM and MCP servers
  */
 
-import type { LlmProvider } from './llm/index.js';
 import type { DslStep, Target } from '@showrun/core';
+import type { LlmProvider } from './llm/index.js';
 
 // ElementFingerprint type (matches browser-inspector-mcp)
 export interface ElementFingerprint {
@@ -41,7 +41,11 @@ export interface ProposeStepRequest {
 export interface ProposeStepResponse {
   step: DslStep;
   insertionIndex?: number;
-  collectiblesDelta?: Array<{ name: string; type: 'string' | 'number' | 'boolean'; description?: string }>;
+  collectiblesDelta?: Array<{
+    name: string;
+    type: 'string' | 'number' | 'boolean';
+    description?: string;
+  }>;
 }
 
 /**
@@ -66,10 +70,10 @@ function redactFingerprint(fingerprint: ElementFingerprint): ElementFingerprint 
       ? {
           visibleText:
             fingerprint.text.visibleText && fingerprint.text.visibleText.length > 200
-              ? fingerprint.text.visibleText.substring(0, 200) + '...'
+              ? `${fingerprint.text.visibleText.substring(0, 200)}...`
               : fingerprint.text.visibleText,
           exactCandidates: fingerprint.text.exactCandidates.map((c) =>
-            c.length > 200 ? c.substring(0, 200) + '...' : c
+            c.length > 200 ? `${c.substring(0, 200)}...` : c
           ),
         }
       : undefined,
@@ -92,21 +96,21 @@ export async function proposeStep(
 
   // Build target candidates (prefer role/text/label, css as fallback)
   const targetCandidates = elementFingerprint.candidates || [];
-  let target: Target | { anyOf: Target[] };
+  let _target: Target | { anyOf: Target[] };
 
   if (targetCandidates.length === 0) {
     // Fallback to CSS if no candidates
-    target = {
+    _target = {
       kind: 'css',
       selector: elementFingerprint.attributes.id
         ? `#${elementFingerprint.attributes.id}`
         : elementFingerprint.tagName,
     };
   } else if (targetCandidates.length === 1) {
-    target = targetCandidates[0];
+    _target = targetCandidates[0];
   } else {
     // Use anyOf for fallback
-    target = { anyOf: targetCandidates };
+    _target = { anyOf: targetCandidates };
   }
 
   // Build system prompt

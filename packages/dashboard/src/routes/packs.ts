@@ -1,23 +1,23 @@
-import { Router, type Request, type Response } from 'express';
-import { resolve } from 'path';
-import { existsSync, rmSync } from 'fs';
-import type { DashboardContext } from '../types/context.js';
-import { createTokenChecker } from '../helpers/auth.js';
-import { discoverPacks } from '@showrun/mcp-server';
+import { existsSync, rmSync } from 'node:fs';
+import { resolve } from 'node:path';
+import type { CollectibleDefinition, DslStep, InputSchema, TaskPackManifest } from '@showrun/core';
 import {
+  ensureDir,
+  listVersions,
+  readJsonFile,
+  restoreVersion,
+  sanitizePackId,
+  saveVersion,
   TaskPackLoader,
   validateJsonTaskPack,
-  sanitizePackId,
-  ensureDir,
-  writeTaskPackManifest,
-  writeFlowJson,
   validatePathInAllowedDir,
-  readJsonFile,
-  saveVersion,
-  listVersions,
-  restoreVersion,
+  writeFlowJson,
+  writeTaskPackManifest,
 } from '@showrun/core';
-import type { TaskPackManifest, InputSchema, CollectibleDefinition, DslStep } from '@showrun/core';
+import { discoverPacks } from '@showrun/mcp-server';
+import { type Request, type Response, Router } from 'express';
+import { createTokenChecker } from '../helpers/auth.js';
+import type { DashboardContext } from '../types/context.js';
 
 export function createPacksRouter(ctx: DashboardContext): Router {
   const router = Router();
@@ -188,10 +188,14 @@ export function createPacksRouter(ctx: DashboardContext): Router {
       try {
         validatePathInAllowedDir(packInfo.path, ctx.workspaceDir);
       } catch {
-        return res.status(403).json({ error: 'Pack is not in workspace directory - cannot delete' });
+        return res
+          .status(403)
+          .json({ error: 'Pack is not in workspace directory - cannot delete' });
       }
     } else {
-      return res.status(403).json({ error: 'No workspace directory configured - cannot delete packs' });
+      return res
+        .status(403)
+        .json({ error: 'No workspace directory configured - cannot delete packs' });
     }
 
     try {
@@ -469,28 +473,31 @@ export function createPacksRouter(ctx: DashboardContext): Router {
   });
 
   // Restore a specific version
-  router.post('/api/packs/:packId/versions/:versionNumber/restore', async (req: Request, res: Response) => {
-    if (!requireToken(req)) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-    const { packId, versionNumber } = req.params;
-    const packInfo = findPackById(packId);
-    if (!packInfo) {
-      return res.status(404).json({ error: 'Pack not found' });
-    }
-    try {
-      restoreVersion(packInfo.path, parseInt(versionNumber, 10));
+  router.post(
+    '/api/packs/:packId/versions/:versionNumber/restore',
+    async (req: Request, res: Response) => {
+      if (!requireToken(req)) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+      const { packId, versionNumber } = req.params;
+      const packInfo = findPackById(packId);
+      if (!packInfo) {
+        return res.status(404).json({ error: 'Pack not found' });
+      }
+      try {
+        restoreVersion(packInfo.path, parseInt(versionNumber, 10));
 
-      // Reload pack in memory
-      const reloaded = await TaskPackLoader.loadTaskPack(packInfo.path);
-      ctx.packMap.set(packId, { pack: reloaded, path: packInfo.path });
-      ctx.io.emit('packs:updated', ctx.packMap.size);
+        // Reload pack in memory
+        const reloaded = await TaskPackLoader.loadTaskPack(packInfo.path);
+        ctx.packMap.set(packId, { pack: reloaded, path: packInfo.path });
+        ctx.io.emit('packs:updated', ctx.packMap.size);
 
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+        res.json({ success: true });
+      } catch (error) {
+        res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+      }
     }
-  });
+  );
 
   return router;
 }

@@ -1,10 +1,11 @@
 /**
  * Pack versioning: save, list, and restore snapshots of flow.json + taskpack.json
  */
-import { join } from 'path';
-import { existsSync, copyFileSync, unlinkSync } from 'fs';
-import { ensureDir, readJsonFile, atomicWrite } from './packUtils.js';
-import type { FlowVersion, VersionManifest, TaskPackManifest } from './types.js';
+
+import { copyFileSync, existsSync, unlinkSync } from 'node:fs';
+import { join } from 'node:path';
+import { atomicWrite, ensureDir, readJsonFile } from './packUtils.js';
+import type { FlowVersion, TaskPackManifest, VersionManifest } from './types.js';
 
 const VERSIONS_DIR = '.versions';
 const MANIFEST_FILE = 'manifest.json';
@@ -28,7 +29,7 @@ function readManifest(packDir: string): VersionManifest {
 
 function writeManifest(packDir: string, manifest: VersionManifest): void {
   ensureDir(versionsDir(packDir));
-  atomicWrite(manifestPath(packDir), JSON.stringify(manifest, null, 2) + '\n');
+  atomicWrite(manifestPath(packDir), `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 function nextVersionNumber(manifest: VersionManifest): number {
@@ -88,8 +89,16 @@ export function saveVersion(
     // Remove old versioned files
     const oldFlow = join(vDir, `${oldest.number}.flow.json`);
     const oldTaskpack = join(vDir, `${oldest.number}.taskpack.json`);
-    try { if (existsSync(oldFlow)) unlinkSync(oldFlow); } catch { /* ignore */ }
-    try { if (existsSync(oldTaskpack)) unlinkSync(oldTaskpack); } catch { /* ignore */ }
+    try {
+      if (existsSync(oldFlow)) unlinkSync(oldFlow);
+    } catch {
+      /* ignore */
+    }
+    try {
+      if (existsSync(oldTaskpack)) unlinkSync(oldTaskpack);
+    } catch {
+      /* ignore */
+    }
   }
 
   writeManifest(packDir, manifest);
@@ -129,10 +138,7 @@ export function getVersionFiles(
 /**
  * Restore a previous version. Auto-saves the current state first.
  */
-export function restoreVersion(
-  packDir: string,
-  versionNumber: number
-): void {
+export function restoreVersion(packDir: string, versionNumber: number): void {
   // Verify the version exists before auto-saving
   const manifest = readManifest(packDir);
   const target = manifest.versions.find((v) => v.number === versionNumber);

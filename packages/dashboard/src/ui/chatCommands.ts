@@ -43,9 +43,7 @@ export function parseCommand(text: string): { command: string; args: string } | 
  * Look up a command by name or alias.
  */
 export function findCommand(name: string): ChatCommand | undefined {
-  return COMMAND_REGISTRY.find(
-    (cmd) => cmd.name === name || cmd.aliases?.includes(name)
-  );
+  return COMMAND_REGISTRY.find((cmd) => cmd.name === name || cmd.aliases?.includes(name));
 }
 
 // --- Command implementations ---
@@ -55,13 +53,11 @@ const helpCommand: ChatCommand = {
   aliases: ['h', '?'],
   description: 'Show available commands',
   execute: async () => {
-    const lines = COMMAND_REGISTRY.map(
-      (cmd) => {
-        const aliases = cmd.aliases?.length ? ` (${cmd.aliases.map(a => '/' + a).join(', ')})` : '';
-        return `**/${cmd.name}**${aliases} - ${cmd.description}`;
-      }
-    );
-    return 'Available commands:\n\n' + lines.join('\n');
+    const lines = COMMAND_REGISTRY.map((cmd) => {
+      const aliases = cmd.aliases?.length ? ` (${cmd.aliases.map((a) => `/${a}`).join(', ')})` : '';
+      return `**/${cmd.name}**${aliases} - ${cmd.description}`;
+    });
+    return `Available commands:\n\n${lines.join('\n')}`;
   },
 };
 

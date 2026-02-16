@@ -2,9 +2,9 @@
  * showrun dashboard - Start web dashboard with Teach Mode
  */
 
-import { resolve, dirname } from 'path';
-import { existsSync } from 'fs';
-import { cwd } from 'process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { cwd } from 'node:process';
 import { startDashboard } from '@showrun/dashboard';
 
 /**
@@ -18,8 +18,7 @@ function findProjectRoot(startDir: string): string {
   while (current !== root) {
     if (
       existsSync(resolve(current, 'pnpm-workspace.yaml')) ||
-      (existsSync(resolve(current, 'package.json')) &&
-        existsSync(resolve(current, 'packages')))
+      (existsSync(resolve(current, 'package.json')) && existsSync(resolve(current, 'packages')))
     ) {
       return current;
     }
@@ -66,14 +65,17 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
           process.exit(1);
         }
         // Resolve paths relative to project root
-        result.packs = next.split(',').map((p) => {
-          const trimmed = p.trim();
-          // If absolute path, use as-is; otherwise resolve relative to project root
-          if (trimmed.startsWith('/')) {
-            return trimmed;
-          }
-          return resolve(projectRoot, trimmed);
-        }).filter(Boolean);
+        result.packs = next
+          .split(',')
+          .map((p) => {
+            const trimmed = p.trim();
+            // If absolute path, use as-is; otherwise resolve relative to project root
+            if (trimmed.startsWith('/')) {
+              return trimmed;
+            }
+            return resolve(projectRoot, trimmed);
+          })
+          .filter(Boolean);
         i++;
         break;
       case '--port':
@@ -82,7 +84,7 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
           process.exit(1);
         }
         result.port = parseInt(next, 10);
-        if (isNaN(result.port) || result.port < 1 || result.port > 65535) {
+        if (Number.isNaN(result.port) || result.port < 1 || result.port > 65535) {
           console.error('Error: --port must be a number between 1 and 65535');
           process.exit(1);
         }

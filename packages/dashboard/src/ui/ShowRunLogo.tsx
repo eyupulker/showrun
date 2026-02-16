@@ -1,5 +1,3 @@
-import React from 'react';
-
 /**
  * ShowRun brand icon — official logo mark from showrun_logo.svg.
  */
@@ -46,9 +44,7 @@ export function ShowRunLogo({
   const s = sizes[size];
 
   const textColor =
-    variant === 'light' ? '#FFFFFF' :
-    variant === 'dark' ? '#212121' :
-    'var(--text-primary)';
+    variant === 'light' ? '#FFFFFF' : variant === 'dark' ? '#212121' : 'var(--text-primary)';
 
   return (
     <span

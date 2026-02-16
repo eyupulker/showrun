@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 interface SecretInfo {
   name: string;
@@ -30,7 +30,7 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
 
   useEffect(() => {
     loadSecrets();
-  }, [packId]);
+  }, [loadSecrets]);
 
   const loadSecrets = async () => {
     setLoading(true);
@@ -128,7 +128,11 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
       // Get current secrets and add new one
       const newDefinitions = [
         ...secrets.map((s) => ({ name: s.name, description: s.description, required: s.required })),
-        { name: newSecretName.trim(), description: newSecretDescription.trim() || undefined, required: newSecretRequired },
+        {
+          name: newSecretName.trim(),
+          description: newSecretDescription.trim() || undefined,
+          required: newSecretRequired,
+        },
       ];
 
       const res = await fetch(`/api/packs/${packId}/secrets-schema`, {
@@ -147,14 +151,17 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
 
       // If a value was provided, set it immediately
       if (newSecretValue.trim()) {
-        const valueRes = await fetch(`/api/packs/${packId}/secrets/${encodeURIComponent(newSecretName.trim())}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-SHOWRUN-TOKEN': token,
-          },
-          body: JSON.stringify({ value: newSecretValue }),
-        });
+        const valueRes = await fetch(
+          `/api/packs/${packId}/secrets/${encodeURIComponent(newSecretName.trim())}`,
+          {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-SHOWRUN-TOKEN': token,
+            },
+            body: JSON.stringify({ value: newSecretValue }),
+          }
+        );
 
         if (!valueRes.ok) {
           const data = await valueRes.json().catch(() => ({}));
@@ -176,7 +183,11 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
   };
 
   const handleRemoveSecretDefinition = async (name: string) => {
-    if (!confirm(`Are you sure you want to remove the secret definition "${name}"? This will also remove its value.`)) {
+    if (
+      !confirm(
+        `Are you sure you want to remove the secret definition "${name}"? This will also remove its value.`
+      )
+    ) {
       return;
     }
 
@@ -226,7 +237,15 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
   return (
     <div>
       {error && (
-        <div style={{ background: '#f8d7da', padding: '8px 12px', borderRadius: '4px', marginBottom: '12px', color: '#721c24' }}>
+        <div
+          style={{
+            background: '#f8d7da',
+            padding: '8px 12px',
+            borderRadius: '4px',
+            marginBottom: '12px',
+            color: '#721c24',
+          }}
+        >
           {error}
         </div>
       )}
@@ -249,9 +268,7 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
           <tbody>
             {secrets.map((secret) => (
               <tr key={secret.name} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '8px', fontFamily: 'monospace' }}>
-                  {secret.name}
-                </td>
+                <td style={{ padding: '8px', fontFamily: 'monospace' }}>{secret.name}</td>
                 <td style={{ padding: '8px', color: '#666', fontSize: '13px' }}>
                   {secret.description || '-'}
                 </td>
@@ -267,7 +284,6 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
                         onChange={(e) => setSecretValue(e.target.value)}
                         placeholder="Enter secret value"
                         style={{ flex: 1, padding: '4px 8px', fontFamily: 'monospace' }}
-                        autoFocus
                       />
                       <button
                         onClick={() => handleSetSecret(secret.name)}
@@ -287,7 +303,12 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
                       </button>
                     </div>
                   ) : (
-                    <span style={{ fontFamily: 'monospace', color: secret.hasValue ? '#28a745' : '#dc3545' }}>
+                    <span
+                      style={{
+                        fontFamily: 'monospace',
+                        color: secret.hasValue ? '#28a745' : '#dc3545',
+                      }}
+                    >
                       {secret.hasValue ? secret.preview || '********' : '(not set)'}
                     </span>
                   )}
@@ -332,7 +353,9 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
       )}
 
       {showAddForm ? (
-        <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '4px', marginTop: '12px' }}>
+        <div
+          style={{ background: '#f8f9fa', padding: '12px', borderRadius: '4px', marginTop: '12px' }}
+        >
           <h4 style={{ margin: '0 0 12px 0' }}>Add Secret</h4>
           <div style={{ display: 'grid', gap: '12px' }}>
             <div>
@@ -405,14 +428,23 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
         </button>
       )}
 
-      <div style={{ marginTop: '16px', padding: '12px', background: '#e7f3ff', borderRadius: '4px', fontSize: '13px' }}>
+      <div
+        style={{
+          marginTop: '16px',
+          padding: '12px',
+          background: '#e7f3ff',
+          borderRadius: '4px',
+          fontSize: '13px',
+        }}
+      >
         <strong>Usage:</strong> Reference secrets in your flow using{' '}
         <code style={{ background: '#f0f0f0', padding: '2px 4px', borderRadius: '2px' }}>
           {'{{secret.SECRET_NAME}}'}
         </code>
         <br />
         <span style={{ color: '#666' }}>
-          Secrets are stored in <code>.secrets.json</code> (gitignored) and never exposed to AI agents.
+          Secrets are stored in <code>.secrets.json</code> (gitignored) and never exposed to AI
+          agents.
         </span>
       </div>
     </div>

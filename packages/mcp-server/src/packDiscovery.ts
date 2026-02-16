@@ -1,7 +1,7 @@
-import { readdirSync, statSync, existsSync } from 'fs';
-import { join, resolve } from 'path';
-import { TaskPackLoader } from '@showrun/core';
+import { existsSync, readdirSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import type { TaskPack } from '@showrun/core';
+import { TaskPackLoader } from '@showrun/core';
 
 /**
  * Options for pack discovery
@@ -47,16 +47,14 @@ export function packIdToToolName(packId: string): string {
 /**
  * Discovers task packs from directories
  */
-export async function discoverPacks(
-  options: PackDiscoveryOptions
-): Promise<DiscoveredPack[]> {
+export async function discoverPacks(options: PackDiscoveryOptions): Promise<DiscoveredPack[]> {
   const { directories, nested = true } = options;
   const discovered: DiscoveredPack[] = [];
   const toolNameMap = new Map<string, DiscoveredPack>();
 
   for (const dir of directories) {
     const resolvedDir = resolve(dir);
-    
+
     if (!existsSync(resolvedDir)) {
       console.warn(`Warning: Directory does not exist: ${resolvedDir}`);
       continue;
@@ -67,11 +65,11 @@ export async function discoverPacks(
 
       for (const entry of entries) {
         const entryPath = join(resolvedDir, entry.name);
-        
+
         if (entry.isDirectory()) {
           // Check if this directory contains a taskpack.json
           const manifestPath = join(entryPath, 'taskpack.json');
-          
+
           if (existsSync(manifestPath)) {
             try {
               const pack = await TaskPackLoader.loadTaskPack(entryPath);
@@ -82,9 +80,9 @@ export async function discoverPacks(
                 const existing = toolNameMap.get(toolName)!;
                 console.warn(
                   `Warning: Tool name collision detected. Pack "${pack.metadata.id}" ` +
-                  `(${entryPath}) maps to tool name "${toolName}" which is already ` +
-                  `used by pack "${existing.pack.metadata.id}" (${existing.path}). ` +
-                  `Skipping the later pack.`
+                    `(${entryPath}) maps to tool name "${toolName}" which is already ` +
+                    `used by pack "${existing.pack.metadata.id}" (${existing.path}). ` +
+                    `Skipping the later pack.`
                 );
                 continue;
               }
@@ -100,19 +98,19 @@ export async function discoverPacks(
             } catch (error) {
               console.warn(
                 `Warning: Failed to load task pack from ${entryPath}: ` +
-                `${error instanceof Error ? error.message : String(error)}`
+                  `${error instanceof Error ? error.message : String(error)}`
               );
             }
           } else if (nested) {
             // Check nested directories (one level deep)
             try {
               const nestedEntries = readdirSync(entryPath, { withFileTypes: true });
-              
+
               for (const nestedEntry of nestedEntries) {
                 if (nestedEntry.isDirectory()) {
                   const nestedPath = join(entryPath, nestedEntry.name);
                   const nestedManifestPath = join(nestedPath, 'taskpack.json');
-                  
+
                   if (existsSync(nestedManifestPath)) {
                     try {
                       const pack = await TaskPackLoader.loadTaskPack(nestedPath);
@@ -123,9 +121,9 @@ export async function discoverPacks(
                         const existing = toolNameMap.get(toolName)!;
                         console.warn(
                           `Warning: Tool name collision detected. Pack "${pack.metadata.id}" ` +
-                          `(${nestedPath}) maps to tool name "${toolName}" which is already ` +
-                          `used by pack "${existing.pack.metadata.id}" (${existing.path}). ` +
-                          `Skipping the later pack.`
+                            `(${nestedPath}) maps to tool name "${toolName}" which is already ` +
+                            `used by pack "${existing.pack.metadata.id}" (${existing.path}). ` +
+                            `Skipping the later pack.`
                         );
                         continue;
                       }
@@ -141,13 +139,13 @@ export async function discoverPacks(
                     } catch (error) {
                       console.warn(
                         `Warning: Failed to load nested task pack from ${nestedPath}: ` +
-                        `${error instanceof Error ? error.message : String(error)}`
+                          `${error instanceof Error ? error.message : String(error)}`
                       );
                     }
                   }
                 }
               }
-            } catch (error) {
+            } catch (_error) {
               // Ignore errors reading nested directories
             }
           }
@@ -156,7 +154,7 @@ export async function discoverPacks(
     } catch (error) {
       console.warn(
         `Warning: Failed to read directory ${resolvedDir}: ` +
-        `${error instanceof Error ? error.message : String(error)}`
+          `${error instanceof Error ? error.message : String(error)}`
       );
     }
   }

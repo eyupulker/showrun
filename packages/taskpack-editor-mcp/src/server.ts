@@ -3,17 +3,16 @@
  * Provides tools for reading, validating, and patching JSON Task Packs
  */
 
+import { randomBytes } from 'node:crypto';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { resolve, join } from 'path';
-import * as z from 'zod';
-import { readFileSync, existsSync, writeFileSync, renameSync } from 'fs';
-import type { TaskPackManifest, DslStep, CollectibleDefinition, InputSchema, SecretDefinition } from '@showrun/core';
-import { TaskPackLoader, validateJsonTaskPack } from '@showrun/core';
-import { discoverPacks } from '@showrun/mcp-server';
-import { runTaskPack } from '@showrun/core';
+import type { CollectibleDefinition, DslStep, InputSchema } from '@showrun/core';
+import { runTaskPack, TaskPackLoader, validateJsonTaskPack } from '@showrun/core';
 import { JSONLLogger } from '@showrun/harness';
-import { randomBytes } from 'crypto';
+import { discoverPacks } from '@showrun/mcp-server';
+import * as z from 'zod';
 
 // Helper functions (copied from dashboard packUtils)
 function readJsonFile<T>(filePath: string): T {
@@ -24,7 +23,9 @@ function readJsonFile<T>(filePath: string): T {
     const content = readFileSync(filePath, 'utf-8');
     return JSON.parse(content) as T;
   } catch (error) {
-    throw new Error(`Failed to parse JSON file ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Failed to parse JSON file ${filePath}: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 
@@ -63,19 +64,19 @@ function writeFlowJson(
     collectibles: flowData.collectibles || [],
     flow: flowData.flow,
   };
-  
+
   validateJsonTaskPack(tempPack);
 
   const flowPath = join(packDir, 'flow.json');
-  const content = JSON.stringify(flowData, null, 2) + '\n';
+  const content = `${JSON.stringify(flowData, null, 2)}\n`;
   atomicWrite(flowPath, content);
 }
 
 function validatePathInAllowedDir(path: string, allowedDir: string): void {
   const resolvedPath = resolve(path);
   const resolvedAllowed = resolve(allowedDir);
-  
-  if (!resolvedPath.startsWith(resolvedAllowed + '/') && resolvedPath !== resolvedAllowed) {
+
+  if (!resolvedPath.startsWith(`${resolvedAllowed}/`) && resolvedPath !== resolvedAllowed) {
     throw new Error(`Path ${resolvedPath} is outside allowed directory ${resolvedAllowed}`);
   }
 }
@@ -85,13 +86,19 @@ function validatePathInAllowedDir(path: string, allowedDir: string): void {
  */
 function getStepParamsHint(stepType: string): string {
   const hints: Record<string, string> = {
-    extract_text: 'Required: target (object with kind) OR selector (string), out (string). Optional: first, trim, default.',
-    extract_attribute: 'Required: target OR selector, attribute (string), out (string). Optional: first, default.',
+    extract_text:
+      'Required: target (object with kind) OR selector (string), out (string). Optional: first, trim, default.',
+    extract_attribute:
+      'Required: target OR selector, attribute (string), out (string). Optional: first, default.',
     extract_title: 'Required: out (string).',
-    network_find: 'Required: where ({urlIncludes?, method?, ...}), saveAs (string). Optional: pick, waitForMs. Note: "url" is NOT valid in where — use "urlIncludes".',
-    network_replay: 'Required: requestId, auth ("browser_context"), out (string), response ({as: "json"|"text"}). Optional: overrides, saveAs, response.path.',
-    network_extract: 'Required: fromVar (string), as ("json"|"text"), out (string). Optional: path (JMESPath).',
-    wait_for: 'Required: at least ONE of target, selector, url, or loadState. Optional: visible, timeoutMs. Note: "waitForMs" is NOT valid.',
+    network_find:
+      'Required: where ({urlIncludes?, method?, ...}), saveAs (string). Optional: pick, waitForMs. Note: "url" is NOT valid in where — use "urlIncludes".',
+    network_replay:
+      'Required: requestId, auth ("browser_context"), out (string), response ({as: "json"|"text"}). Optional: overrides, saveAs, response.path.',
+    network_extract:
+      'Required: fromVar (string), as ("json"|"text"), out (string). Optional: path (JMESPath).',
+    wait_for:
+      'Required: at least ONE of target, selector, url, or loadState. Optional: visible, timeoutMs. Note: "waitForMs" is NOT valid.',
     set_var: 'Required: name (string), value (string|number|boolean). Arrays/objects not allowed.',
     click: 'Required: target (object with kind) OR selector. Optional: first.',
     fill: 'Required: target OR selector, value (string). Optional: first, clear.',
@@ -129,9 +136,7 @@ type FlowPatchOp =
   | { op: 'delete'; index: number }
   | { op: 'update_collectibles'; collectibles: CollectibleDefinition[] };
 
-export async function createTaskPackEditorServer(
-  options: TaskPackEditorOptions
-): Promise<void> {
+export async function createTaskPackEditorServer(options: TaskPackEditorOptions): Promise<void> {
   const { packDirs, workspaceDir, baseRunDir } = options;
 
   const resolvedWorkspaceDir = resolve(workspaceDir);
@@ -159,7 +164,7 @@ export async function createTaskPackEditorServer(
     },
     async () => {
       const currentPacks = await discoverPacks({ directories: packDirs });
-      
+
       // Update pack map
       packMap.clear();
       for (const { pack, path } of currentPacks) {
@@ -167,10 +172,10 @@ export async function createTaskPackEditorServer(
       }
 
       const packsList = currentPacks.map(({ pack, path }) => {
-        let kind: string | undefined;
+        let _kind: string | undefined;
         try {
           const manifest = TaskPackLoader.loadManifest(path);
-          kind = manifest.kind;
+          _kind = manifest.kind;
         } catch {
           // Ignore
         }
@@ -250,7 +255,8 @@ export async function createTaskPackEditorServer(
     'list_secrets',
     {
       title: 'List Secrets',
-      description: 'List secrets for a pack. Returns names and descriptions only (no values for security). Use {{secret.NAME}} in templates.',
+      description:
+        'List secrets for a pack. Returns names and descriptions only (no values for security). Use {{secret.NAME}} in templates.',
       inputSchema: z.object({
         packId: z.string().describe('Pack ID'),
       }),
@@ -296,10 +302,14 @@ export async function createTaskPackEditorServer(
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({
-              secrets: secretsInfo,
-              note: 'Use {{secret.NAME}} in templates to reference secret values. Never ask for secret values.',
-            }, null, 2),
+            text: JSON.stringify(
+              {
+                secrets: secretsInfo,
+                note: 'Use {{secret.NAME}} in templates to reference secret values. Never ask for secret values.',
+              },
+              null,
+              2
+            ),
           },
         ],
         structuredContent: {
@@ -459,7 +469,7 @@ export async function createTaskPackEditorServer(
 
       const stepErr = (op: string, reason: string, hint: string) =>
         new Error(
-          `Patch "${op}" failed: ${reason}. ${hint} Received: step=${step === undefined ? 'undefined' : step === null ? 'null' : typeof step}${typeof step === 'object' && step && !Array.isArray(step) ? ', keys=' + Object.keys(step as object).join(',') : ''}.`
+          `Patch "${op}" failed: ${reason}. ${hint} Received: step=${step === undefined ? 'undefined' : step === null ? 'null' : typeof step}${typeof step === 'object' && step && !Array.isArray(step) ? `, keys=${Object.keys(step as object).join(',')}` : ''}.`
         );
 
       switch (resolved.op) {
@@ -471,33 +481,51 @@ export async function createTaskPackEditorServer(
               "Send patch.step (or patch.proposal.step) with id, type, and params. For network_replay, requestId must be a template like {{vars.<saveAs>}} from the preceding network_find (e.g. {{vars.martiniRequestId}}). Never use a literal request ID. Example: { id: 'replay_martini', type: 'network_replay', params: { requestId: '{{vars.martiniRequestId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } } }."
             );
           }
-          if (!('id' in resolved.step) || !('type' in resolved.step) || !('params' in resolved.step)) {
+          if (
+            !('id' in resolved.step) ||
+            !('type' in resolved.step) ||
+            !('params' in resolved.step)
+          ) {
             throw stepErr(
               'append',
-              "step must have id, type, and params",
+              'step must have id, type, and params',
               "Example: { id: 'step_id', type: 'network_replay', params: { requestId: '{{vars.<saveAs>}}', auth: 'browser_context', out, response: { as: 'json' } } }."
             );
           }
           newFlow.push(resolved.step);
           break;
         case 'insert':
-          if (resolved.index === undefined || !resolved.step || typeof resolved.step !== 'object' || Array.isArray(resolved.step)) {
+          if (
+            resolved.index === undefined ||
+            !resolved.step ||
+            typeof resolved.step !== 'object' ||
+            Array.isArray(resolved.step)
+          ) {
             throw new Error(
-              "insert requires index (number) and step (object with id, type, params). You sent: " +
-              `index=${resolved.index === undefined ? 'undefined' : resolved.index}, step=${resolved.step === undefined ? 'undefined' : typeof resolved.step}.`
+              'insert requires index (number) and step (object with id, type, params). You sent: ' +
+                `index=${resolved.index === undefined ? 'undefined' : resolved.index}, step=${resolved.step === undefined ? 'undefined' : typeof resolved.step}.`
             );
           }
           if (resolved.index < 0 || resolved.index > newFlow.length) {
-            throw new Error(`insert index must be 0..${newFlow.length}. Received: ${resolved.index}`);
+            throw new Error(
+              `insert index must be 0..${newFlow.length}. Received: ${resolved.index}`
+            );
           }
           newFlow.splice(resolved.index, 0, resolved.step);
           break;
         case 'replace':
-          if (resolved.index === undefined || !resolved.step || typeof resolved.step !== 'object' || Array.isArray(resolved.step)) {
-            throw new Error("replace requires index and step (object with id, type, params).");
+          if (
+            resolved.index === undefined ||
+            !resolved.step ||
+            typeof resolved.step !== 'object' ||
+            Array.isArray(resolved.step)
+          ) {
+            throw new Error('replace requires index and step (object with id, type, params).');
           }
           if (resolved.index < 0 || resolved.index >= newFlow.length) {
-            throw new Error(`replace index must be 0..${newFlow.length - 1}. Received: ${resolved.index}`);
+            throw new Error(
+              `replace index must be 0..${newFlow.length - 1}. Received: ${resolved.index}`
+            );
           }
           newFlow[resolved.index] = resolved.step;
           break;
@@ -506,13 +534,17 @@ export async function createTaskPackEditorServer(
             throw new Error("delete requires index (number). Example: { op: 'delete', index: 0 }");
           }
           if (resolved.index < 0 || resolved.index >= newFlow.length) {
-            throw new Error(`delete index must be 0..${newFlow.length - 1}. Received: ${resolved.index}`);
+            throw new Error(
+              `delete index must be 0..${newFlow.length - 1}. Received: ${resolved.index}`
+            );
           }
           newFlow.splice(resolved.index, 1);
           break;
         case 'update_collectibles':
           if (!resolved.collectibles || !Array.isArray(resolved.collectibles)) {
-            throw new Error("update_collectibles requires collectibles (array of { name, type, description }).");
+            throw new Error(
+              'update_collectibles requires collectibles (array of { name, type, description }).'
+            );
           }
           newCollectibles.length = 0;
           newCollectibles.push(...resolved.collectibles);
@@ -548,7 +580,7 @@ export async function createTaskPackEditorServer(
       });
 
       // Reload pack to get updated state
-      const reloaded = await TaskPackLoader.loadTaskPack(packInfo.packPath);
+      const _reloaded = await TaskPackLoader.loadTaskPack(packInfo.packPath);
 
       return {
         content: [

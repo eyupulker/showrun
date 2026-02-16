@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 export interface ToolCall {
@@ -78,10 +78,7 @@ export default function MessageBubble({
       {/* Thinking section for assistant */}
       {role === 'assistant' && thinking && (
         <div className="thinking-section">
-          <div
-            className="thinking-header"
-            onClick={() => setThinkingExpanded(!thinkingExpanded)}
-          >
+          <div className="thinking-header" onClick={() => setThinkingExpanded(!thinkingExpanded)}>
             <svg
               width="14"
               height="14"
@@ -95,9 +92,7 @@ export default function MessageBubble({
             </svg>
             <span>Thinking</span>
           </div>
-          {thinkingExpanded && (
-            <div className="thinking-content">{thinking}</div>
-          )}
+          {thinkingExpanded && <div className="thinking-content">{thinking}</div>}
         </div>
       )}
 
@@ -155,55 +150,86 @@ export default function MessageBubble({
                         color: 'var(--text-primary)',
                       }}
                     >
-                      <span style={{
-                        color: success ? 'var(--accent-green, #22c55e)' : 'var(--accent-red, #ef4444)',
-                        fontWeight: 'bold',
-                      }}>
+                      <span
+                        style={{
+                          color: success
+                            ? 'var(--accent-green, #22c55e)'
+                            : 'var(--accent-red, #ef4444)',
+                          fontWeight: 'bold',
+                        }}
+                      >
                         {success ? '✓' : '✗'}
                       </span>
-                      <span className="tool-call-name" style={{ flex: 1 }}>{toolName}</span>
+                      <span className="tool-call-name" style={{ flex: 1 }}>
+                        {toolName}
+                      </span>
                       <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>
                         {isExpanded ? '▼' : '▶'}
                       </span>
                     </button>
 
                     {isExpanded && (
-                      <div style={{ padding: '0 10px 10px', borderTop: '1px solid var(--border-subtle)' }}>
-                        <div style={{ fontSize: '11px', fontWeight: 600, marginTop: '8px', marginBottom: '4px', color: 'var(--text-muted)' }}>
+                      <div
+                        style={{
+                          padding: '0 10px 10px',
+                          borderTop: '1px solid var(--border-subtle)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: '11px',
+                            fontWeight: 600,
+                            marginTop: '8px',
+                            marginBottom: '4px',
+                            color: 'var(--text-muted)',
+                          }}
+                        >
                           Input
                         </div>
-                        <pre style={{
-                          margin: 0,
-                          padding: '8px',
-                          backgroundColor: 'var(--bg-main)',
-                          borderRadius: '4px',
-                          fontSize: '11px',
-                          overflow: 'auto',
-                          maxHeight: '100px',
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word',
-                          color: 'var(--text-secondary)',
-                        }}>
+                        <pre
+                          style={{
+                            margin: 0,
+                            padding: '8px',
+                            backgroundColor: 'var(--bg-main)',
+                            borderRadius: '4px',
+                            fontSize: '11px',
+                            overflow: 'auto',
+                            maxHeight: '100px',
+                            whiteSpace: 'pre-wrap',
+                            wordBreak: 'break-word',
+                            color: 'var(--text-secondary)',
+                          }}
+                        >
                           {getToolArgs(tc)}
                         </pre>
 
                         {tc.result !== undefined && (
                           <>
-                            <div style={{ fontSize: '11px', fontWeight: 600, marginTop: '8px', marginBottom: '4px', color: 'var(--text-muted)' }}>
+                            <div
+                              style={{
+                                fontSize: '11px',
+                                fontWeight: 600,
+                                marginTop: '8px',
+                                marginBottom: '4px',
+                                color: 'var(--text-muted)',
+                              }}
+                            >
                               Result
                             </div>
-                            <pre style={{
-                              margin: 0,
-                              padding: '8px',
-                              backgroundColor: 'var(--bg-main)',
-                              borderRadius: '4px',
-                              fontSize: '11px',
-                              overflow: 'auto',
-                              maxHeight: '150px',
-                              whiteSpace: 'pre-wrap',
-                              wordBreak: 'break-word',
-                              color: 'var(--text-secondary)',
-                            }}>
+                            <pre
+                              style={{
+                                margin: 0,
+                                padding: '8px',
+                                backgroundColor: 'var(--bg-main)',
+                                borderRadius: '4px',
+                                fontSize: '11px',
+                                overflow: 'auto',
+                                maxHeight: '150px',
+                                whiteSpace: 'pre-wrap',
+                                wordBreak: 'break-word',
+                                color: 'var(--text-secondary)',
+                              }}
+                            >
                               {formatPayload(tc.result)}
                             </pre>
                           </>
@@ -253,9 +279,7 @@ export default function MessageBubble({
       {isStreaming && (
         <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span className="spinner" />
-          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-            Generating...
-          </span>
+          <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Generating...</span>
         </div>
       )}
     </div>

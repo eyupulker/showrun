@@ -2,22 +2,22 @@
  * showrun pack <subcommand> - Pack management commands
  */
 
-import { resolve } from 'path';
-import { existsSync } from 'fs';
-import { cwd } from 'process';
+import { existsSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { cwd } from 'node:process';
+import type { CollectibleDefinition, DslStep, InputSchema, TaskPackManifest } from '@showrun/core';
 import {
+  ensureDir,
+  listVersions,
+  readJsonFile,
+  restoreVersion,
+  sanitizePackId,
+  saveVersion,
   TaskPackLoader,
   validateJsonTaskPack,
-  sanitizePackId,
-  ensureDir,
-  writeTaskPackManifest,
   writeFlowJson,
-  readJsonFile,
-  saveVersion,
-  listVersions,
-  restoreVersion,
+  writeTaskPackManifest,
 } from '@showrun/core';
-import type { TaskPackManifest, InputSchema, CollectibleDefinition, DslStep } from '@showrun/core';
 
 /**
  * Parse JSON from string or file path
@@ -129,17 +129,20 @@ export async function cmdPackCreate(args: string[]): Promise<void> {
   } = {
     inputs: {},
     collectibles: [],
-    flow: template === 'basic' ? [
-      {
-        id: 'navigate',
-        type: 'navigate',
-        label: 'Navigate to page',
-        params: {
-          url: 'https://example.com',
-          waitUntil: 'networkidle',
-        },
-      },
-    ] : [],
+    flow:
+      template === 'basic'
+        ? [
+            {
+              id: 'navigate',
+              type: 'navigate',
+              label: 'Navigate to page',
+              params: {
+                url: 'https://example.com',
+                waitUntil: 'networkidle',
+              },
+            },
+          ]
+        : [],
   };
 
   writeFlowJson(packDir, flowData);
@@ -331,7 +334,9 @@ export async function cmdPackSnapshot(args: string[]): Promise<void> {
   if (!existsSync(packPath)) throw new Error(`Pack directory not found: ${packPath}`);
 
   const version = saveVersion(packPath, { source: 'cli', label });
-  console.log(`✓ Saved version #${version.number} (v${version.version})${label ? `: ${label}` : ''}`);
+  console.log(
+    `✓ Saved version #${version.number} (v${version.version})${label ? `: ${label}` : ''}`
+  );
 }
 
 /**
@@ -387,7 +392,7 @@ export async function cmdPackRestore(args: string[]): Promise<void> {
     } else if (arg === '--version') {
       if (!next || next.startsWith('--')) throw new Error('--version requires a version number');
       versionNumber = parseInt(next, 10);
-      if (isNaN(versionNumber)) throw new Error('--version must be a number');
+      if (Number.isNaN(versionNumber)) throw new Error('--version must be a number');
       i++;
     }
   }

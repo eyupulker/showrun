@@ -1,9 +1,9 @@
-import { Router, type Request, type Response } from 'express';
-import { resolve } from 'path';
-import type { DashboardContext } from '../types/context.js';
-import { createTokenChecker } from '../helpers/auth.js';
+import { resolve } from 'node:path';
 import { runTaskPack, TaskPackLoader } from '@showrun/core';
+import { type Request, type Response, Router } from 'express';
+import { createTokenChecker } from '../helpers/auth.js';
 import { SocketLogger } from '../logger.js';
+import type { DashboardContext } from '../types/context.js';
 
 export function createRunsRouter(ctx: DashboardContext): Router {
   const router = Router();
@@ -44,63 +44,65 @@ export function createRunsRouter(ctx: DashboardContext): Router {
     ctx.io.emit('runs:list', ctx.runManager.getAllRuns());
 
     // Queue execution
-    ctx.concurrencyLimiter.execute(async () => {
-      ctx.runManager.updateRun(runId, {
-        status: 'running',
-        startedAt: Date.now(),
-      });
-      ctx.io.emit('runs:list', ctx.runManager.getAllRuns());
-
-      // Create run directory
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const runDir = resolve(ctx.baseRunDir, `${packId}-${timestamp}-${runId.slice(0, 8)}`);
-
-      // Create socket logger that emits events
-      const logger = new SocketLogger(runDir, ctx.io, runId);
-
-      try {
-        // Reload pack from disk to get the latest flow.json
-        const freshPack = await TaskPackLoader.loadTaskPack(packInfo.path);
-        const result = await runTaskPack(freshPack, inputs, {
-          runDir,
-          logger,
-          headless: !ctx.headful,
-          profileId: packId,
-          packPath: packInfo.path,
-        });
-
+    ctx.concurrencyLimiter
+      .execute(async () => {
         ctx.runManager.updateRun(runId, {
-          status: 'success',
-          finishedAt: Date.now(),
-          durationMs: result.meta.durationMs,
-          runDir: result.runDir,
-          eventsPath: result.eventsPath,
-          artifactsDir: result.artifactsDir,
-          collectibles: result.collectibles,
-          meta: result.meta,
+          status: 'running',
+          startedAt: Date.now(),
         });
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        ctx.io.emit('runs:list', ctx.runManager.getAllRuns());
+
+        // Create run directory
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const runDir = resolve(ctx.baseRunDir, `${packId}-${timestamp}-${runId.slice(0, 8)}`);
+
+        // Create socket logger that emits events
+        const logger = new SocketLogger(runDir, ctx.io, runId);
+
+        try {
+          // Reload pack from disk to get the latest flow.json
+          const freshPack = await TaskPackLoader.loadTaskPack(packInfo.path);
+          const result = await runTaskPack(freshPack, inputs, {
+            runDir,
+            logger,
+            headless: !ctx.headful,
+            profileId: packId,
+            packPath: packInfo.path,
+          });
+
+          ctx.runManager.updateRun(runId, {
+            status: 'success',
+            finishedAt: Date.now(),
+            durationMs: result.meta.durationMs,
+            runDir: result.runDir,
+            eventsPath: result.eventsPath,
+            artifactsDir: result.artifactsDir,
+            collectibles: result.collectibles,
+            meta: result.meta,
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          ctx.runManager.updateRun(runId, {
+            status: 'failed',
+            finishedAt: Date.now(),
+            error: errorMessage,
+            runDir,
+            eventsPath: resolve(runDir, 'events.jsonl'),
+            artifactsDir: resolve(runDir, 'artifacts'),
+          });
+        } finally {
+          ctx.io.emit('runs:list', ctx.runManager.getAllRuns());
+        }
+      })
+      .catch((error) => {
+        // Handle execution errors
         ctx.runManager.updateRun(runId, {
           status: 'failed',
           finishedAt: Date.now(),
-          error: errorMessage,
-          runDir,
-          eventsPath: resolve(runDir, 'events.jsonl'),
-          artifactsDir: resolve(runDir, 'artifacts'),
+          error: error instanceof Error ? error.message : String(error),
         });
-      } finally {
         ctx.io.emit('runs:list', ctx.runManager.getAllRuns());
-      }
-    }).catch((error) => {
-      // Handle execution errors
-      ctx.runManager.updateRun(runId, {
-        status: 'failed',
-        finishedAt: Date.now(),
-        error: error instanceof Error ? error.message : String(error),
       });
-      ctx.io.emit('runs:list', ctx.runManager.getAllRuns());
-    });
 
     res.json({ runId });
   });

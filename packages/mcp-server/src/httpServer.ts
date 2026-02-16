@@ -1,15 +1,15 @@
-import { createServer, IncomingMessage } from 'http';
-import { mkdirSync } from 'fs';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
-import * as z from 'zod';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync } from 'node:fs';
+import { createServer, type IncomingMessage } from 'node:http';
+import { join } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { TaskPack, InputSchema } from '@showrun/core';
+import type { InputSchema } from '@showrun/core';
 import { runTaskPack } from '@showrun/core';
 import { JSONLLogger } from '@showrun/harness';
-import type { DiscoveredPack } from './packDiscovery.js';
+import * as z from 'zod';
 import { ConcurrencyLimiter } from './concurrency.js';
+import type { DiscoveredPack } from './packDiscovery.js';
 
 export interface MCPRunStartInfo {
   packId: string;
@@ -113,7 +113,16 @@ export interface MCPServerHTTPHandle {
 export async function createMCPServerOverHTTP(
   options: MCPServerHTTPOptions
 ): Promise<MCPServerHTTPHandle> {
-  const { packs, baseRunDir, concurrency, headful, port, host = '127.0.0.1', onRunStart, onRunComplete } = options;
+  const {
+    packs,
+    baseRunDir,
+    concurrency,
+    headful,
+    port,
+    host = '127.0.0.1',
+    onRunStart,
+    onRunComplete,
+  } = options;
 
   mkdirSync(baseRunDir, { recursive: true });
   const limiter = new ConcurrencyLimiter(concurrency);
@@ -279,7 +288,9 @@ export async function createMCPServerOverHTTP(
 
     for (const sessionId of expiredSessions) {
       sessions.delete(sessionId);
-      console.error(`[MCP Server] Removed inactive session: ${sessionId} (inactive for ${Math.round(SESSION_TIMEOUT_MS / 60000)} minutes)`);
+      console.error(
+        `[MCP Server] Removed inactive session: ${sessionId} (inactive for ${Math.round(SESSION_TIMEOUT_MS / 60000)} minutes)`
+      );
     }
 
     if (expiredSessions.length > 0) {
@@ -310,7 +321,10 @@ export async function createMCPServerOverHTTP(
         res.setHeader('Mcp-Session-Id', sessionId);
       }
       // Always set/refresh the cookie
-      res.setHeader('Set-Cookie', `mcp-session-id=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TIMEOUT_MS / 1000)}`);
+      res.setHeader(
+        'Set-Cookie',
+        `mcp-session-id=${sessionId}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TIMEOUT_MS / 1000)}`
+      );
 
       await session.transport.handleRequest(req, res);
     } catch (err) {

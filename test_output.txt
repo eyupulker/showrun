@@ -1,0 +1,100 @@
+
+> showrun@0.1.1a test:unit /app
+> pnpm -r test
+
+Scope: 7 of 8 workspace projects
+packages/core test$ vitest run
+packages/core test:  RUN  v3.2.4 /app/packages/core
+packages/core test:  ✓ src/__tests__/dsl-validation.test.ts (17 tests) 16ms
+packages/core test:  ✓ src/__tests__/requestSnapshot.test.ts (29 tests) 26ms
+packages/core test:  ✓ src/__tests__/httpReplay.test.ts (13 tests) 74ms
+packages/core test:  ✓ src/__tests__/validator.test.ts (26 tests) 15ms
+packages/core test:  ✓ src/__tests__/config.test.ts (14 tests) 17ms
+packages/core test:  ✓ src/__tests__/pack-versioning.test.ts (13 tests) 73ms
+packages/core test:  Test Files  6 passed (6)
+packages/core test:       Tests  112 passed (112)
+packages/core test:    Start at  01:08:33
+packages/core test:    Duration  1.20s (transform 443ms, setup 0ms, collect 913ms, tests 221ms, environment 2ms, prepare 795ms)
+packages/core test: Done
+packages/mcp-server test$ vitest run
+packages/mcp-server test:  RUN  v3.2.4 /app/packages/mcp-server
+packages/mcp-server test:  ✓ src/__tests__/concurrency.test.ts (10 tests) 314ms
+packages/mcp-server test:  ✓ src/__tests__/packDiscovery.test.ts (13 tests) 7ms
+packages/mcp-server test:  ✓ src/__tests__/server.test.ts (11 tests) 17ms
+packages/mcp-server test:  Test Files  3 passed (3)
+packages/mcp-server test:       Tests  34 passed (34)
+packages/mcp-server test:    Start at  01:08:35
+packages/mcp-server test:    Duration  1.51s (transform 426ms, setup 0ms, collect 2.21s, tests 338ms, environment 1ms, prepare 441ms)
+packages/mcp-server test: Done
+packages/dashboard test$ vitest run
+packages/dashboard test:  RUN  v3.2.4 /app/packages/dashboard
+packages/dashboard test: stdout | src/__tests__/conversationTranscript.test.ts > Conversation Transcript Logging (E2E) > saves a transcript when transcriptLogging is enabled
+packages/dashboard test: [Database] Initializing SQLite database at /tmp/showrun-transcript-e2e-2abe9374166b736e/showrun.db
+packages/dashboard test: [Database] Running migration: 001_create_conversations
+packages/dashboard test: [Database] Running migration: 002_create_messages
+packages/dashboard test: [Database] Running migration: 003_create_runs
+packages/dashboard test: [Database] Running migration: 004_add_plan_to_conversations
+packages/dashboard test: [Database] Running migration: 005_create_conversation_transcripts
+packages/dashboard test:  ✓ src/agents/__tests__/editorAgent.test.ts (11 tests) 13ms
+packages/dashboard test: stdout | src/__tests__/conversationTranscript.test.ts > Conversation Transcript Logging (E2E) > does NOT save a transcript when transcriptLogging is disabled
+packages/dashboard test: [Database] Initializing SQLite database at /tmp/showrun-transcript-e2e-1b0485fa5efb38e3/showrun.db
+packages/dashboard test: [Database] Running migration: 001_create_conversations
+packages/dashboard test: [Database] Running migration: 002_create_messages
+packages/dashboard test: [Database] Running migration: 003_create_runs
+packages/dashboard test: [Database] Running migration: 004_add_plan_to_conversations
+packages/dashboard test: [Database] Running migration: 005_create_conversation_transcripts
+packages/dashboard test: stdout | src/__tests__/conversationTranscript.test.ts > Conversation Transcript Logging (E2E) > saves transcript on error path when transcriptLogging is enabled
+packages/dashboard test: [Database] Initializing SQLite database at /tmp/showrun-transcript-e2e-f029469d0fe3ee42/showrun.db
+packages/dashboard test: [Database] Running migration: 001_create_conversations
+packages/dashboard test: [Database] Running migration: 002_create_messages
+packages/dashboard test: [Database] Running migration: 003_create_runs
+packages/dashboard test: [Database] Running migration: 004_add_plan_to_conversations
+packages/dashboard test: [Database] Running migration: 005_create_conversation_transcripts
+packages/dashboard test: stdout | src/__tests__/conversationTranscript.test.ts > Conversation Transcript Logging (E2E) > saves transcript with conversationStatus from the DB
+packages/dashboard test: [Database] Initializing SQLite database at /tmp/showrun-transcript-e2e-1e1c660be423752d/showrun.db
+packages/dashboard test: [Database] Running migration: 001_create_conversations
+packages/dashboard test: [Database] Running migration: 002_create_messages
+packages/dashboard test: [Database] Running migration: 003_create_runs
+packages/dashboard test: [Database] Running migration: 004_add_plan_to_conversations
+packages/dashboard test: [Database] Running migration: 005_create_conversation_transcripts
+packages/dashboard test: stdout | src/__tests__/conversationTranscript.test.ts > Conversation Transcript Logging (E2E) > saves toolTrace in the transcript when tools are called
+packages/dashboard test: [Database] Initializing SQLite database at /tmp/showrun-transcript-e2e-2f9cc80501667b00/showrun.db
+packages/dashboard test: [Database] Running migration: 001_create_conversations
+packages/dashboard test: [Database] Running migration: 002_create_messages
+packages/dashboard test: [Database] Running migration: 003_create_runs
+packages/dashboard test: [Database] Running migration: 004_add_plan_to_conversations
+packages/dashboard test: [Database] Running migration: 005_create_conversation_transcripts
+packages/dashboard test: stdout | src/__tests__/conversationTranscript.test.ts > Conversation Transcript Logging (E2E) > captures thinking output in the transcript when streaming
+packages/dashboard test: [Database] Initializing SQLite database at /tmp/showrun-transcript-e2e-9873e25fc20f29d9/showrun.db
+packages/dashboard test: [Database] Running migration: 001_create_conversations
+packages/dashboard test: [Database] Running migration: 002_create_messages
+packages/dashboard test: [Database] Running migration: 003_create_runs
+packages/dashboard test: [Database] Running migration: 004_add_plan_to_conversations
+packages/dashboard test: [Database] Running migration: 005_create_conversation_transcripts
+packages/dashboard test: stdout | src/__tests__/conversationTranscript.test.ts > Conversation Transcript Logging (E2E) > captures thinking on assistant message in transcript when tools are called
+packages/dashboard test: [Database] Initializing SQLite database at /tmp/showrun-transcript-e2e-24519978aec86e61/showrun.db
+packages/dashboard test: [Database] Running migration: 001_create_conversations
+packages/dashboard test: [Database] Running migration: 002_create_messages
+packages/dashboard test: [Database] Running migration: 003_create_runs
+packages/dashboard test: [Database] Running migration: 004_add_plan_to_conversations
+packages/dashboard test: [Database] Running migration: 005_create_conversation_transcripts
+packages/dashboard test:  ✓ src/__tests__/conversationTranscript.test.ts (7 tests) 271ms
+packages/dashboard test: stdout | src/__tests__/secretsResolution.test.ts > Secrets Resolution Integration > Full workflow: create -> link -> secrets -> resolve > should resolve secrets in browser_type when packId is set in context
+packages/dashboard test: [BrowserAuto] Using persistent profile for pack test-secrets-pack: /tmp/showrun-test-77ccd841afffabbc/taskpacks/test-secrets-pack/.browser-profile
+packages/dashboard test: [BrowserAuto] Starting camoufox session for conversation conv-123 (persistent)
+packages/dashboard test: stdout | src/__tests__/secretsResolution.test.ts > Secrets Resolution Integration > Full workflow: create -> link -> secrets -> resolve > should resolve secrets in browser_type when packId is set in context
+packages/dashboard test: [resolveTemplateValue] packId=test-secrets-pack, packFound=true, packPath=/tmp/showrun-test-77ccd841afffabbc/taskpacks/test-secrets-pack
+packages/dashboard test: [resolveTemplateValue] Loaded 1 secrets: API_KEY
+packages/dashboard test: stdout | src/__tests__/secretsResolution.test.ts > Secrets Resolution Integration > NEW: Automatic pack initialization ensures secrets always resolve > secrets resolve correctly when packId is set from the start (new architecture)
+packages/dashboard test: [BrowserAuto] Using persistent profile for pack test-secrets-pack: /tmp/showrun-test-fecfa8b12de7eccd/taskpacks/test-secrets-pack/.browser-profile
+packages/dashboard test: [BrowserAuto] Starting camoufox session for conversation conv-123 (persistent)
+packages/dashboard test: stdout | src/__tests__/secretsResolution.test.ts > Secrets Resolution Integration > NEW: Automatic pack initialization ensures secrets always resolve > secrets resolve correctly when packId is set from the start (new architecture)
+packages/dashboard test: [resolveTemplateValue] packId=test-secrets-pack, packFound=true, packPath=/tmp/showrun-test-fecfa8b12de7eccd/taskpacks/test-secrets-pack
+packages/dashboard test: [resolveTemplateValue] Loaded 1 secrets: PASSWORD
+packages/dashboard test:  ✓ src/__tests__/secretsResolution.test.ts (19 tests) 75ms
+packages/dashboard test:  ✓ src/__tests__/playwrightErrorParser.test.ts (8 tests) 9ms
+packages/dashboard test:  Test Files  4 passed (4)
+packages/dashboard test:       Tests  45 passed (45)
+packages/dashboard test:    Start at  01:08:37
+packages/dashboard test:    Duration  2.72s (transform 967ms, setup 0ms, collect 4.79s, tests 368ms, environment 1ms, prepare 569ms)
+packages/dashboard test: Done

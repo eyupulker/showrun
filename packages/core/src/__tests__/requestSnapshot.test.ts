@@ -1,11 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  isSnapshotStale,
-  validateResponse,
   applyOverrides,
-  extractTopLevelKeys,
   detectSensitiveHeaders,
+  extractTopLevelKeys,
+  isSnapshotStale,
   type RequestSnapshot,
+  validateResponse,
 } from '../requestSnapshot.js';
 
 function makeSnapshot(overrides?: Partial<RequestSnapshot>): RequestSnapshot {

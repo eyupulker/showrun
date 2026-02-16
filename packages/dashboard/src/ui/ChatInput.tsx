@@ -1,4 +1,5 @@
-import React, { useRef, useEffect, useState, useMemo } from 'react';
+import type React from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { COMMAND_REGISTRY } from './chatCommands.js';
 
 interface ChatInputProps {
@@ -30,7 +31,7 @@ export default function ChatInput({
       textarea.style.height = 'auto';
       textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
     }
-  }, [value]);
+  }, []);
 
   // Compute matching commands for autocomplete
   const suggestions = useMemo(() => {
@@ -38,16 +39,14 @@ export default function ChatInput({
     if (!trimmed.startsWith('/') || trimmed.includes(' ')) return [];
     const partial = trimmed.slice(1).toLowerCase();
     return COMMAND_REGISTRY.filter(
-      (cmd) =>
-        cmd.name.startsWith(partial) ||
-        cmd.aliases?.some((a) => a.startsWith(partial))
+      (cmd) => cmd.name.startsWith(partial) || cmd.aliases?.some((a) => a.startsWith(partial))
     );
   }, [value]);
 
   // Reset selection when suggestions change
   useEffect(() => {
     setSelectedIndex(0);
-  }, [suggestions.length]);
+  }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     // Autocomplete navigation
@@ -66,7 +65,7 @@ export default function ChatInput({
         e.preventDefault();
         const cmd = suggestions[selectedIndex];
         if (cmd) {
-          onChange('/' + cmd.name + ' ');
+          onChange(`/${cmd.name} `);
         }
         return;
       }
@@ -87,7 +86,7 @@ export default function ChatInput({
   };
 
   const handleSuggestionClick = (cmdName: string) => {
-    onChange('/' + cmdName + ' ');
+    onChange(`/${cmdName} `);
     textareaRef.current?.focus();
   };
 
@@ -96,19 +95,21 @@ export default function ChatInput({
       <div className="chat-input-wrapper" style={{ position: 'relative' }}>
         {/* Autocomplete dropdown */}
         {suggestions.length > 0 && (
-          <div style={{
-            position: 'absolute',
-            bottom: '100%',
-            left: 0,
-            right: 0,
-            backgroundColor: 'var(--bg-card)',
-            border: '1px solid var(--border-subtle)',
-            borderRadius: '8px',
-            marginBottom: '4px',
-            overflow: 'hidden',
-            zIndex: 10,
-            boxShadow: '0 -4px 12px rgba(0, 0, 0, 0.15)',
-          }}>
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '100%',
+              left: 0,
+              right: 0,
+              backgroundColor: 'var(--bg-card)',
+              border: '1px solid var(--border-subtle)',
+              borderRadius: '8px',
+              marginBottom: '4px',
+              overflow: 'hidden',
+              zIndex: 10,
+              boxShadow: '0 -4px 12px rgba(0, 0, 0, 0.15)',
+            }}
+          >
             {suggestions.map((cmd, idx) => (
               <div
                 key={cmd.name}
@@ -120,7 +121,8 @@ export default function ChatInput({
                   gap: '8px',
                   alignItems: 'baseline',
                   backgroundColor: idx === selectedIndex ? 'var(--bg-card-active)' : 'transparent',
-                  borderBottom: idx < suggestions.length - 1 ? '1px solid var(--border-subtle)' : 'none',
+                  borderBottom:
+                    idx < suggestions.length - 1 ? '1px solid var(--border-subtle)' : 'none',
                 }}
               >
                 <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--accent-blue)' }}>
@@ -146,12 +148,7 @@ export default function ChatInput({
         />
         {isLoading ? (
           <button className="stop-btn" onClick={onStop} type="button">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="currentColor"
-            >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <rect x="6" y="6" width="12" height="12" rx="2" />
             </svg>
             Stop

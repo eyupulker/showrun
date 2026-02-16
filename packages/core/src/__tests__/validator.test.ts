@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { InputValidator } from '../validator.js';
+import { describe, expect, it } from 'vitest';
 import type { InputSchema } from '../types.js';
+import { InputValidator } from '../validator.js';
 
 describe('InputValidator', () => {
   describe('validate', () => {
@@ -50,7 +50,9 @@ describe('InputValidator', () => {
 
     it('fails for wrong type - boolean expected', () => {
       const schema: InputSchema = { enabled: { type: 'boolean', required: true } };
-      expect(() => InputValidator.validate({ enabled: 'true' }, schema)).toThrow(/must be a boolean/);
+      expect(() => InputValidator.validate({ enabled: 'true' }, schema)).toThrow(
+        /must be a boolean/
+      );
     });
 
     it('fails for unknown fields', () => {

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import type { Socket } from 'socket.io-client';
-import TeachMode from './TeachMode.js';
 import SecretsEditor from './SecretsEditor.js';
+import TeachMode from './TeachMode.js';
 
 interface Pack {
   id: string;
@@ -24,8 +24,8 @@ interface PackEditorProps {
 
 function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorProps) {
   const pack = packs.find((p) => p.id === packId);
-  const [taskpackJson, setTaskpackJson] = useState<any>(null);
-  const [flowJson, setFlowJson] = useState<any>(null);
+  const [_taskpackJson, setTaskpackJson] = useState<any>(null);
+  const [_flowJson, setFlowJson] = useState<any>(null);
   const [flowJsonText, setFlowJsonText] = useState('');
   const [metaForm, setMetaForm] = useState({ name: '', version: '', description: '' });
   const [loading, setLoading] = useState(true);
@@ -33,11 +33,15 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [validationResult, setValidationResult] = useState<{ ok: boolean; errors: string[]; warnings: string[] } | null>(null);
+  const [validationResult, setValidationResult] = useState<{
+    ok: boolean;
+    errors: string[];
+    warnings: string[];
+  } | null>(null);
 
   useEffect(() => {
     loadPackFiles();
-  }, [packId]);
+  }, [loadPackFiles]);
 
   const loadPackFiles = async () => {
     setLoading(true);
@@ -66,7 +70,7 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
 
   const handleValidate = async () => {
     try {
-      const parsed = JSON.parse(flowJsonText);
+      const _parsed = JSON.parse(flowJsonText);
       const res = await fetch(`/api/packs/${packId}/validate`, {
         method: 'POST',
         headers: {
@@ -150,7 +154,7 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
         setErrors(['Flow must be an array. Use "flow": [] for an empty flow.']);
         return;
       }
-    } catch (err) {
+    } catch (_err) {
       setErrors(['Invalid JSON in flow editor. Please fix the JSON syntax.']);
       return;
     }
@@ -176,7 +180,7 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
 
       const { runId } = await res.json();
       console.log('Run started:', runId);
-      
+
       // Call the onRun callback to switch to runs view
       onRun(packId);
     } catch (err) {
@@ -203,19 +207,28 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
 
   return (
     <div>
-      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div
+        style={{
+          marginBottom: '20px',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}
+      >
         <h2>Edit Pack: {pack.name}</h2>
         <div>
-          <button onClick={onBack} style={{ marginRight: '10px' }}>Back to Packs</button>
-          <button 
-            onClick={handleRun} 
+          <button onClick={onBack} style={{ marginRight: '10px' }}>
+            Back to Packs
+          </button>
+          <button
+            onClick={handleRun}
             disabled={saving || loading || !isJsonValid}
             title={
-              loading 
-                ? 'Loading pack files...' 
-                : !isJsonValid 
-                ? 'Invalid JSON in flow editor' 
-                : 'Run this pack'
+              loading
+                ? 'Loading pack files...'
+                : !isJsonValid
+                  ? 'Invalid JSON in flow editor'
+                  : 'Run this pack'
             }
           >
             Run Pack
@@ -235,7 +248,14 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
       )}
 
       {warnings.length > 0 && (
-        <div style={{ background: '#fff3cd', padding: '12px', borderRadius: '4px', marginBottom: '20px' }}>
+        <div
+          style={{
+            background: '#fff3cd',
+            padding: '12px',
+            borderRadius: '4px',
+            marginBottom: '20px',
+          }}
+        >
           <strong>Warnings:</strong>
           <ul>
             {warnings.map((warn, i) => (
@@ -246,7 +266,14 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
       )}
 
       {lastSaved && (
-        <div style={{ background: '#d1e7dd', padding: '8px', borderRadius: '4px', marginBottom: '20px' }}>
+        <div
+          style={{
+            background: '#d1e7dd',
+            padding: '8px',
+            borderRadius: '4px',
+            marginBottom: '20px',
+          }}
+        >
           Last saved: {lastSaved.toLocaleTimeString()}
         </div>
       )}
@@ -332,7 +359,14 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
             </button>
           </div>
           {validationResult && (
-            <div style={{ marginTop: '12px', padding: '8px', background: validationResult.ok ? '#d1e7dd' : '#f8d7da', borderRadius: '4px' }}>
+            <div
+              style={{
+                marginTop: '12px',
+                padding: '8px',
+                background: validationResult.ok ? '#d1e7dd' : '#f8d7da',
+                borderRadius: '4px',
+              }}
+            >
               {validationResult.ok ? '✓ Validation passed' : '✗ Validation failed'}
             </div>
           )}
@@ -343,7 +377,8 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
       <div className="card" style={{ marginTop: '24px' }}>
         <h3>Secrets</h3>
         <p style={{ color: '#666', fontSize: '14px', marginBottom: '12px' }}>
-          Manage credentials and API keys securely. Values are stored locally and never exposed to AI.
+          Manage credentials and API keys securely. Values are stored locally and never exposed to
+          AI.
         </p>
         <SecretsEditor packId={packId} token={token} />
       </div>
@@ -352,7 +387,8 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
       <div className="card" style={{ marginTop: '24px' }}>
         <h3>Teach Mode</h3>
         <p style={{ color: '#666', fontSize: '14px', marginBottom: '12px' }}>
-          Use the browser and chat to build the flow. When the agent applies a step, the Flow JSON above updates in real time.
+          Use the browser and chat to build the flow. When the agent applies a step, the Flow JSON
+          above updates in real time.
         </p>
         <TeachMode
           token={token}

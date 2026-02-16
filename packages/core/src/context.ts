@@ -1,8 +1,8 @@
-import { writeFileSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Browser, Page } from 'playwright';
-import type { Logger, ArtifactManager, RunContext } from './types.js';
 import type { NetworkCaptureApi } from './networkCapture.js';
+import type { ArtifactManager, Logger, RunContext } from './types.js';
 
 /**
  * Creates a RunContext for task pack execution

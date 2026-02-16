@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { ConcurrencyLimiter } from '../concurrency.js';
 
 describe('ConcurrencyLimiter', () => {
@@ -28,7 +28,7 @@ describe('ConcurrencyLimiter', () => {
     const order: number[] = [];
 
     const task1 = limiter.execute(async () => {
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
       order.push(1);
     });
     const task2 = limiter.execute(async () => order.push(2));
@@ -45,11 +45,11 @@ describe('ConcurrencyLimiter', () => {
     const order: number[] = [];
 
     const task1 = limiter.execute(async () => {
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
       order.push(1);
     });
     const task2 = limiter.execute(async () => {
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
       order.push(2);
     });
     const task3 = limiter.execute(async () => order.push(3));
@@ -66,7 +66,9 @@ describe('ConcurrencyLimiter', () => {
   it('propagates errors', async () => {
     const limiter = new ConcurrencyLimiter(1);
     await expect(
-      limiter.execute(async () => { throw new Error('Test error'); })
+      limiter.execute(async () => {
+        throw new Error('Test error');
+      })
     ).rejects.toThrow('Test error');
   });
 
@@ -75,11 +77,13 @@ describe('ConcurrencyLimiter', () => {
     let task1Completed = false;
     let task2Completed = false;
 
-    const task1 = limiter.execute(async () => {
-      throw new Error('Task 1 failed');
-    }).catch(() => {
-      task1Completed = true;
-    });
+    const task1 = limiter
+      .execute(async () => {
+        throw new Error('Task 1 failed');
+      })
+      .catch(() => {
+        task1Completed = true;
+      });
 
     const task2 = limiter.execute(async () => {
       task2Completed = true;
@@ -98,8 +102,8 @@ describe('ConcurrencyLimiter', () => {
     expect(limiter.getRunningCount()).toBe(0);
 
     const tasks = [
-      limiter.execute(() => new Promise(r => setTimeout(r, 100))),
-      limiter.execute(() => new Promise(r => setTimeout(r, 100))),
+      limiter.execute(() => new Promise((r) => setTimeout(r, 100))),
+      limiter.execute(() => new Promise((r) => setTimeout(r, 100))),
     ];
 
     expect(limiter.getRunningCount()).toBe(2);
@@ -112,7 +116,7 @@ describe('ConcurrencyLimiter', () => {
     const limiter = new ConcurrencyLimiter(1);
     expect(limiter.getQueueLength()).toBe(0);
 
-    const task1 = limiter.execute(() => new Promise(r => setTimeout(r, 100)));
+    const task1 = limiter.execute(() => new Promise((r) => setTimeout(r, 100)));
     const task2 = limiter.execute(() => Promise.resolve());
     const task3 = limiter.execute(() => Promise.resolve());
 
