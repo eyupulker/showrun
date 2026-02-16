@@ -193,6 +193,13 @@ function runMigrations(database: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_transcripts_createdAt ON conversation_transcripts(createdAt);
       `,
     },
+    {
+      name: '006_add_run_performance_indexes',
+      sql: `
+        CREATE INDEX IF NOT EXISTS idx_runs_packId ON runs(packId);
+        CREATE INDEX IF NOT EXISTS idx_runs_packId_status_createdAt ON runs(packId, status, createdAt);
+      `,
+    },
   ];
 
   const appliedMigrations = new Set(
@@ -539,6 +546,21 @@ export function updateRun(
   database.prepare(`UPDATE runs SET ${fields.join(', ')} WHERE id = ?`).run(...values);
 
   return getRun(id);
+}
+
+/**
+ * Update multiple runs in a single transaction
+ */
+export function batchUpdateRuns(
+  updates: Array<{ id: string; updates: Parameters<typeof updateRun>[1] }>
+): void {
+  const database = getDatabase();
+  const updateMany = database.transaction((items: Array<{ id: string; updates: Parameters<typeof updateRun>[1] }>) => {
+    for (const item of items) {
+      updateRun(item.id, item.updates);
+    }
+  });
+  updateMany(updates);
 }
 
 export function deleteRun(id: string): boolean {
