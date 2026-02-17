@@ -35,7 +35,7 @@ const SENSITIVE_HEADER_NAMES = new Set([
   'proxy-authorization',
 ]);
 const NETWORK_BUFFER_MAX = 200;
-const POST_DATA_CAP = 500;
+const POST_DATA_CAP = 4000;
 
 function redactHeaders(headers: Record<string, string>): Record<string, string> {
   const out: Record<string, string> = {};
@@ -55,18 +55,22 @@ function redactPostData(raw: string | undefined | null): string | undefined {
   return s;
 }
 
-function isLikelyApi(url: string, resourceType?: string): boolean {
+function isLikelyApi(url: string, resourceType?: string, responseContentType?: string): boolean {
   const u = url.toLowerCase();
   return (
     resourceType === 'xhr' ||
     resourceType === 'fetch' ||
     /\/api\//.test(u) ||
     /graphql/i.test(u) ||
-    /\/v\d+\//.test(u)
+    /\/v\d+\//.test(u) ||
+    /\/rest\//.test(u) ||
+    /\/data\//.test(u) ||
+    /\.json(\?|$)/.test(u) ||
+    (responseContentType != null && responseContentType.includes('application/json'))
   );
 }
 
-const RESPONSE_BODY_CAPTURE_MAX = 2000; // chars we store per response
+const RESPONSE_BODY_CAPTURE_MAX = 8000; // chars we store per response
 const RESPONSE_BODY_DEFAULT_RETURN = 200; // default chars returned by get_response unless full
 
 export interface NetworkEntry {
@@ -164,6 +168,11 @@ const POST_DATA_REPLAY_CAP = 64 * 1024; // 64KB for replay
 const sessions = new Map<string, BrowserSession>();
 let networkIdCounter = 0;
 
+/** Get the Playwright Page object for a session (used by screenshot endpoint) */
+export function getSessionPage(sessionId: string): Page | null {
+  return sessions.get(sessionId)?.page ?? null;
+}
+
 function attachNetworkCapture(
   _sessionId: string,
   page: Page,
@@ -205,9 +214,18 @@ function attachNetworkCapture(
     replayDataMap.set(id, { requestHeadersFull: headersFull, postData: postDataForReplay });
     networkBuffer.push(entry);
     if (networkBuffer.length > NETWORK_BUFFER_MAX) {
-      const removed = networkBuffer.shift()!;
-      networkMap.delete(removed.id);
-      replayDataMap.delete(removed.id);
+      // API-preserving eviction: prefer removing non-API entries first
+      const nonApiIdx = networkBuffer.findIndex(e => !e.isLikelyApi);
+      if (nonApiIdx >= 0) {
+        const removed = networkBuffer.splice(nonApiIdx, 1)[0];
+        networkMap.delete(removed.id);
+        replayDataMap.delete(removed.id);
+      } else {
+        // All entries are API — drop oldest
+        const removed = networkBuffer.shift()!;
+        networkMap.delete(removed.id);
+        replayDataMap.delete(removed.id);
+      }
     }
   });
 
@@ -221,6 +239,11 @@ function attachNetworkCapture(
         headers[k] = SENSITIVE_HEADER_NAMES.has(k.toLowerCase()) ? '[REDACTED]' : v;
       }
       entry.responseHeaders = headers;
+      // Re-evaluate isLikelyApi with response Content-Type info
+      const contentType = response.headers()['content-type'] ?? '';
+      if (!entry.isLikelyApi && isLikelyApi(entry.url, entry.resourceType, contentType)) {
+        entry.isLikelyApi = true;
+      }
       try {
         const body = await response.body();
         const maxBytes = Math.min(body.length, RESPONSE_BODY_CAPTURE_MAX * 4);
@@ -333,7 +356,7 @@ export async function startBrowserSession(
   return sessionId;
 }
 
-export async function gotoUrl(sessionId: string, url: string): Promise<string> {
+export async function gotoUrl(sessionId: string, url: string): Promise<{ url: string; title: string }> {
   const session = sessions.get(sessionId);
   if (!session) {
     throw new Error(`Session not found: ${sessionId}`);
@@ -341,6 +364,7 @@ export async function gotoUrl(sessionId: string, url: string): Promise<string> {
 
   await session.page.goto(url, { waitUntil: 'domcontentloaded' });
   const currentUrl = session.page.url();
+  const title = await session.page.title();
 
   session.actions.push({
     timestamp: Date.now(),
@@ -348,7 +372,7 @@ export async function gotoUrl(sessionId: string, url: string): Promise<string> {
     details: { url, currentUrl },
   });
 
-  return currentUrl;
+  return { url: currentUrl, title };
 }
 
 export async function goBack(sessionId: string): Promise<{ url: string }> {
@@ -412,12 +436,14 @@ export interface TypeOptions {
   selector?: string;
   /** If true, clear the field before typing (default true) */
   clear?: boolean;
+  /** If true, press Enter after typing to submit (useful for TOTP codes) */
+  submit?: boolean;
 }
 
 export async function typeInElement(
   sessionId: string,
   options: TypeOptions
-): Promise<{ url: string; typed: boolean }> {
+): Promise<{ url: string; typed: boolean; inIframe?: boolean; submitted?: boolean }> {
   const session = sessions.get(sessionId);
   if (!session) {
     throw new Error(`Session not found: ${sessionId}`);
@@ -427,6 +453,7 @@ export async function typeInElement(
   const label = options.label?.trim();
   const selector = options.selector?.trim();
   const clear = options.clear !== false;
+  const submit = options.submit === true;
 
   if (!text) {
     throw new Error('text is required');
@@ -435,22 +462,80 @@ export async function typeInElement(
     throw new Error('Either label or selector is required');
   }
 
-  if (label) {
-    const locator = page.getByRole('textbox', { name: label }).first();
-    if (clear) await locator.clear();
-    await locator.fill(text);
-  } else {
-    const locator = page.locator(selector!).first();
-    if (clear) await locator.clear();
-    await locator.fill(text);
+  // Helper to attempt typing into a frame/page context
+  const tryType = async (context: Page | import('playwright').Frame): Promise<boolean> => {
+    try {
+      let locator;
+      if (label) {
+        // Try exact match first, then fall back to substring match
+        locator = context.getByRole('textbox', { name: label }).first();
+        try {
+          await locator.waitFor({ state: 'visible', timeout: 3000 });
+        } catch {
+          // Exact match failed — try broader selector-based approach for iframes
+          locator = context.locator(`input[placeholder*="${label}" i], input[aria-label*="${label}" i], input[name*="${label}" i], textarea[placeholder*="${label}" i]`).first();
+          await locator.waitFor({ state: 'visible', timeout: 3000 });
+        }
+      } else {
+        locator = context.locator(selector!).first();
+        await locator.waitFor({ state: 'visible', timeout: 5000 });
+      }
+      if (clear) await locator.clear();
+      await locator.fill(text);
+
+      // Verify the value was actually set — some inputs (e.g. TOTP in iframes)
+      // silently ignore programmatic fill(). Fall back to keyboard typing.
+      const value = await locator.inputValue().catch(() => '');
+      if (value === text) {
+        // Auto-submit: press Enter immediately after typing (for time-sensitive codes like TOTP)
+        if (submit) {
+          await locator.press('Enter');
+        }
+        return true;
+      }
+
+      // Keyboard fallback: click to focus, select all, then type character by character
+      await locator.click();
+      await page.keyboard.press('Control+a');
+      await page.keyboard.type(text, { delay: 30 });
+      // Auto-submit after keyboard fallback too
+      if (submit) {
+        await page.keyboard.press('Enter');
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // Try main page first
+  if (await tryType(page)) {
+    session.actions.push({
+      timestamp: Date.now(),
+      action: 'type',
+      details: { label: label ?? undefined, selector: selector ?? undefined, textLength: text.length, url: page.url(), submit },
+    });
+    return { url: page.url(), typed: true, submitted: submit };
   }
 
-  session.actions.push({
-    timestamp: Date.now(),
-    action: 'type',
-    details: { label: label ?? undefined, selector: selector ?? undefined, textLength: text.length, url: page.url() },
-  });
-  return { url: page.url(), typed: true };
+  // Fallback: search all iframes (including nested ones)
+  const frames = page.frames();
+  for (const frame of frames) {
+    if (frame === page.mainFrame()) continue;
+    if (await tryType(frame)) {
+      session.actions.push({
+        timestamp: Date.now(),
+        action: 'type',
+        details: { label: label ?? undefined, selector: selector ?? undefined, textLength: text.length, url: page.url(), inIframe: true, submit },
+      });
+      return { url: page.url(), typed: true, inIframe: true, submitted: submit };
+    }
+  }
+
+  // Nothing found — throw descriptive error with diagnostics
+  const target = label ? `textbox with label "${label}"` : `element matching "${selector}"`;
+  const frameCount = frames.length - 1; // exclude main frame
+  throw new Error(`Could not find ${target} on the page or in ${frameCount} iframe(s). Try using browser_get_dom_snapshot to see available elements.`);
 }
 
 const SCREENSHOT_MAX_WIDTH = 1280;
@@ -510,7 +595,7 @@ export interface ClickOptions {
 export async function clickElement(
   sessionId: string,
   options: ClickOptions
-): Promise<{ url: string; clicked: boolean }> {
+): Promise<{ url: string; clicked: boolean; inIframe?: boolean }> {
   const session = sessions.get(sessionId);
   if (!session) {
     throw new Error(`Session not found: ${sessionId}`);
@@ -524,28 +609,87 @@ export async function clickElement(
     throw new Error('Either linkText or selector is required');
   }
 
-  if (linkText) {
-    const locator =
-      role === 'text'
-        ? page.getByText(linkText, { exact: true }).first()
-        : page.getByRole(role, { name: linkText }).first();
-    await locator.click();
+  // Helper to attempt clicking in a frame/page context
+  const tryClick = async (context: Page | import('playwright').Frame): Promise<boolean> => {
+    try {
+      if (linkText) {
+        // Strategy 1: exact role/text match
+        let locator =
+          role === 'text'
+            ? context.getByText(linkText, { exact: true }).first()
+            : context.getByRole(role, { name: linkText, exact: true }).first();
+        try {
+          await locator.waitFor({ state: 'visible', timeout: 3000 });
+          await locator.click();
+          return true;
+        } catch {
+          // Exact match failed — try non-exact match
+        }
+
+        // Strategy 2: non-exact (substring) role/text match
+        locator =
+          role === 'text'
+            ? context.getByText(linkText, { exact: false }).first()
+            : context.getByRole(role, { name: linkText, exact: false }).first();
+        try {
+          await locator.waitFor({ state: 'visible', timeout: 3000 });
+          await locator.click();
+          return true;
+        } catch {
+          // Non-exact match failed — try CSS attribute selector fallback
+        }
+
+        // Strategy 3: CSS attribute-based matching (aria-label, title, value, placeholder)
+        const escaped = linkText.replace(/"/g, '\\"');
+        locator = context.locator(
+          `[aria-label*="${escaped}" i], [title*="${escaped}" i], [value*="${escaped}" i], button:has-text("${escaped}"), a:has-text("${escaped}")`
+        ).first();
+        try {
+          await locator.waitFor({ state: 'visible', timeout: 3000 });
+          await locator.click();
+          return true;
+        } catch {
+          return false;
+        }
+      } else {
+        const locator = context.locator(selector!).first();
+        await locator.waitFor({ state: 'visible', timeout: 5000 });
+        await locator.click();
+        return true;
+      }
+    } catch {
+      return false;
+    }
+  };
+
+  // Try main page first
+  if (await tryClick(page)) {
     session.actions.push({
       timestamp: Date.now(),
       action: 'click',
-      details: { linkText, role, url: page.url() },
+      details: { linkText: linkText ?? undefined, selector: selector ?? undefined, role, url: page.url() },
     });
     return { url: page.url(), clicked: true };
   }
 
-  const locator = page.locator(selector!).first();
-  await locator.click();
-  session.actions.push({
-    timestamp: Date.now(),
-    action: 'click',
-    details: { selector, url: page.url() },
-  });
-  return { url: page.url(), clicked: true };
+  // Fallback: search all iframes
+  const frames = page.frames();
+  for (const frame of frames) {
+    if (frame === page.mainFrame()) continue;
+    if (await tryClick(frame)) {
+      session.actions.push({
+        timestamp: Date.now(),
+        action: 'click',
+        details: { linkText: linkText ?? undefined, selector: selector ?? undefined, role, url: page.url(), inIframe: true },
+      });
+      return { url: page.url(), clicked: true, inIframe: true };
+    }
+  }
+
+  // Nothing found — throw descriptive error
+  const target = linkText ? `${role} with text "${linkText}"` : `element matching "${selector}"`;
+  const frameCount = frames.length - 1;
+  throw new Error(`Could not find ${target} on the page or in ${frameCount} iframe(s). Try using browser_get_dom_snapshot to see available elements.`);
 }
 
 export async function pickElement(sessionId: string): Promise<ElementFingerprint> {
@@ -912,8 +1056,8 @@ export interface NetworkReplayOverrides {
   setQuery?: Record<string, string | number>;
   setHeaders?: Record<string, string>;
   body?: string;
-  urlReplace?: { find: string; replace: string };
-  bodyReplace?: { find: string; replace: string };
+  urlReplace?: { find: string; replace: string } | Array<{ find: string; replace: string }>;
+  bodyReplace?: { find: string; replace: string } | Array<{ find: string; replace: string }>;
 }
 
 /**
@@ -947,21 +1091,29 @@ export async function networkReplay(
   }
   let url = entry.url;
   if (overrides?.urlReplace) {
-    try {
-      const re = new RegExp(overrides.urlReplace.find, 'g');
-      url = url.replace(re, overrides.urlReplace.replace);
-    } catch (e) {
-      throw new Error(`overrides.urlReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+    // Normalize to array (accepts single object or array)
+    const urlReplaces = Array.isArray(overrides.urlReplace) ? overrides.urlReplace : [overrides.urlReplace];
+    for (const ur of urlReplaces) {
+      try {
+        const re = new RegExp(ur.find, 'g');
+        url = url.replace(re, ur.replace);
+      } catch (e) {
+        throw new Error(`overrides.urlReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   }
   if (overrides?.url != null) url = overrides.url;
   let body: string | undefined = replayData.postData ?? undefined;
   if (body != null && overrides?.bodyReplace) {
-    try {
-      const re = new RegExp(overrides.bodyReplace.find, 'g');
-      body = body.replace(re, overrides.bodyReplace.replace);
-    } catch (e) {
-      throw new Error(`overrides.bodyReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+    // Normalize to array (accepts single object or array)
+    const bodyReplaces = Array.isArray(overrides.bodyReplace) ? overrides.bodyReplace : [overrides.bodyReplace];
+    for (const br of bodyReplaces) {
+      try {
+        const re = new RegExp(br.find, 'g');
+        body = body.replace(re, br.replace);
+      } catch (e) {
+        throw new Error(`overrides.bodyReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   }
   if (overrides?.body != null) body = overrides.body;
@@ -1244,8 +1396,86 @@ export async function getDomSnapshot(
       }
     }
 
+    // Also capture iframe contents — the main ARIA snapshot doesn't traverse iframes
+    const frames = page.frames();
+    const iframeSnapshots: string[] = [];
+    for (const frame of frames) {
+      if (frame === page.mainFrame()) continue;
+      const frameName = frame.name() || frame.url();
+      let frameContent = '';
+
+      // Strategy 1: Try ariaSnapshot (works for same-origin iframes)
+      try {
+        const frameBody = frame.locator('body');
+        const frameSnapshot = await frameBody.ariaSnapshot({ timeout: 5_000 });
+        if (frameSnapshot && frameSnapshot.trim().length > 0) {
+          frameContent = frameSnapshot;
+        }
+      } catch {
+        // ariaSnapshot failed — try fallback
+      }
+
+      // Strategy 2: Use evaluate() to extract interactive elements (works for cross-origin)
+      if (!frameContent) {
+        try {
+          frameContent = await frame.evaluate(() => {
+            const lines: string[] = [];
+            const els = document.querySelectorAll(
+              'input, button, a, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="radio"], label, h1, h2, h3, p'
+            );
+            for (const el of els) {
+              const tag = el.tagName.toLowerCase();
+              const type = el.getAttribute('type') || '';
+              const name = el.getAttribute('name') || '';
+              const placeholder = el.getAttribute('placeholder') || '';
+              const ariaLabel = el.getAttribute('aria-label') || '';
+              const role = el.getAttribute('role') || '';
+              const text = (el.textContent || '').trim().slice(0, 80);
+              const id = el.getAttribute('id') || '';
+              const value = el instanceof HTMLInputElement ? el.value : '';
+
+              if (tag === 'input' || tag === 'textarea') {
+                const inputType = type || (tag === 'textarea' ? 'textarea' : 'text');
+                const label = ariaLabel || placeholder || name || id;
+                const displayRole = inputType === 'password' ? 'textbox [type=password]'
+                  : inputType === 'checkbox' ? 'checkbox'
+                  : inputType === 'radio' ? 'radio'
+                  : 'textbox';
+                lines.push(`- ${displayRole}${label ? ` "${label}"` : ''}${value ? `: "${value}"` : ''}`);
+              } else if (tag === 'button' || role === 'button') {
+                const label = ariaLabel || text || name;
+                lines.push(`- button${label ? ` "${label}"` : ''}`);
+              } else if (tag === 'a' || role === 'link') {
+                const label = ariaLabel || text;
+                if (label) lines.push(`- link "${label}"`);
+              } else if (tag === 'select') {
+                const label = ariaLabel || name || id;
+                lines.push(`- combobox${label ? ` "${label}"` : ''}`);
+              } else if (tag === 'label') {
+                if (text) lines.push(`- label "${text}"`);
+              } else if (['h1', 'h2', 'h3'].includes(tag)) {
+                if (text) lines.push(`- heading "${text}" [level=${tag[1]}]`);
+              } else if (tag === 'p') {
+                if (text) lines.push(`- paragraph: ${text}`);
+              }
+            }
+            return lines.join('\n');
+          });
+        } catch {
+          // frame evaluate also failed — skip this frame
+        }
+      }
+
+      if (frameContent && frameContent.trim().length > 0) {
+        iframeSnapshots.push(`\n--- iframe: ${frameName} ---\n${frameContent}`);
+      }
+    }
+
+    // Combine main snapshot with iframe snapshots
+    const combinedSnapshot = ariaSnapshot + iframeSnapshots.join('');
+
     // Add element refs and optionally limit depth
-    const snapshotWithRefs = addElementRefs(ariaSnapshot, maxDepth);
+    const snapshotWithRefs = addElementRefs(combinedSnapshot, maxDepth);
 
     session.actions.push({
       timestamp: Date.now(),
@@ -1255,6 +1485,7 @@ export async function getDomSnapshot(
         format: 'yaml',
         maxDepth,
         snapshotLength: snapshotWithRefs.length,
+        iframeCount: iframeSnapshots.length,
       },
     });
 

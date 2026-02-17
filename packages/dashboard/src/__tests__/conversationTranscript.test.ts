@@ -67,6 +67,7 @@ import type { LlmProvider } from '../llm/provider.js';
 function createMockLlmProvider(): LlmProvider {
   return {
     name: 'mock',
+    countTokens: (text: string) => Math.ceil(text.length / 4),
     generateJson: vi.fn().mockResolvedValue({}),
     chat: vi.fn().mockResolvedValue('mock response'),
     chatWithTools: vi.fn().mockResolvedValue({

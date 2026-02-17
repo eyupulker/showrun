@@ -15,6 +15,19 @@ const env = new nunjucks.Environment(null, {
 });
 
 /**
+ * pctEncode filter: like urlencode but also encodes characters that
+ * encodeURIComponent leaves unescaped (parentheses, !, ', *, ~).
+ * Useful in URLs where those chars have structural meaning (e.g. LinkedIn Sales Navigator query syntax).
+ * Usage: {{inputs.company_name | pctEncode}}
+ */
+env.addFilter('pctEncode', (val: string): string => {
+  if (val == null) return '';
+  return encodeURIComponent(String(val)).replace(/[!'()*~]/g, (c) =>
+    '%' + c.charCodeAt(0).toString(16).toUpperCase(),
+  );
+});
+
+/**
  * TOTP filter: generates a 6-digit TOTP code from a base32 secret.
  * Usage: {{secret.TOTP_KEY | totp}}
  *

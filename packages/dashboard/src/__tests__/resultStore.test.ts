@@ -51,7 +51,7 @@ vi.mock('../db.js', () => ({
 // Mock browserInspector (needed by executeAgentTool)
 vi.mock('../browserInspector.js', () => ({
   startBrowserSession: vi.fn().mockResolvedValue('mock-session'),
-  gotoUrl: vi.fn().mockResolvedValue('https://example.com'),
+  gotoUrl: vi.fn().mockResolvedValue({ url: 'https://example.com', title: 'Example' }),
   closeSession: vi.fn(),
   getSession: vi.fn().mockReturnValue(null),
   isSessionAlive: vi.fn().mockReturnValue(false),

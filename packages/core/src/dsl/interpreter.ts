@@ -263,11 +263,12 @@ export async function runFlow(
             continue;
           }
         } catch (conditionError) {
-          // Log condition evaluation error but continue with step execution
-          console.warn(
-            `[interpreter] Error evaluating skip_if for step ${step.id}:`,
-            conditionError
-          );
+          const msg = `skip_if evaluation error for step "${step.id}": ${conditionError instanceof Error ? conditionError.message : String(conditionError)}`;
+          console.warn(`[interpreter] ${msg}`);
+          ctx.logger.log({ type: 'error', data: { error: msg, stepId: step.id, type: step.type } });
+          // Push to hints so the agent can see the error
+          if (!vars['__jmespath_hints']) vars['__jmespath_hints'] = [];
+          (vars['__jmespath_hints'] as string[]).push(msg);
         }
       }
 
@@ -522,6 +523,15 @@ export async function runFlow(
             // Ignore artifact save errors, but log them
             console.error('Failed to save artifacts:', artifactError);
           }
+        }
+
+        // Attach partial results to the error for upstream consumers
+        if (error instanceof Error) {
+          (error as any).partialResult = {
+            collectibles: { ...collectibles },
+            stepsExecuted,
+            failedStepId: step.id,
+          };
         }
 
         // Stop on error (default behavior)

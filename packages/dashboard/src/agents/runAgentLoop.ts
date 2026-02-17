@@ -91,7 +91,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
     }
 
     // Check token count and summarize if needed
-    const tokenEstimate = estimateTotalTokens(systemPrompt, agentMessages);
+    const countTokensFn = llmProvider.countTokens.bind(llmProvider);
+    const tokenEstimate = estimateTotalTokens(systemPrompt, agentMessages, countTokensFn);
     if (tokenEstimate > 100_000 && sessionKey) {
       console.log(`[AgentLoop] Token estimate ${tokenEstimate} exceeds threshold, summarizing...`);
       emit({ type: 'summarizing', tokensBefore: tokenEstimate });
@@ -170,7 +171,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
         agentMessages.push({ role: 'tool', content: resultStr, tool_call_id: tc.id });
       }
 
-      // Inject screenshot if one was captured
+      // Inject screenshot if one was captured, then clear to prevent stale re-injection
       if (browserSnapshot) {
         const dataUrl = `data:${browserSnapshot.mimeType};base64,${browserSnapshot.screenshotBase64}`;
         agentMessages.push({
@@ -180,6 +181,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<AgentLoop
             { type: 'image_url', image_url: { url: dataUrl } },
           ],
         });
+        browserSnapshot = undefined;
       }
 
       continue; // Next iteration

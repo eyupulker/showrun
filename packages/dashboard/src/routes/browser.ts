@@ -7,6 +7,7 @@ import {
   goBack,
   typeInElement,
   takeScreenshot,
+  getSessionPage,
   getLinks,
   getDomSnapshot,
   networkList,
@@ -18,6 +19,7 @@ import {
   getLastActions,
   closeSession,
 } from '../browserInspector.js';
+import { getConversationBrowserSession } from '../agentTools.js';
 
 export function createBrowserRouter(ctx: DashboardContext): Router {
   const router = Router();
@@ -54,8 +56,8 @@ export function createBrowserRouter(ctx: DashboardContext): Router {
     }
 
     try {
-      const currentUrl = await gotoUrl(sessionId, url);
-      res.json({ url: currentUrl });
+      const result = await gotoUrl(sessionId, url);
+      res.json(result);
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),
@@ -134,6 +136,27 @@ export function createBrowserRouter(ctx: DashboardContext): Router {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  });
+
+  // GET screenshot as raw PNG image by conversationId (no auth — used by external tools)
+  router.get('/api/browser/screenshot/:conversationId', async (req: Request, res: Response) => {
+    const { conversationId } = req.params;
+    const sessionId = getConversationBrowserSession(conversationId);
+    if (!sessionId) {
+      return res.status(404).json({ error: 'No browser session for this conversation' });
+    }
+    const page = getSessionPage(sessionId);
+    if (!page) {
+      return res.status(404).json({ error: 'Session page not found' });
+    }
+    try {
+      const buf = await page.screenshot({ type: 'png' });
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(buf);
+    } catch (error) {
+      res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
     }
   });
 

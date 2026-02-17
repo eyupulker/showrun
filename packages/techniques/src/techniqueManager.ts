@@ -171,42 +171,71 @@ export class TechniqueManager {
   }
 
   /**
-   * Seed built-in techniques (incremental).
-   * Only inserts seed techniques whose titles don't already exist in the DB.
-   * Returns the number of newly seeded techniques.
+   * Seed built-in techniques (incremental + update changed).
+   * Inserts seed techniques whose titles don't exist in the DB,
+   * and updates existing seed techniques whose content has changed.
+   * Returns the number of newly seeded + updated techniques.
    */
   async seedIfEmpty(): Promise<number> {
     const existing = await this.store.list({ status: 'active' });
-    const existingTitles = new Set(
-      existing.filter(t => t.source === 'seed').map(t => t.title),
+    const existingByTitle = new Map(
+      existing.filter(t => t.source === 'seed').map(t => [t.title, t]),
     );
 
-    const missing = SEED_TECHNIQUES.filter(t => !existingTitles.has(t.title));
-    if (missing.length === 0) return 0;
-
     const now = new Date().toISOString();
-    const seeds: Technique[] = missing.map(t => ({
-      id: uuidv4(),
-      title: t.title,
-      content: t.content,
-      type: t.type,
-      priority: t.priority,
-      domain: t.domain,
-      tags: t.tags,
-      category: t.category,
-      status: 'active' as const,
-      confidence: t.confidence,
-      source: 'seed' as const,
-      sourceConversationId: null,
-      sourcePackId: null,
-      usageCount: 0,
-      lastUsedAt: null,
-      createdAt: now,
-      updatedAt: now,
-    }));
+    const toUpsert: Technique[] = [];
 
-    await this.store.upsert(seeds);
-    return seeds.length;
+    for (const seed of SEED_TECHNIQUES) {
+      const existingSeed = existingByTitle.get(seed.title);
+      if (!existingSeed) {
+        // New seed — insert
+        toUpsert.push({
+          id: uuidv4(),
+          title: seed.title,
+          content: seed.content,
+          type: seed.type,
+          priority: seed.priority,
+          domain: seed.domain,
+          tags: seed.tags,
+          category: seed.category,
+          status: 'active' as const,
+          confidence: seed.confidence,
+          source: 'seed' as const,
+          sourceConversationId: null,
+          sourcePackId: null,
+          usageCount: 0,
+          lastUsedAt: null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      } else if (existingSeed.content !== seed.content || existingSeed.priority !== seed.priority) {
+        // Content changed — update in place (preserve id, usageCount, etc.)
+        toUpsert.push({
+          ...existingSeed,
+          content: seed.content,
+          tags: seed.tags,
+          priority: seed.priority,
+          updatedAt: now,
+        });
+      }
+    }
+
+    // Remove stale seeds — seeds in DB that are no longer in the seed list
+    const seedTitles = new Set(SEED_TECHNIQUES.map(s => s.title));
+    let removedCount = 0;
+    for (const [title, existing] of existingByTitle) {
+      if (!seedTitles.has(title)) {
+        await this.store.delete(existing.id);
+        removedCount++;
+      }
+    }
+
+    if (toUpsert.length === 0 && removedCount === 0) return 0;
+
+    if (toUpsert.length > 0) {
+      await this.store.upsert(toUpsert);
+    }
+    return toUpsert.length + removedCount;
   }
 
   /** Export techniques matching filters (both generic and specific are exportable). */

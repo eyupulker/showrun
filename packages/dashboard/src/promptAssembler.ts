@@ -12,6 +12,7 @@ import { FALLBACK_SYSTEM_PROMPT } from './fallbackPrompt.js';
 
 /** Max total prompt size to prevent context bloat. */
 const MAX_PROMPT_CHARS = 50_000;
+const MAX_PROMPT_TOKENS = 12_000;
 
 /**
  * Extract order:N value from a technique's tags.
@@ -52,6 +53,7 @@ export async function assembleSystemPrompt(
   techniqueManager: TechniqueManager,
   domain?: string,
   maxKnowledgePriority: number = 2,
+  countTokensFn?: (text: string) => number,
 ): Promise<string> {
   // 1. Load system-prompt techniques
   const systemPromptTechniques = await techniqueManager.listByCategory('system_prompt');
@@ -99,9 +101,15 @@ export async function assembleSystemPrompt(
     }
   }
 
-  // 4. Cap total prompt size
-  if (prompt.length > MAX_PROMPT_CHARS) {
-    prompt = prompt.slice(0, MAX_PROMPT_CHARS) + '\n\n... (prompt truncated due to size)\n';
+  // 4. Cap total prompt size — use token-based truncation if tokenizer available
+  const counter = countTokensFn ?? ((t: string) => Math.ceil(t.length / 4));
+  if (counter(prompt) > MAX_PROMPT_TOKENS) {
+    // Binary-ish trim: cut chars until under token budget
+    let end = Math.min(prompt.length, MAX_PROMPT_CHARS);
+    while (end > 1000 && counter(prompt.slice(0, end)) > MAX_PROMPT_TOKENS) {
+      end = Math.floor(end * 0.9);
+    }
+    prompt = prompt.slice(0, end) + '\n\n... (prompt truncated due to size)\n';
   }
 
   return prompt.trim();

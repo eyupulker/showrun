@@ -15,43 +15,88 @@ import type { ProposedTechnique } from './types.js';
 // ═════════════════════════════════════════════════════════════════════════════
 
 export const SEED_TECHNIQUES: ProposedTechnique[] = [
-  // ── Priority 1: Critical (always loaded) ──────────────────────────────────
+  // ── Priority 2: Important (loaded early) ──────────────────────────────────
+  //
+  // NOTE: Techniques that overlap with system_prompt seeds have been removed:
+  //   - "API-First Data Extraction" → covered by Core Principle #4 + exploration checklist
+  //   - "Never Hardcode Credentials" → covered by system prompt + Editor Agent prompt
+  //   - "Prefer Role-Based Element Targets" → covered by Core Principle #7 + Editor Agent prompt
+  //   - "Network Replay Override Patterns" → covered by Phase 5 dynamic URL + Editor Agent prompt
+  //
+  // Anti-Bot + Login/Auth: important but situational — loaded early via
+  // `techniques_load(maxPriority: 2)` but NOT baked into the system prompt.
+  //
 
-  {
-    title: 'API-First Data Extraction',
-    content:
-      'When extracting data from any website, ALWAYS check for API endpoints first by calling `browser_network_list(filter: "api")` after page load and after every interaction. Most modern sites use XHR/fetch calls to load data. If an API returns the data you need, use `network_find` → `network_replay` → `network_extract` steps in the flow. DOM extraction should only be used as a last resort when no API exists.',
-    type: 'generic',
-    priority: 1,
-    domain: null,
-    category: 'api_extraction',
-    tags: ['api', 'extraction', 'network', 'best-practice'],
-    confidence: 1.0,
-  },
-  {
-    title: 'Never Hardcode Credentials',
-    content:
-      'Never hardcode credentials in flows. Use `{{secret.NAME}}` templates to reference secrets, and `request_secrets` to obtain them from the user. For login flows, use `skip_if` conditions so the flow skips login if already authenticated (check for a logged-in indicator element or URL). Use browser persistence (`profile` mode) to preserve cookies across runs.',
-    type: 'generic',
-    priority: 1,
-    domain: null,
-    category: 'auth',
-    tags: ['auth', 'login', 'secrets', 'security', 'best-practice'],
-    confidence: 1.0,
-  },
   {
     title: 'Anti-Bot Detection Awareness',
     content:
       'Some sites detect and block automated browsers. Signs include: CAPTCHA challenges, 403/429 responses, redirect to verification pages. If detected: (1) STOP immediately and report to user, (2) The Camoufox browser engine provides better anti-detection than plain Chromium, (3) Persistent browser profiles help maintain natural browsing patterns, (4) Add realistic delays between actions with `sleep` steps, (5) Never try to solve CAPTCHAs automatically.',
     type: 'generic',
-    priority: 1,
+    priority: 2,
     domain: null,
     category: 'anti_detection',
     tags: ['anti-detection', 'captcha', 'bot-detection', 'best-practice'],
     confidence: 1.0,
   },
 
-  // ── Priority 2: Important (loaded early) ──────────────────────────────────
+  {
+    title: 'Login & Authentication with Iframes and TOTP',
+    content:
+      `Many sites (LinkedIn, Microsoft, Google) render login forms inside cross-origin iframes. The browser tools handle this automatically:
+
+**Iframes:**
+- \`browser_get_dom_snapshot\` shows iframe contents (headings, inputs, buttons, links).
+- \`browser_type\` and \`browser_click\` automatically search all iframes when the element is not found on the main page. Use the label/linkText from the DOM snapshot.
+
+**Login Flow:**
+1. Navigate to the target URL.
+2. If redirected to login, call \`request_secrets\` for email + password. WAIT for user response.
+3. Type credentials: \`browser_type(text: "{{secret.EMAIL}}", label: "Email")\`, then \`browser_type(text: "{{secret.PASSWORD}}", label: "Password")\`.
+4. Click sign-in: \`browser_click(linkText: "Sign in", role: "button")\`.
+5. If 2FA/TOTP appears: call \`request_secrets\` for the TOTP secret key (e.g. LINKEDIN_TOTP).
+6. Type TOTP code with IMMEDIATE submit: \`browser_type(text: "{{secret.LINKEDIN_TOTP | totp}}", label: "verification code", submit: true)\`.
+   - The \`totp\` filter generates a 6-digit code. The code expires in 30 seconds.
+   - **CRITICAL: Always use submit=true** — this presses Enter immediately after typing, avoiding the 30-second expiration.
+7. Verify login by checking the page URL or taking a DOM snapshot.
+
+**Common Mistakes:**
+- Not using submit=true for TOTP → code expires before next tool call.
+- Typing TOTP and clicking submit as separate tool calls → adds 5-10 seconds of LLM thinking time, causing expiration.
+- Not requesting TOTP secret from user → using fake codes or guessing.`,
+    type: 'generic',
+    priority: 2,
+    domain: null,
+    category: 'auth',
+    tags: ['login', 'authentication', 'iframe', 'totp', '2fa', 'best-practice'],
+    confidence: 1.0,
+  },
+
+  {
+    title: 'LinkedIn Sales Navigator URL Encoding (pctEncode)',
+    content:
+      `LinkedIn Sales Navigator uses parentheses \`()\` as structural delimiters in its search query syntax (e.g. \`filters:List((type:CURRENT_COMPANY,values:List(...)))\`). The standard \`urlencode\` filter (which uses JavaScript's \`encodeURIComponent\`) does NOT encode \`( ) ! ' * ~\` per RFC 3986. This means dynamic input values containing these characters will break the query structure and cause 400 errors.
+
+**Solution:** Always use the \`pctEncode\` filter instead of \`urlencode\` for values embedded in LinkedIn Sales Navigator URLs:
+- Navigate URL: \`https://www.linkedin.com/sales/search/people?query=(filters:List((type:CURRENT_COMPANY,values:List((id:urn%3Ali%3Aorganization%3A{{inputs.company_id}},text:{{inputs.company_name | pctEncode}},selectionType:INCLUDED)))))\`
+- urlReplace override: \`{ "find": "Amazon", "replace": "{{inputs.company_name | pctEncode}}" }\`
+
+**When to Use:**
+- Any LinkedIn Sales Navigator API URL with user-provided input values (company names, search terms, etc.)
+- The \`pctEncode\` filter also encodes \`( ) ! ' * ~\` which \`urlencode\` leaves raw
+- Safe to use everywhere — it's a superset of \`urlencode\`
+
+**Dynamic URL Strategy for LinkedIn:**
+1. Build the navigate URL with Nunjucks templates and \`pctEncode\`
+2. The page load triggers the \`salesApiLeadSearch\` API call automatically
+3. Capture it with \`network_find\` (urlIncludes: "salesApiLeadSearch")
+4. Replay with \`overrides.url\` using the same templated URL pattern`,
+    type: 'specific',
+    priority: 2,
+    domain: 'linkedin.com',
+    category: 'network_patterns',
+    tags: ['linkedin', 'sales-navigator', 'url-encoding', 'pctEncode', 'urlencode', 'rfc-3986', 'best-practice'],
+    confidence: 1.0,
+  },
 
   {
     title: 'Pagination Detection Pattern',
@@ -62,28 +107,6 @@ export const SEED_TECHNIQUES: ProposedTechnique[] = [
     domain: null,
     category: 'pagination',
     tags: ['pagination', 'list', 'scrolling', 'best-practice'],
-    confidence: 1.0,
-  },
-  {
-    title: 'Prefer Role-Based Element Targets',
-    content:
-      'For element selection in DSL steps, prefer human-stable selectors over CSS selectors: (1) `{kind: "role", role: "button", name: "Submit"}` for buttons, links, etc., (2) `{kind: "text", text: "Sign In"}` for visible text, (3) `{kind: "label", text: "Email"}` for form fields, (4) `{kind: "placeholder", text: "Search..."}` for inputs. Only use `{kind: "css", selector: "..."}` as a last resort. Use `{anyOf: [...]}` to provide fallback selectors.',
-    type: 'generic',
-    priority: 2,
-    domain: null,
-    category: 'dom_extraction',
-    tags: ['selectors', 'targets', 'stability', 'best-practice'],
-    confidence: 1.0,
-  },
-  {
-    title: 'Network Replay Override Patterns',
-    content:
-      'When replaying API requests with different parameters in `network_replay` steps: (1) Use `overrides.setQuery` to modify query parameters (e.g., `{page: "{{vars.nextPage}}"})`), (2) Use `overrides.urlReplace` with regex for path parameters (e.g., `{find: "/page/\\\\d+", replace: "/page/{{inputs.page}}"}`), (3) Use `overrides.bodyReplace` for POST body modifications, (4) Always use Nunjucks templates: `{{inputs.x}}` for user inputs, `{{vars.x}}` for runtime variables, (5) Use `{{ value | urlencode }}` filter for URL-safe values.',
-    type: 'generic',
-    priority: 2,
-    domain: null,
-    category: 'network_patterns',
-    tags: ['network', 'replay', 'overrides', 'api', 'templates'],
     confidence: 1.0,
   },
 
@@ -280,7 +303,7 @@ Parse the user's request into a structured goal. Ask clarifying questions if nee
 - Never reply with generic "here is what you can do" without calling tools. Always use browser tools, network tools, or agent_build_flow as needed.
 - Never refuse to use network tools or suggest manual extraction instead.
 - When calling agent_build_flow: include ALL discovered API endpoints (URL, method, response structure), DOM structure notes, auth info, pagination details. The Editor Agent has NO browser access—it can only build from what you provide.
-- Templating in DSL steps uses Nunjucks: {{inputs.x}}, {{vars.x}}, {{secret.NAME}}. For URL values use {{ inputs.x | urlencode }}.
+- Templating in DSL steps uses Nunjucks: {{inputs.x}}, {{vars.x}}, {{secret.NAME}}. For URL values use {{ inputs.x | urlencode }}. If URLs use parentheses as structural delimiters (e.g. LinkedIn query syntax), use {{ inputs.x | pctEncode }} instead — it also encodes ( ) ! ' * ~ that urlencode leaves raw, preventing 400 errors.
 - If a tool call returns an error: do NOT retry the same call with identical arguments. Reply to the user with the error and suggest a different approach. One retry at most; then stop and respond.
 - If techniques tools are available: ALWAYS call techniques_load(maxPriority: 2) at the START of every session. If a domain is detected, include it to also load domain-specific techniques.
 - HYPOTHESIS-FIRST: If specific techniques exist for the target site, form a hypothesis and try building the flow BEFORE doing full exploration. Only explore if the hypothesis-based flow fails testing.
@@ -313,7 +336,8 @@ Parse the user's request into a structured goal. Ask clarifying questions if nee
 - [ ] **Determined whether data is available via API** — if YES, inspected with \`browser_network_get_response\`
 - [ ] If data comes from API: noted endpoint URL, method, response structure
 - [ ] If NO API found: confirmed by checking after multiple interactions
-- [ ] If filtering/pagination exists: understood how it works
+- [ ] If filtering exists: **tested URL-based filtering** — navigated to URL with query params (e.g., \`?batch=X\`) and checked if API request reflects the filter. If YES, note this for Editor Agent.
+- [ ] If pagination exists: understood how it works (query params, offsets, cursors)
 - [ ] If authentication is needed: obtained credentials via \`request_secrets\` AND logged in
 - [ ] Did NOT encounter unresolved blockers
 - [ ] Documented all findings in an Exploration Report
@@ -335,7 +359,9 @@ Parse the user's request into a structured goal. Ask clarifying questions if nee
 4. Trigger actions and capture APIs: Click, then \`browser_network_list(filter: "api")\` again
 5. Search for target data: \`browser_network_search(query)\`
 6. Inspect promising APIs: \`browser_network_get_response(requestId)\`
-7. Only if no APIs found: examine DOM for direct extraction
+7. **Test URL-based filtering**: If filtering is involved, try changing the URL query params (e.g., \`?batch=Summer+2024\`) and check if the API request automatically reflects the new filter. If yes, note "URL-based filtering is supported" — this means the Editor Agent can use a dynamic URL template instead of bodyReplace.
+8. **Test API parameterization**: Use \`browser_network_replay\` with different parameters to verify API responds correctly
+9. Only if no APIs found: examine DOM for direct extraction
 
 ### When to Stop and Ask User
 
@@ -374,8 +400,14 @@ Parse the user's request into a structured goal. Ask clarifying questions if nee
 ### Bot Detection
 - None / Detected (type)
 
+### URL-Based Filtering
+- **Supported**: YES / NO
+- If YES: changing URL query params (e.g., \`?batch=X\`) causes the API to return filtered data → recommend dynamic URL template to Editor Agent
+
 ### Recommended Approach
 **API-based** / **DOM extraction** — with reasoning
+- If API + URL filtering supported → recommend **dynamic URL + bodyReplace** (dynamic URL for browser mode, bodyReplace for HTTP-only cached mode)
+- If API + POST body filtering only → recommend **bodyReplace** (include raw POST body)
 
 ### Browser Settings Recommendation
 - **Engine**: chromium / camoufox
@@ -420,10 +452,12 @@ Generate a high-level implementation plan based on **concrete exploration findin
 - [Potential issues and how to handle them]
 \`\`\`
 
-## PHASE 4: APPROVE ROADMAP
+## PHASE 4: APPROVE ROADMAP (MANDATORY)
 
-Present the roadmap and wait for explicit approval:
+Present the roadmap to the user and WAIT for explicit approval before proceeding.
 **Reply "approved" to proceed, or let me know what changes you'd like.**
+
+**DO NOT skip this step.** Even for hypothesis-based flows, the roadmap must be shown to the user. Only proceed to Phase 5 after user approval.
 
 ## PHASE 5: DELEGATE TO EDITOR
 
@@ -449,6 +483,10 @@ The Editor Agent has NO browser access — it can only build flows from what you
 4. **Pagination**: How pagination works (query params, request body, page tokens)
 5. **Network Patterns**: URL patterns for \`network_find\` (e.g., \`urlIncludes: "/api/companies"\`)
 6. **Data Shape**: Example of the response data structure with field names
+7. **For POST APIs**: Include the **EXACT raw request body** (verbatim) so the Editor Agent can construct body overrides if needed
+8. **URL-BASED FILTERING (CRITICAL)**: If the site supports URL query params for filtering (e.g., \`/companies?batch=Winter+2025\` triggers the API with that filter already applied), tell the Editor Agent:
+   - "**URL-based filtering is supported.** Use a DYNAMIC URL in the navigate step with Nunjucks templates: \`https://example.com/companies?batch={{inputs.batch | urlencode}}\`. ALSO add a \`bodyReplace\` on the \`network_replay\` step to swap the filter value — this is required for HTTP-only mode where the navigate step is skipped and cached snapshots are replayed."
+   - Include the EXACT filter value pattern found in the POST body (e.g., \`batch%3AWinter%202025\`) so the Editor Agent can build a regex bodyReplace to match it.
 
 ### Handling agent_build_flow Results
 

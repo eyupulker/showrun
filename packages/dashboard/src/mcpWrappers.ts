@@ -29,6 +29,7 @@ import { existsSync } from 'fs';
  */
 export type FlowPatchOp =
   | { op: 'append'; step: DslStep }
+  | { op: 'batch_append'; steps: DslStep[] }
   | { op: 'insert'; index: number; step: DslStep }
   | { op: 'replace'; index: number; step: DslStep }
   | { op: 'delete'; index: number }
@@ -44,6 +45,8 @@ export interface RunPackResult {
   collectibles: Record<string, unknown>;
   meta: { url?: string; durationMs: number; notes?: string };
   error?: string;
+  /** Step ID that caused the failure (only on error) */
+  failedStepId?: string;
   /**
    * Diagnostic hints from JSONPath operations (e.g., unsupported syntax, empty results).
    * These help AI agents understand why data extraction may have failed.
@@ -297,6 +300,23 @@ export class TaskPackEditorWrapper {
         }
         newFlow.push(resolvedPatch.step as DslStep);
         break;
+      case 'batch_append': {
+        const batchSteps = (resolvedPatch as { op: 'batch_append'; steps: unknown }).steps;
+        if (!Array.isArray(batchSteps) || batchSteps.length === 0) {
+          throw new Error("batch_append requires steps (non-empty array of { id, type, params }).");
+        }
+        for (let i = 0; i < batchSteps.length; i++) {
+          const s = batchSteps[i];
+          if (!s || typeof s !== 'object' || Array.isArray(s)) {
+            throw new Error(`batch_append: steps[${i}] is not an object. Each step must have id, type, and params.`);
+          }
+          if (!('id' in s) || !('type' in s) || !('params' in s)) {
+            throw new Error(`batch_append: steps[${i}] must have id, type, and params.`);
+          }
+          newFlow.push(s as DslStep);
+        }
+        break;
+      }
       case 'insert':
         if (resolvedPatch.index === undefined || !resolvedPatch.step || typeof resolvedPatch.step !== 'object' || Array.isArray(resolvedPatch.step)) {
           throw new Error(
@@ -354,10 +374,22 @@ export class TaskPackEditorWrapper {
       validateJsonTaskPack(tempPack);
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      const stepType = (step as any)?.type;
-      const hint = stepType ? getStepParamsHint(stepType) : '';
+      // For batch_append, try to identify the failing step from the error message
+      let hint = '';
+      if (resolvedPatch.op === 'batch_append' && Array.isArray((resolvedPatch as any).steps)) {
+        const idxMatch = msg.match(/steps\[(\d+)\]/);
+        if (idxMatch) {
+          const failedStep = (resolvedPatch as any).steps[parseInt(idxMatch[1])];
+          const stepType = failedStep?.type;
+          hint = stepType ? getStepParamsHint(stepType) : '';
+        }
+      }
+      if (!hint) {
+        const stepType = (step as any)?.type;
+        hint = stepType ? getStepParamsHint(stepType) : '';
+      }
       throw new Error(
-        `Step validation failed:\n${msg}${hint ? `\n\nHint for "${stepType}": ${hint}` : ''}`
+        `Step validation failed:\n${msg}${hint ? `\n\nHint: ${hint}` : ''}`
       );
     }
 
@@ -410,27 +442,37 @@ export class TaskPackEditorWrapper {
           type: c.type,
           description: c.description,
         }));
-        store.store({
-          key: resultKey,
-          packId,
-          toolName: packInfo.toolName,
-          inputs,
-          collectibles: result.collectibles,
-          meta: result.meta,
-          collectibleSchema: schema,
-          storedAt: new Date().toISOString(),
-          ranAt,
-          version: 1,
-        }).catch((err) => {
+        try {
+          await store.store({
+            key: resultKey,
+            packId,
+            toolName: packInfo.toolName,
+            inputs,
+            collectibles: result.collectibles,
+            meta: result.meta,
+            collectibleSchema: schema,
+            storedAt: new Date().toISOString(),
+            ranAt,
+            version: 1,
+          });
+        } catch (err) {
           console.error(`[Dashboard] Failed to store result for ${packId}: ${err}`);
-        });
+        }
       }
 
+      // Detect failure from runner result (runner catches errors and returns partial results)
+      const hasError = !!(result as any).failedStepId || result.meta.notes?.startsWith('Error');
       const packResult: RunPackResult = {
-        success: true,
+        success: !hasError,
         collectibles: result.collectibles,
         meta: result.meta,
       };
+
+      // Surface failedStepId and error info from runner
+      if ((result as any).failedStepId) {
+        packResult.failedStepId = (result as any).failedStepId;
+        packResult.error = result.meta.notes;
+      }
 
       // Propagate diagnostic hints if present
       if (result._hints && result._hints.length > 0) {
@@ -445,12 +487,21 @@ export class TaskPackEditorWrapper {
       return packResult;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
-      return {
+      // Extract partial results from enriched error (set by interpreter via runner)
+      const partialResult = (error as any)?.partialResult as
+        | { collectibles: Record<string, unknown>; stepsExecuted: number; failedStepId: string }
+        | undefined;
+
+      const failResult: RunPackResult = {
         success: false,
-        collectibles: {},
+        collectibles: partialResult?.collectibles ?? {},
         meta: { durationMs: 0 },
         error: errorMessage,
       };
+      if (partialResult?.failedStepId) {
+        failResult.failedStepId = partialResult.failedStepId;
+      }
+      return failResult;
     }
   }
 }

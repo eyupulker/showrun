@@ -286,6 +286,24 @@ export async function runTaskPack(
       }
     }
 
+    // Extract partial results from enriched error (set by interpreter)
+    const partialResult = (error as any)?.partialResult as
+      | { collectibles: Record<string, unknown>; stepsExecuted: number; failedStepId: string }
+      | undefined;
+
+    // Filter partial collectibles to only include declared ones
+    let partialCollectibles: Record<string, unknown> = {};
+    if (partialResult?.collectibles) {
+      const definedCollectibleNames = new Set(
+        (taskPack.collectibles || []).map(c => c.name)
+      );
+      for (const [key, value] of Object.entries(partialResult.collectibles)) {
+        if (definedCollectibleNames.has(key)) {
+          partialCollectibles[key] = value;
+        }
+      }
+    }
+
     // Log run finish with failure
     logger.log({
       type: 'run_finished',
@@ -296,16 +314,23 @@ export async function runTaskPack(
     });
 
     // Return partial result with paths even on error
-    return {
-      collectibles: {},
+    const failResult: RunTaskPackResult = {
+      collectibles: partialCollectibles,
       meta: {
         durationMs,
-        notes: `Error: ${errorMessage}`,
+        notes: `Error at step "${partialResult?.failedStepId ?? 'unknown'}": ${errorMessage}`,
       },
       runDir,
       eventsPath,
       artifactsDir,
     };
+
+    // Include failedStepId for AI agents
+    if (partialResult?.failedStepId) {
+      (failResult as any).failedStepId = partialResult.failedStepId;
+    }
+
+    return failResult;
   } finally {
     // Cleanup using unified browser session close
     if (browserSession) {
@@ -457,10 +482,10 @@ function captureSnapshots(
               : undefined,
             setHeaders: step.params.overrides.setHeaders,
             urlReplace: step.params.overrides.urlReplace
-              ? [step.params.overrides.urlReplace]
+              ? (Array.isArray(step.params.overrides.urlReplace) ? step.params.overrides.urlReplace : [step.params.overrides.urlReplace])
               : undefined,
             bodyReplace: step.params.overrides.bodyReplace
-              ? [step.params.overrides.bodyReplace]
+              ? (Array.isArray(step.params.overrides.bodyReplace) ? step.params.overrides.bodyReplace : [step.params.overrides.bodyReplace])
               : undefined,
           }
         : undefined,

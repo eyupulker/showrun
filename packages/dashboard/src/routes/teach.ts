@@ -314,27 +314,33 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         // Get first user message for pack naming
         const firstUserMsg = messages.find((m) => m.role === 'user')?.content || '';
 
-        try {
-          const packInfo = await runPackInitializer(
-            firstUserMsg,
-            ctx.taskPackEditor,
-            conversationId,
-            ctx.llmProvider
-          );
-          effectivePackId = packInfo.id;
-        } catch (err) {
-          console.error('[PackInit] LLM-based init failed, using fallback:', err);
-          // Fallback: create pack with deterministic ID, no LLM needed
+        const MAX_PACK_INIT_RETRIES = 3;
+        for (let attempt = 0; attempt < MAX_PACK_INIT_RETRIES; attempt++) {
           try {
-            const fallbackId = `pack-${Date.now().toString(36)}`;
-            const fallbackName = firstUserMsg.slice(0, 60) || 'New Automation';
-            await ctx.taskPackEditor.createPack(fallbackId, fallbackName);
-            updateConversation(conversationId, { packId: fallbackId });
-            effectivePackId = fallbackId;
-            console.log(`[PackInit] Fallback pack created: "${fallbackId}"`);
-          } catch (fallbackErr) {
-            console.error('[PackInit] Fallback pack creation also failed:', fallbackErr);
-            // Only now do we continue without a pack
+            if (attempt === 0 && ctx.llmProvider) {
+              const packInfo = await runPackInitializer(
+                firstUserMsg,
+                ctx.taskPackEditor,
+                conversationId,
+                ctx.llmProvider
+              );
+              effectivePackId = packInfo.id;
+            } else {
+              // Retry with fallback: timestamp-based ID
+              const fallbackId = `pack-${Date.now().toString(36)}-${attempt}`;
+              const fallbackName = firstUserMsg.slice(0, 60) || 'New Automation';
+              await ctx.taskPackEditor.createPack(fallbackId, fallbackName);
+              updateConversation(conversationId, { packId: fallbackId });
+              effectivePackId = fallbackId;
+              console.log(`[PackInit] Fallback pack created: "${fallbackId}"`);
+            }
+            break; // success
+          } catch (err) {
+            console.error(`[PackInit] Attempt ${attempt + 1}/${MAX_PACK_INIT_RETRIES} failed:`, err);
+            if (attempt === MAX_PACK_INIT_RETRIES - 1) {
+              // All retries exhausted — abort with error (streaming hasn't started yet)
+              return res.status(500).json({ error: 'Failed to initialize task pack after multiple attempts' });
+            }
           }
         }
 
@@ -365,7 +371,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         const urlMatch = firstUserMsg.match(/https?:\/\/(?:www\.)?([^\/\s]+)/i);
         const domain = urlMatch ? urlMatch[1] : undefined;
 
-        systemPrompt = await assembleSystemPrompt(ctx.techniqueManager, domain);
+        systemPrompt = await assembleSystemPrompt(ctx.techniqueManager, domain, 2, ctx.llmProvider!.countTokens.bind(ctx.llmProvider));
       } catch (err) {
         console.warn('[Agent] Failed to assemble system prompt from DB, using fallback:', err);
         systemPrompt = ctx.systemPrompt;
@@ -417,7 +423,13 @@ export function createTeachRouter(ctx: DashboardContext): Router {
     });
 
     const writeStreamLine = (obj: object) => {
-      if (streamFlow && !aborted) res.write(JSON.stringify(obj) + '\n');
+      if (streamFlow && !aborted) {
+        try {
+          res.write(JSON.stringify(obj) + '\n');
+        } catch {
+          aborted = true;
+        }
+      }
     };
 
     // Check if provider supports streaming
@@ -503,7 +515,8 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         }
 
         // Check token count and summarize if needed
-        const tokenEstimate = estimateTotalTokens(systemPrompt, agentMessages);
+        const countTokensFn = ctx.llmProvider!.countTokens.bind(ctx.llmProvider);
+        const tokenEstimate = estimateTotalTokens(systemPrompt, agentMessages, countTokensFn);
         if (tokenEstimate > 100_000) {
           console.log(`[Agent] Token estimate ${tokenEstimate} exceeds threshold, attempting summarization...`);
           writeStreamLine({ type: 'summarizing', tokensBefore: tokenEstimate });
@@ -545,6 +558,8 @@ export function createTeachRouter(ctx: DashboardContext): Router {
               }
               return;
             }
+          } else if (result.toolCalls.length > 0) {
+            nonEditorRounds = 0; // Reset when non-browser tools are used
           }
 
           agentMessages.push({
@@ -817,13 +832,18 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                   // Block execution until user provides secrets
                   console.log(`[Agent] Waiting for user to provide secrets for conversation ${conversationId}...`);
                   const secretNames = await new Promise<string[]>((resolve, reject) => {
-                    // Store the resolve function so the secrets-filled endpoint can call it
-                    ctx.pendingSecretsRequests.set(conversationId, { resolve, reject });
+                    let settled = false;
+                    // Store the resolve/reject functions so the secrets-filled endpoint can call them
+                    ctx.pendingSecretsRequests.set(conversationId, {
+                      resolve: (v) => { if (!settled) { settled = true; resolve(v); } },
+                      reject: (e) => { if (!settled) { settled = true; reject(e); } },
+                    });
 
                     // Set a timeout (5 minutes) to prevent hanging forever
                     setTimeout(() => {
-                      if (ctx.pendingSecretsRequests.has(conversationId)) {
+                      if (!settled && ctx.pendingSecretsRequests.has(conversationId)) {
                         ctx.pendingSecretsRequests.delete(conversationId);
+                        settled = true;
                         reject(new Error('Timeout waiting for secrets - user did not respond within 5 minutes'));
                       }
                     }, 5 * 60 * 1000);

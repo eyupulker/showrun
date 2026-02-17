@@ -416,10 +416,10 @@ export interface NetworkReplayStep extends BaseDslStep {
       setQuery?: Record<string, string | number>;
       setHeaders?: Record<string, string>;
       body?: string;
-      /** Regex find/replace on captured URL; replace can use $1, $2. Supports {{vars.xxx}}/{{inputs.xxx}} (resolved before replace). */
-      urlReplace?: { find: string; replace: string };
-      /** Regex find/replace on captured body; replace can use $1, $2. Supports {{vars.xxx}}/{{inputs.xxx}} (resolved before replace). */
-      bodyReplace?: { find: string; replace: string };
+      /** Regex find/replace on captured URL; replace can use $1, $2. Supports {{vars.xxx}}/{{inputs.xxx}} (resolved before replace). Accepts single object or array. */
+      urlReplace?: { find: string; replace: string } | Array<{ find: string; replace: string }>;
+      /** Regex find/replace on captured body; replace can use $1, $2. Supports {{vars.xxx}}/{{inputs.xxx}} (resolved before replace). Accepts single object or array. */
+      bodyReplace?: { find: string; replace: string } | Array<{ find: string; replace: string }>;
     };
     auth: 'browser_context'; // required for MVP
     out: string; // collectible key

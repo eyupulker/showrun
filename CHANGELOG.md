@@ -10,6 +10,59 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] LinkedIn Sales Navigator `pctEncode` seed technique — domain-specific knowledge for correct URL encoding with `()` delimiters in Sales Navigator query syntax
+- [fixed] `urlReplace`/`bodyReplace` array values now pass flow validation (runtime already supported arrays, but `validation.ts` rejected them)
+- [changed] Editor Agent prompt: added complete flow.json example, consolidated override strategies (A/B/C), added common mistakes for missing `id`/`type`/`params` and one-at-a-time appends
+- [changed] Knowledge techniques "Anti-Bot Detection Awareness" and "Login & Authentication with Iframes and TOTP" downgraded from P1 to P2 — still loaded early via `techniques_load(maxPriority: 2)` but no longer in always-present system prompt
+- [fixed] `seedIfEmpty()` now detects priority changes in seed techniques (previously only triggered on content changes)
+- [added] `GET /api/browser/screenshot/:conversationId` endpoint — returns raw PNG screenshot of the agent's browser, works regardless of window state (headless, minimized, etc.)
+- [fixed] `browser_type` now falls back to keyboard-based typing (`page.keyboard.type()`) when Playwright's `fill()` silently fails — fixes TOTP and other iframe input fields where programmatic value setting doesn't trigger input handlers
+- [added] `pctEncode` template filter — like `urlencode` but also encodes parentheses and other RFC 3986 unreserved chars that `encodeURIComponent` leaves raw, fixing 400 errors on APIs that use `()` as structural delimiters (e.g. LinkedIn Sales Navigator)
+- [fixed] HTTP-only mode now applies flow-level `overrides` (bodyReplace, urlReplace, setQuery, etc.) from `network_replay` steps — previously only snapshot-level overrides were used, causing cached replays to ignore step overrides
+- [changed] Editor Agent Strategy 0 corrected: dynamic URL now paired with bodyReplace for HTTP-only cached mode compatibility (was incorrectly claiming "no overrides needed")
+- [changed] Exploration Agent seed techniques updated to recommend bodyReplace alongside dynamic URL for HTTP-only mode support
+- [changed] Editor Agent now verifies collectible data content after test runs — checks for correct filtering, non-empty results, and data structure
+- [changed] Phase 4 (roadmap approval) explicitly marked as MANDATORY — cannot be skipped even for hypothesis-based flows
+- [changed] Exploration Completeness Checklist now requires explicit URL-based filtering test before proceeding to roadmap
+- [removed] 4 redundant knowledge seed techniques that overlapped with system_prompt seeds: API-First Data Extraction, Never Hardcode Credentials, Prefer Role-Based Element Targets, Network Replay Override Patterns
+- [changed] `seedIfEmpty()` now updates existing seed techniques whose content has changed AND removes stale seeds no longer in the seed list
+- [changed] Exploration Agent seed technique Phase 5 now includes dynamic URL recommendation and raw POST body guidance
+- [changed] Exploration Agent seed technique Phase 2 now includes URL-based filtering detection step in exploration strategy
+- [added] Editor Agent Strategy 0 (Dynamic URL) — navigate with Nunjucks-templated URL so API requests automatically have correct filters, eliminating need for bodyReplace
+- [changed] Exploration Agent Phase 5 now explicitly instructs to recommend dynamic URL approach over bodyReplace when URL-based filtering is supported
+- [added] Editor Agent FAST PATH guide — teaches agent to build API flows in 5 calls using `batch_append`, `saveAs`/`fromVar` pattern, reducing wasted iterations
+- [changed] Editor Agent overrides documentation rewritten with 5-strategy decision guide — "dynamic URL with no overrides" is now the preferred strategy when URL filtering works
+- [changed] Exploration Agent now instructed to report URL-based filtering support and recommend dynamic URL templates for Editor Agent
+- [added] Comprehensive `overrides` documentation in Editor Agent prompt — covers `bodyReplace`, `urlReplace`, `setQuery`, `setHeaders`, `body` with examples for JSON and URL-encoded bodies
+- [changed] Exploration Agent fallback prompt adds Phase 0 (LOAD KNOWLEDGE) and Phase 6b (CAPTURE LEARNINGS) for Techniques DB integration
+- [changed] Exploration Agent now instructed to include raw POST body in `agent_build_flow` exploration context for reliable Editor Agent body overrides
+- [changed] `techniques_search` tool description clarifies that matching techniques can replace exploration for known domains
+- [added] Provider-based token counting — `LlmProvider.countTokens()` replaces heuristic char/4 estimation for accurate context management
+- [added] `@anthropic-ai/tokenizer` for precise Anthropic token counts; OpenAI uses char/4 heuristic
+- [fixed] Token estimation for images now uses fixed ~1600 tokens instead of broken `url.length / 25` formula
+- [fixed] Template resolution errors now surfaced to agent instead of silently returning raw `{{secret.X}}` syntax
+- [fixed] Summarization fallback now correctly reports `wasSummarized: false` when truncation is used instead of summarization
+- [fixed] `nonEditorRounds` counter now resets when non-browser tools are called, preventing false "max iterations" errors
+- [fixed] Streaming `res.write()` errors now caught and set `aborted = true` instead of crashing the agent loop
+- [fixed] Pack initializer now retries up to 3 times with fallback IDs before aborting
+- [fixed] Stale browser screenshots no longer re-injected across tool iterations in agent loop
+- [fixed] Result store operations now awaited instead of fire-and-forget, preventing silent data loss
+- [fixed] `skip_if` condition errors now logged to structured logger and surfaced in `_hints` for agent visibility
+- [fixed] JMESPath empty-result hints now include actual top-level keys to help agents debug path issues
+- [fixed] Sensitive info (tokens, passwords, credentials) redacted from error messages returned to agents
+- [fixed] Browser session creation race condition prevented with per-conversation locking
+- [fixed] Secrets timeout race condition prevented with settled flag for double-resolution guard
+- [fixed] `batch_append` validation errors now provide per-step type hints from the failing step
+- [changed] Prompt assembly uses token-based truncation (12k tokens) via provider tokenizer when available
+- [fixed] Editor Agent success heuristic now requires a passing `editor_run_pack` call — step creation alone no longer counts as success
+- [fixed] Truncated `editor_run_pack` output no longer silently loses test result info — extracts success/error via regex when JSON is truncated
+- [fixed] `urlReplace`/`bodyReplace` overrides now accept both single object and array in DSL types, browser inspector, and core network capture
+- [added] Template resolution (Nunjucks) for `browser_network_replay` overrides — `{{secret.X}}` and other templates now work in override values
+- [added] `batch_append` op for `editor_apply_flow_patch` — add multiple steps in a single call to save context and turns
+- [changed] `isLikelyApi` heuristic now detects `application/json` Content-Type, `.json` URLs, `/rest/`, `/data/` patterns
+- [changed] Network capture limits increased: `POST_DATA_CAP` 500→4000, `RESPONSE_BODY_CAPTURE_MAX` 2000→8000
+- [changed] Network buffer eviction now preserves API entries — non-API static resources are evicted first when buffer is full
+- [added] Step-level failure info surfaced on flow errors — `failedStepId`, partial collectibles, and enriched error messages now returned to AI agents
 - [changed] Consolidated duplicated MCP server tool registration into shared `toolRegistration.ts` module
 - [added] Pluggable result store for persisting MCP run outputs — per-pack `results.db` with SQLite backend
 - [added] `showrun_query_results` MCP tool for querying/filtering stored results with JMESPath

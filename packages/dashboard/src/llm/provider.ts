@@ -50,6 +50,8 @@ export type StreamEvent =
 
 export interface LlmProvider {
   name: string;
+  /** Count tokens in a text string. Used for context window management. */
+  countTokens(text: string): number;
   generateJson<T>(args: {
     system: string;
     prompt: string;

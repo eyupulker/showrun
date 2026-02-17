@@ -13,6 +13,7 @@ import type {
   ContentPart,
   StreamEvent,
 } from './provider.js';
+import { countTokens as anthropicCountTokens } from '@anthropic-ai/tokenizer';
 
 const DEFAULT_MODEL = 'claude-sonnet-4-20250514';
 const DEFAULT_MAX_TOKENS = 16000;
@@ -175,6 +176,10 @@ export class AnthropicProvider implements LlmProvider {
   private apiKey: string;
   private baseUrl: string;
   private model: string;
+
+  countTokens(text: string): number {
+    return anthropicCountTokens(text);
+  }
 
   constructor() {
     const apiKey = process.env.ANTHROPIC_API_KEY;

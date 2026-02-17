@@ -94,6 +94,11 @@ export class OpenAIProvider implements LlmProvider {
   private apiKey: string;
   private baseUrl: string;
 
+  countTokens(text: string): number {
+    // Approximate: ~4 chars per token for GPT-4 class models
+    return Math.ceil(text.length / 4);
+  }
+
   constructor() {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {

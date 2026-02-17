@@ -35,6 +35,8 @@ export default defineConfig({
     'nunjucks',
     'jmespath',
     '@anthropic-ai/sdk',
+    '@anthropic-ai/tokenizer',
+    'tiktoken',
     '@modelcontextprotocol/sdk',
     '@showrun/techniques',
   ],

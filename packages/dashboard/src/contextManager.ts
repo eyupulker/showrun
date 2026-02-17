@@ -6,8 +6,11 @@
 import type { LlmProvider } from './llm/provider.js';
 import { getConversationPlan, setConversationPlan } from './db.js';
 
-// Token estimation: ~4 characters per token (rough approximation for Claude)
-const CHARS_PER_TOKEN = 4;
+// Fallback token estimation: ~4 characters per token
+const FALLBACK_CHARS_PER_TOKEN = 4;
+
+// Fixed token estimate per image (dimensions unavailable from base64)
+const TOKENS_PER_IMAGE = 1600;
 
 // Thresholds
 const TOKEN_LIMIT_SOFT = 100_000;  // Start summarizing at this point
@@ -27,53 +30,54 @@ export type AgentMessage =
 // Internal alias for backward compat within this file
 type AgentMsg = AgentMessage;
 
+/** Default tokenizer: chars / 4 heuristic */
+function fallbackCountTokens(text: string): number {
+  return Math.ceil(text.length / FALLBACK_CHARS_PER_TOKEN);
+}
+
 /**
- * Estimate token count for a message
+ * Estimate token count for a message using the provided tokenizer
  */
-function estimateMessageTokens(msg: AgentMsg): number {
-  let chars = 0;
+function estimateMessageTokens(msg: AgentMsg, countTokensFn: (text: string) => number): number {
+  let tokens = 0;
 
   if (typeof msg.content === 'string') {
-    chars += msg.content?.length || 0;
+    tokens += msg.content ? countTokensFn(msg.content) : 0;
   } else if (Array.isArray(msg.content)) {
     for (const part of msg.content) {
       if (part.type === 'text') {
-        chars += part.text.length;
+        tokens += countTokensFn(part.text);
       } else if (part.type === 'image_url') {
-        // Images are roughly 1000-2000 tokens depending on size
-        // Base64 encoded images are large, estimate conservatively
-        const url = part.image_url.url;
-        if (url.startsWith('data:')) {
-          // Estimate based on base64 length (roughly 1 token per 100 base64 chars for images)
-          chars += Math.min(url.length / 25, 8000); // Cap at ~2000 tokens per image
-        } else {
-          chars += 1000 * CHARS_PER_TOKEN; // URL reference, estimate 1000 tokens
-        }
+        // Fixed estimate per image — dimensions unavailable from base64
+        tokens += TOKENS_PER_IMAGE;
       }
     }
   }
 
   // Add overhead for role, tool_calls structure, etc.
   if ('tool_calls' in msg && msg.tool_calls) {
-    chars += JSON.stringify(msg.tool_calls).length;
+    tokens += countTokensFn(JSON.stringify(msg.tool_calls));
   }
   if ('tool_call_id' in msg) {
-    chars += 50; // Overhead for tool response structure
+    tokens += 15; // Overhead for tool response structure
   }
 
-  return Math.ceil(chars / CHARS_PER_TOKEN);
+  return tokens;
 }
 
 /**
- * Estimate total tokens for system prompt + messages
+ * Estimate total tokens for system prompt + messages.
+ * Accepts an optional countTokensFn from the LLM provider for accurate estimation.
  */
 export function estimateTotalTokens<T extends { role: string; content: unknown; tool_calls?: unknown[]; tool_call_id?: string }>(
   systemPrompt: string,
-  messages: T[]
+  messages: T[],
+  countTokensFn?: (text: string) => number
 ): number {
-  let total = Math.ceil(systemPrompt.length / CHARS_PER_TOKEN);
+  const counter = countTokensFn ?? fallbackCountTokens;
+  let total = counter(systemPrompt);
   for (const msg of messages) {
-    total += estimateMessageTokens(msg as unknown as AgentMsg);
+    total += estimateMessageTokens(msg as unknown as AgentMsg, counter);
   }
   return total;
 }
@@ -171,7 +175,8 @@ export async function summarizeIfNeeded<T extends AgentMessage>(
   sessionKey?: string,
   options?: { force?: boolean }
 ): Promise<{ messages: T[]; wasSummarized: boolean; tokensBefore: number; tokensAfter: number }> {
-  const tokensBefore = estimateTotalTokens(systemPrompt, messages);
+  const countTokensFn = llmProvider.countTokens.bind(llmProvider);
+  const tokensBefore = estimateTotalTokens(systemPrompt, messages, countTokensFn);
 
   // Check if we need to summarize (skip check when force is true)
   if (!options?.force && tokensBefore < TOKEN_LIMIT_SOFT) {
@@ -247,7 +252,7 @@ Keep the summary under 2000 words. Focus on information needed to continue the c
     } as T;
 
     const newMessages: T[] = [summaryMessage, ...recentMessages];
-    const tokensAfter = estimateTotalTokens(systemPrompt, newMessages);
+    const tokensAfter = estimateTotalTokens(systemPrompt, newMessages, countTokensFn);
 
     console.log(`[ContextManager] Summarized ${olderMessages.length} messages. Tokens: ${tokensBefore} -> ${tokensAfter}`);
 
@@ -256,17 +261,17 @@ Keep the summary under 2000 words. Focus on information needed to continue the c
       console.log(`[ContextManager] Still over hard limit, truncating recent messages`);
       // Keep only the summary and last 3 messages
       const truncatedMessages: T[] = [summaryMessage, ...recentMessages.slice(-3)];
-      const tokensFinal = estimateTotalTokens(systemPrompt, truncatedMessages);
+      const tokensFinal = estimateTotalTokens(systemPrompt, truncatedMessages, countTokensFn);
       return { messages: truncatedMessages, wasSummarized: true, tokensBefore, tokensAfter: tokensFinal };
     }
 
     return { messages: newMessages, wasSummarized: true, tokensBefore, tokensAfter };
   } catch (error) {
-    console.error(`[ContextManager] Summarization failed:`, error);
-    // Fallback: just truncate older messages
+    // C3: Summarization failed — return wasSummarized: false since we only truncated
+    console.error(`[ContextManager] Summarization FAILED — falling back to message truncation (information may be lost)`);
     const fallbackMessages = messages.slice(-RECENT_MESSAGES_TO_KEEP);
-    const tokensAfter = estimateTotalTokens(systemPrompt, fallbackMessages);
-    return { messages: fallbackMessages, wasSummarized: true, tokensBefore, tokensAfter };
+    const tokensAfter = estimateTotalTokens(systemPrompt, fallbackMessages, countTokensFn);
+    return { messages: fallbackMessages, wasSummarized: false, tokensBefore, tokensAfter };
   }
 }
 

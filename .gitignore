@@ -55,3 +55,6 @@ taskpacks_local/
 
 # DB files
 *.db*
+
+# Claude Code local files (may contain credentials)
+.claude/*.local.md

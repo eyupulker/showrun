@@ -16,6 +16,16 @@ import {
 import { join } from 'path';
 import { mkdirSync } from 'fs';
 
+/**
+ * Redact common sensitive patterns (tokens, passwords, credentials) from error messages.
+ */
+function redactSensitive(msg: string): string {
+  return msg
+    .replace(/(?:Bearer|Basic)\s+\S+/gi, (m) => m.split(/\s+/)[0] + ' [REDACTED]')
+    .replace(/(api[_-]?key|token|password|secret|authorization)[=:]\s*\S+/gi, '$1=[REDACTED]')
+    .replace(/(?<=:\/\/)[^:]+:[^@]+(?=@)/g, '[REDACTED]:[REDACTED]');
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Browser Session Management (per-conversation, in-memory)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -80,19 +90,24 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     function: {
       name: 'editor_apply_flow_patch',
       description:
-        'Apply ONE patch to the linked pack\'s flow.json. Pass flat params: op, and for the op: index?, step?, collectibles?, inputs? at top level (no nested patch object). append: op + step. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. update_inputs: op + inputs. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID; response.path uses JMESPath), network_extract (fromVar, as, path (JMESPath expression, e.g. "results[*].{id: id, name: name}"), out), select_option (target, value: string|{label}|{index}|array), press_key (key, target?, times?, delayMs?), upload_file (target, files: string|array), frame (frame: string|{name}|{url}, action: enter|exit), new_tab (url?, saveTabIndexAs?), switch_tab (tab: number|last|previous, closeCurrentTab?).',
+        'Apply ONE patch to the linked pack\'s flow.json. Pass flat params: op, and for the op: index?, step?, steps?, collectibles?, inputs? at top level (no nested patch object). append: op + step. batch_append: op + steps (array) — preferred for adding multiple steps at once. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. update_inputs: op + inputs. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID; response.path uses JMESPath), network_extract (fromVar, as, path (JMESPath expression, e.g. "results[*].{id: id, name: name}"), out), select_option (target, value: string|{label}|{index}|array), press_key (key, target?, times?, delayMs?), upload_file (target, files: string|array), frame (frame: string|{name}|{url}, action: enter|exit), new_tab (url?, saveTabIndexAs?), switch_tab (tab: number|last|previous, closeCurrentTab?).',
       parameters: {
         type: 'object',
         properties: {
           op: {
             type: 'string',
-            enum: ['append', 'insert', 'replace', 'delete', 'update_collectibles', 'update_inputs'],
-            description: 'append=add step at end; insert=add at index; replace=replace step at index; delete=remove at index; update_collectibles=replace collectibles array; update_inputs=add/update input fields',
+            enum: ['append', 'batch_append', 'insert', 'replace', 'delete', 'update_collectibles', 'update_inputs'],
+            description: 'append=add step at end; batch_append=add multiple steps at once (preferred); insert=add at index; replace=replace step at index; delete=remove at index; update_collectibles=replace collectibles array; update_inputs=add/update input fields',
           },
           index: { type: 'number', description: 'Required for insert, replace, delete. Step index (0-based).' },
           step: {
             type: 'object',
             description: 'Step object { id, type, params }. Required for append, insert, replace.',
+          },
+          steps: {
+            type: 'array',
+            description: 'Array of step objects { id, type, params }. Required for batch_append. Use this to add multiple steps in a single call.',
+            items: { type: 'object' },
           },
           collectibles: {
             type: 'array',
@@ -189,7 +204,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_type',
-      description: 'Type text into an input field. Use label for the accessible name of the field (e.g. "Search", "Email") or selector. Clears the field by default before typing.',
+      description: 'Type text into an input field. Use label for the accessible name of the field (e.g. "Search", "Email") or selector. Clears the field by default before typing. Automatically searches iframes if the element is not found on the main page. Supports secret templates: use {{secret.NAME}} for passwords and {{secret.NAME | totp}} to generate a 6-digit TOTP code from a stored TOTP secret key. IMPORTANT for TOTP: always use submit=true when typing time-sensitive codes so Enter is pressed immediately after typing (no round-trip delay).',
       parameters: {
         type: 'object',
         properties: {
@@ -197,6 +212,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
           label: { type: 'string', description: 'Accessible name/label of the input (e.g. "Search")' },
           selector: { type: 'string', description: 'CSS selector when label is not enough' },
           clear: { type: 'boolean', description: 'Clear field before typing (default true)' },
+          submit: { type: 'boolean', description: 'Press Enter immediately after typing (default false). Use true for time-sensitive codes like TOTP to avoid round-trip delay.' },
         },
         required: ['text'],
       },
@@ -276,7 +292,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_network_get_response',
-      description: 'Get the response body for a request. Returns first 200 characters by default; set full=true to return the full captured snippet (up to 2000 chars). Use this to inspect API responses before deciding whether to extract data via API replay or DOM.',
+      description: 'Get the response body for a request. Returns first 200 characters by default; set full=true to return the full captured snippet (up to 8000 chars). Use this to inspect API responses before deciding whether to extract data via API replay or DOM.',
       parameters: {
         type: 'object',
         properties: {
@@ -331,7 +347,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     function: {
       name: 'browser_get_dom_snapshot',
       description:
-        'Get page accessibility snapshot in compact YAML format (default) or verbose JSON. IMPORTANT: Before using this tool, ALWAYS call browser_network_list first to check if the data you need is available via an API endpoint. Only use DOM extraction when no suitable API exists. YAML format shows hierarchical DOM structure with element refs [ref=eN] for targeting. Use maxDepth to limit tree depth for very large pages. ~70-80% smaller than JSON format.',
+        'Get page accessibility snapshot in compact YAML format (default) or verbose JSON. IMPORTANT: Before using this tool, ALWAYS call browser_network_list first to check if the data you need is available via an API endpoint. Only use DOM extraction when no suitable API exists. YAML format shows hierarchical DOM structure with element refs [ref=eN] for targeting. Use maxDepth to limit tree depth for very large pages. ~70-80% smaller than JSON format. NOTE: DOM snapshots may not capture all visual state (expanded/collapsed panels, overlays, dynamic content). If you performed an action (click, type) and the DOM looks unchanged, take a browser_screenshot to visually verify the page state.',
       parameters: {
         type: 'object',
         properties: {
@@ -353,7 +369,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_click',
-      description: 'Click an element on the page. Use linkText for the visible text. Use role: "link" for links, "button" for buttons, "text" for other clickables (batch names, tabs, list items, divs/spans). If the item is not a link or button (e.g. "Winter 2026" in a filter), use role "text".',
+      description: 'Click an element on the page. Uses exact text matching. Use linkText for the visible text. Use role: "link" for links, "button" for buttons, "text" for other clickables (batch names, tabs, list items, divs/spans). If the item is not a link or button (e.g. "Winter 2026" in a filter), use role "text". Automatically searches iframes if the element is not found on the main page.',
       parameters: {
         type: 'object',
         properties: {
@@ -526,7 +542,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'request_secrets',
-      description: 'Request the user to provide secret values needed for the automation (e.g., passwords, API keys, TOTP secrets). This will show a modal to the user where they can enter the values securely. The AI never sees the actual values - only knows when they have been provided. Use this when the pack needs credentials that are not yet set.',
+      description: 'Request the user to provide secret values needed for the automation (e.g., passwords, API keys, TOTP secrets). This will show a modal to the user where they can enter the values securely. The AI never sees the actual values - only knows when they have been provided. Use this when the pack needs credentials that are not yet set. IMPORTANT: For TOTP/2FA, ask the user for their TOTP secret key (a base32 string), NOT a 6-digit code. Then use {{secret.TOTP_KEY_NAME | totp}} in browser_type to auto-generate the current 6-digit code.',
       parameters: {
         type: 'object',
         properties: {
@@ -589,7 +605,9 @@ export const TECHNIQUE_TOOL_DEFINITIONS: ToolDef[] = [
       name: 'techniques_search',
       description:
         'Hybrid search the techniques DB for relevant patterns. Uses vector similarity + keyword matching. ' +
-        'Use this for on-demand lookups during exploration (e.g. "pagination pattern", "auth flow for linkedin").',
+        'Use this for on-demand lookups during exploration (e.g. "pagination pattern", "auth flow for linkedin"). ' +
+        'If a technique provides specific step-by-step instructions (API endpoint, body format, extraction path), ' +
+        'you can skip exploration and use the technique as your exploration context directly.',
       parameters: {
         type: 'object',
         properties: {
@@ -700,11 +718,45 @@ async function resolveTemplateValue(
       vars: {},
       secrets,
     });
+    // Check for unresolved templates — surface error so the agent sees the problem
+    if (typeof resolved === 'string' && /\{\{.*?\}\}/.test(resolved)) {
+      console.warn(`[agentTools] Unresolved templates in: ${resolved}`);
+      return `[TEMPLATE_ERROR: Some templates could not be resolved in "${value}". Available secrets: ${Object.keys(secrets).join(', ') || 'none'}]`;
+    }
     return resolved as string;
   } catch (e) {
-    console.warn('[agentTools] Template resolution failed, using original value:', e);
-    return value;
+    console.warn('[agentTools] Template resolution failed:', e);
+    return `[TEMPLATE_ERROR: Resolution failed for "${value}": ${e instanceof Error ? e.message : String(e)}. Available secrets: ${Object.keys(secrets).join(', ') || 'none'}]`;
   }
+}
+
+/**
+ * Recursively resolve Nunjucks templates in override values.
+ * Walks the object tree and resolves any string values containing {{ ... }}.
+ */
+async function resolveOverrideTemplates(
+  overrides: Record<string, unknown>,
+  ctx: AgentToolContext
+): Promise<Record<string, unknown>> {
+  const resolved: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(overrides)) {
+    if (typeof value === 'string') {
+      resolved[key] = await resolveTemplateValue(value, ctx);
+    } else if (Array.isArray(value)) {
+      resolved[key] = await Promise.all(
+        value.map(async (item) => {
+          if (typeof item === 'string') return resolveTemplateValue(item, ctx);
+          if (item && typeof item === 'object') return resolveOverrideTemplates(item as Record<string, unknown>, ctx);
+          return item;
+        })
+      );
+    } else if (value && typeof value === 'object') {
+      resolved[key] = await resolveOverrideTemplates(value as Record<string, unknown>, ctx);
+    } else {
+      resolved[key] = value;
+    }
+  }
+  return resolved;
 }
 
 /** Strip editor_, browser_, agent_, or conversation_ prefix for internal dispatch (OpenAI allows only [a-zA-Z0-9_-] in tool names) */
@@ -786,7 +838,11 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
           type: 'string',
           description:
             'All exploration findings. Include: API endpoints discovered (URL, method, response structure), ' +
-            'DOM structure notes, auth requirements, pagination info, any relevant network request IDs or patterns.',
+            'the EXACT request body for POST requests, ' +
+            'whether the site supports URL-based filtering (e.g., /items?category=X triggers filtered API calls) — ' +
+            'if yes, provide a hardcoded example URL with a specific filter value so the Editor Agent can use the ' +
+            '"navigate with known value then bodyReplace" strategy for complex POST bodies. ' +
+            'Also include DOM structure notes, auth requirements, pagination info, and relevant techniques from the Techniques DB.',
         },
         testInputs: {
           type: 'object',
@@ -865,9 +921,13 @@ const BROWSER_TOOLS = new Set([
   'close_session',
 ]);
 
+/** Per-conversation lock to prevent concurrent session creation */
+const sessionCreationLocks = new Map<string, Promise<string>>();
+
 /**
  * Get or create a browser session for the conversation.
  * Auto-starts camoufox if no session exists or session is dead.
+ * Uses a per-conversation lock to prevent duplicate session creation from concurrent tool calls.
  *
  * When packId is set in context, uses the pack's .browser-profile/ directory
  * for persistent browser state (cookies, localStorage, etc.). This enables
@@ -878,42 +938,56 @@ async function ensureBrowserSession(ctx: AgentToolContext): Promise<string> {
     throw new Error('Browser tools require a conversation context');
   }
 
-  const existingSessionId = getConversationBrowserSession(ctx.conversationId);
+  const convId = ctx.conversationId;
+
+  // If a creation is in-flight for this conversation, wait for it
+  const pending = sessionCreationLocks.get(convId);
+  if (pending) return pending;
+
+  const existingSessionId = getConversationBrowserSession(convId);
 
   // Check if existing session is still alive
   if (existingSessionId && isSessionAlive(existingSessionId)) {
     return existingSessionId;
   }
 
-  // Session is dead or doesn't exist - start new one
-  // Always use camoufox for better anti-detection
-  const headful = ctx.headful !== false; // Default true for dashboard
-  const engine = 'camoufox' as const;
+  // Create new session with lock to prevent races
+  const promise = (async () => {
+    try {
+      // Always use camoufox for better anti-detection
+      const headful = ctx.headful !== false; // Default true for dashboard
+      const engine = 'camoufox' as const;
 
-  // Determine persistent context directory based on linked pack
-  let persistentContextDir: string | undefined;
+      // Determine persistent context directory based on linked pack
+      let persistentContextDir: string | undefined;
 
-  if (ctx.packId) {
-    // Get pack path from editor
-    const packs = await ctx.taskPackEditor.listPacks();
-    const pack = packs.find((p: { id: string; path?: string }) => p.id === ctx.packId);
-    if (pack?.path) {
-      persistentContextDir = join(pack.path, '.browser-profile');
-      mkdirSync(persistentContextDir, { recursive: true });
-      console.log(`[BrowserAuto] Using persistent profile for pack ${ctx.packId}: ${persistentContextDir}`);
+      if (ctx.packId) {
+        const packs = await ctx.taskPackEditor.listPacks();
+        const pack = packs.find((p: { id: string; path?: string }) => p.id === ctx.packId);
+        if (pack?.path) {
+          persistentContextDir = join(pack.path, '.browser-profile');
+          mkdirSync(persistentContextDir, { recursive: true });
+          console.log(`[BrowserAuto] Using persistent profile for pack ${ctx.packId}: ${persistentContextDir}`);
+        }
+      }
+
+      console.log(`[BrowserAuto] Starting camoufox session for conversation ${convId}${persistentContextDir ? ' (persistent)' : ''}`);
+      const sessionId = await startBrowserSession(headful, engine, {
+        persistentContextDir,
+        packId: ctx.packId ?? undefined,
+      });
+
+      // Store session in memory map
+      setConversationBrowserSession(convId, sessionId);
+
+      return sessionId;
+    } finally {
+      sessionCreationLocks.delete(convId);
     }
-  }
+  })();
 
-  console.log(`[BrowserAuto] Starting camoufox session for conversation ${ctx.conversationId}${persistentContextDir ? ' (persistent)' : ''}`);
-  const sessionId = await startBrowserSession(headful, engine, {
-    persistentContextDir,
-    packId: ctx.packId ?? undefined,
-  });
-
-  // Store session in memory map
-  setConversationBrowserSession(ctx.conversationId, sessionId);
-
-  return sessionId;
+  sessionCreationLocks.set(convId, promise);
+  return promise;
 }
 
 export async function executeAgentTool(
@@ -975,7 +1049,7 @@ export async function executeAgentTool(
       case 'apply_flow_patch': {
         const packId = (args.packId as string) || ctx.packId;
         if (!packId) throw new Error('No pack linked to this conversation');
-        // Accept flat params (op, index?, step?, collectibles?, inputs?) or legacy nested patch
+        // Accept flat params (op, index?, step?, steps?, collectibles?, inputs?) or legacy nested patch
         const legacyPatch = args.patch as Record<string, unknown> | undefined;
         const patch: Record<string, unknown> = legacyPatch
           ? { ...legacyPatch }
@@ -983,10 +1057,11 @@ export async function executeAgentTool(
               op: args.op,
               ...(args.index !== undefined && { index: args.index }),
               ...(args.step !== undefined && { step: args.step }),
+              ...(args.steps !== undefined && { steps: args.steps }),
               ...(args.collectibles !== undefined && { collectibles: args.collectibles }),
               ...(args.inputs !== undefined && { inputs: args.inputs }),
             };
-        if (!patch.op) throw new Error('op required (append, insert, replace, delete, update_collectibles, or update_inputs)');
+        if (!patch.op) throw new Error('op required (append, batch_append, insert, replace, delete, update_collectibles, or update_inputs)');
         const result = await taskPackEditor.applyFlowPatch(packId, patch as any);
         return wrap(JSON.stringify(result, null, 2));
       }
@@ -1052,8 +1127,8 @@ export async function executeAgentTool(
         if (!url) throw new Error('url required');
         // Resolve templates in URL (e.g., {{secret.BASE_URL}})
         const resolvedUrl = await resolveTemplateValue(url, ctx);
-        const currentUrl = await browserInspector.gotoUrl(sessionId, resolvedUrl);
-        return wrap(JSON.stringify({ url: currentUrl }, null, 2));
+        const result = await browserInspector.gotoUrl(sessionId, resolvedUrl);
+        return wrap(JSON.stringify(result, null, 2));
       }
       case 'go_back': {
         const sessionId = effectiveArgs.sessionId as string;
@@ -1074,6 +1149,7 @@ export async function executeAgentTool(
           label,
           selector,
           clear: args.clear !== false,
+          submit: args.submit === true,
         });
         return wrap(JSON.stringify(result, null, 2));
       }
@@ -1138,7 +1214,7 @@ export async function executeAgentTool(
         const result = await browserInspector.getDomSnapshot(sessionId, { format, maxDepth });
         // For YAML format, return the snapshot string directly for compactness
         if (format === 'yaml' && 'snapshot' in result) {
-          const output = `URL: ${result.url}\nTitle: ${result.title}\n\n${result.snapshot}`;
+          const output = `URL: ${result.url}\nTitle: ${result.title}\n\n${result.snapshot}\n\n[Hint: DOM snapshots may not capture all visual state. If something looks wrong or unchanged after an action, use browser_screenshot to visually verify.]`;
           return wrap(truncateToolOutput(output, 'DOM snapshot'));
         }
         return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'DOM snapshot'));
@@ -1178,7 +1254,11 @@ export async function executeAgentTool(
         const sessionId = effectiveArgs.sessionId as string;
         const requestId = args.requestId as string;
         if (!requestId) throw new Error('requestId required');
-        const overrides = args.overrides as Record<string, unknown> | undefined;
+        let overrides = args.overrides as Record<string, unknown> | undefined;
+        // Resolve Nunjucks templates in override values (e.g. {{secret.API_KEY}})
+        if (overrides) {
+          overrides = await resolveOverrideTemplates(overrides, ctx);
+        }
         const result = await browserInspector.networkReplay(sessionId, requestId, overrides as Parameters<typeof browserInspector.networkReplay>[2]);
         return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'network replay'));
       }
@@ -1374,7 +1454,7 @@ export async function executeAgentTool(
       const parsed = parsePlaywrightError(rawMessage);
       return wrap(JSON.stringify(parsed));
     }
-    return wrap(JSON.stringify({ error: rawMessage }));
+    return wrap(JSON.stringify({ error: redactSensitive(rawMessage) }));
   }
 }
 

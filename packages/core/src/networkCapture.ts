@@ -119,10 +119,10 @@ export interface NetworkReplayOverrides {
   setQuery?: Record<string, string | number>;
   setHeaders?: Record<string, string>;
   body?: string;
-  /** Regex find/replace on the captured request URL (applied before overrides.url). Replace string can use $1, $2 for capture groups. */
-  urlReplace?: { find: string; replace: string };
-  /** Regex find/replace on the captured request body (applied before overrides.body). Replace string can use $1, $2 for capture groups. */
-  bodyReplace?: { find: string; replace: string };
+  /** Regex find/replace on the captured request URL (applied before overrides.url). Replace string can use $1, $2 for capture groups. Accepts single object or array. */
+  urlReplace?: { find: string; replace: string } | Array<{ find: string; replace: string }>;
+  /** Regex find/replace on the captured request body (applied before overrides.body). Replace string can use $1, $2 for capture groups. Accepts single object or array. */
+  bodyReplace?: { find: string; replace: string } | Array<{ find: string; replace: string }>;
 }
 
 /**
@@ -392,22 +392,30 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
 
       let url = entry.url;
       if (overrides?.urlReplace) {
-        try {
-          const re = new RegExp(overrides.urlReplace.find, 'g');
-          url = url.replace(re, overrides.urlReplace.replace);
-        } catch (e) {
-          throw new Error(`overrides.urlReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+        // Normalize to array (accepts single object or array)
+        const urlReplaces = Array.isArray(overrides.urlReplace) ? overrides.urlReplace : [overrides.urlReplace];
+        for (const ur of urlReplaces) {
+          try {
+            const re = new RegExp(ur.find, 'g');
+            url = url.replace(re, ur.replace);
+          } catch (e) {
+            throw new Error(`overrides.urlReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+          }
         }
       }
       if (overrides?.url != null) url = overrides.url;
 
       let body: string | undefined = entry.postData ?? undefined;
       if (body != null && overrides?.bodyReplace) {
-        try {
-          const re = new RegExp(overrides.bodyReplace.find, 'g');
-          body = body.replace(re, overrides.bodyReplace.replace);
-        } catch (e) {
-          throw new Error(`overrides.bodyReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+        // Normalize to array (accepts single object or array)
+        const bodyReplaces = Array.isArray(overrides.bodyReplace) ? overrides.bodyReplace : [overrides.bodyReplace];
+        for (const br of bodyReplaces) {
+          try {
+            const re = new RegExp(br.find, 'g');
+            body = body.replace(re, br.replace);
+          } catch (e) {
+            throw new Error(`overrides.bodyReplace.find is not a valid regex: ${e instanceof Error ? e.message : String(e)}`);
+          }
         }
       }
       if (overrides?.body != null) body = overrides.body;

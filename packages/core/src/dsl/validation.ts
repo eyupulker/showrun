@@ -717,15 +717,20 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
           }
         }
         if (overrides.urlReplace !== undefined) {
-          if (typeof overrides.urlReplace !== 'object' || overrides.urlReplace === null) {
-            errors.push(`${prefix}: NetworkReplay step "overrides.urlReplace" must be { find: string, replace: string }`);
-          } else {
-            const ur = overrides.urlReplace as Record<string, unknown>;
-            if (typeof ur.find !== 'string' || typeof ur.replace !== 'string') {
+          const urlItems = Array.isArray(overrides.urlReplace)
+            ? overrides.urlReplace as unknown[]
+            : [overrides.urlReplace];
+          for (const ur of urlItems) {
+            if (!ur || typeof ur !== 'object' || Array.isArray(ur)) {
+              errors.push(`${prefix}: NetworkReplay step "overrides.urlReplace" items must be { find: string, replace: string }`);
+              continue;
+            }
+            const item = ur as Record<string, unknown>;
+            if (typeof item.find !== 'string' || typeof item.replace !== 'string') {
               errors.push(`${prefix}: NetworkReplay step "overrides.urlReplace" must have string "find" and "replace"`);
             } else {
               try {
-                new RegExp(ur.find);
+                new RegExp(item.find);
               } catch {
                 errors.push(`${prefix}: NetworkReplay step "overrides.urlReplace.find" is not a valid regex`);
               }
@@ -733,15 +738,20 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
           }
         }
         if (overrides.bodyReplace !== undefined) {
-          if (typeof overrides.bodyReplace !== 'object' || overrides.bodyReplace === null) {
-            errors.push(`${prefix}: NetworkReplay step "overrides.bodyReplace" must be { find: string, replace: string }`);
-          } else {
-            const br = overrides.bodyReplace as Record<string, unknown>;
-            if (typeof br.find !== 'string' || typeof br.replace !== 'string') {
+          const bodyItems = Array.isArray(overrides.bodyReplace)
+            ? overrides.bodyReplace as unknown[]
+            : [overrides.bodyReplace];
+          for (const br of bodyItems) {
+            if (!br || typeof br !== 'object' || Array.isArray(br)) {
+              errors.push(`${prefix}: NetworkReplay step "overrides.bodyReplace" items must be { find: string, replace: string }`);
+              continue;
+            }
+            const item = br as Record<string, unknown>;
+            if (typeof item.find !== 'string' || typeof item.replace !== 'string') {
               errors.push(`${prefix}: NetworkReplay step "overrides.bodyReplace" must have string "find" and "replace"`);
             } else {
               try {
-                new RegExp(br.find);
+                new RegExp(item.find);
               } catch {
                 errors.push(`${prefix}: NetworkReplay step "overrides.bodyReplace.find" is not a valid regex`);
               }

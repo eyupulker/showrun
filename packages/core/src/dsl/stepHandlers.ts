@@ -27,7 +27,7 @@ import { resolveTemplate } from './templating.js';
 import { resolveTargetWithFallback, selectorToTarget } from './target.js';
 import type { AuthFailureMonitor } from '../authResilience.js';
 import { search as jmesSearch, type JSONValue } from '@jmespath-community/jmespath';
-import type { SnapshotFile } from '../requestSnapshot.js';
+import type { SnapshotFile, RequestSnapshot } from '../requestSnapshot.js';
 import { replayFromSnapshot } from '../httpReplay.js';
 import { validateResponse } from '../requestSnapshot.js';
 
@@ -450,19 +450,25 @@ function getByPath(obj: unknown, path: string): PathResult {
   try {
     const result = jmesSearch(obj as JSONValue, trimmed);
 
-    // Check for null/undefined results and provide diagnostic hint
+    // Check for null/undefined results and provide diagnostic hint with data structure
     if (result === null || result === undefined) {
+      const topKeys = typeof obj === 'object' && obj !== null
+        ? Object.keys(obj).slice(0, 10).join(', ')
+        : typeof obj;
       return {
         value: result,
-        hint: `JMESPath '${trimmed}' matched nothing (returned ${result}). Verify the path exists. Try a simpler path like 'data' or 'keys(@)' to inspect the structure.`,
+        hint: `JMESPath '${trimmed}' matched nothing (returned ${result}). Actual top-level keys: [${topKeys}]. Try a simpler path like 'data' or 'keys(@)' to inspect the structure.`,
       };
     }
 
     // Check for empty array results
     if (Array.isArray(result) && result.length === 0) {
+      const topKeys = typeof obj === 'object' && obj !== null
+        ? Object.keys(obj).slice(0, 10).join(', ')
+        : typeof obj;
       return {
         value: result,
-        hint: `JMESPath '${trimmed}' returned an empty array. The path may be correct but no items matched.`,
+        hint: `JMESPath '${trimmed}' returned an empty array. Actual top-level keys: [${topKeys}]. The path may be correct but no items matched.`,
       };
     }
 
@@ -590,8 +596,13 @@ async function executeNetworkReplay(
         setQuery: step.params.overrides.setQuery,
         setHeaders: step.params.overrides.setHeaders,
         body: step.params.overrides.body,
-        urlReplace: step.params.overrides.urlReplace,
-        bodyReplace: step.params.overrides.bodyReplace,
+        // Normalize urlReplace/bodyReplace to array (DSL type accepts single or array)
+        urlReplace: step.params.overrides.urlReplace
+          ? (Array.isArray(step.params.overrides.urlReplace) ? step.params.overrides.urlReplace : [step.params.overrides.urlReplace])
+          : undefined,
+        bodyReplace: step.params.overrides.bodyReplace
+          ? (Array.isArray(step.params.overrides.bodyReplace) ? step.params.overrides.bodyReplace : [step.params.overrides.bodyReplace])
+          : undefined,
       }
     : undefined;
 
@@ -987,6 +998,55 @@ const HTTP_MODE_SKIP_STEPS = new Set([
 ]);
 
 /**
+ * Merge flow-level step overrides with snapshot-level overrides.
+ * Step overrides take precedence for scalar fields (url, body).
+ * Array fields (bodyReplace, urlReplace) are concatenated: snapshot first, then step.
+ * Object fields (setQuery, setHeaders) are merged: step values override snapshot values.
+ */
+function mergeStepOverridesIntoSnapshot(
+  snapshot: RequestSnapshot,
+  stepOverrides?: NetworkReplayStep['params']['overrides'],
+): RequestSnapshot {
+  if (!stepOverrides) return snapshot;
+
+  // Normalize step overrides arrays
+  const stepBodyReplace = stepOverrides.bodyReplace
+    ? (Array.isArray(stepOverrides.bodyReplace) ? stepOverrides.bodyReplace : [stepOverrides.bodyReplace])
+    : [];
+  const stepUrlReplace = stepOverrides.urlReplace
+    ? (Array.isArray(stepOverrides.urlReplace) ? stepOverrides.urlReplace : [stepOverrides.urlReplace])
+    : [];
+
+  const snapshotOv = snapshot.overrides;
+
+  const bodyReplaceArr = [...(snapshotOv?.bodyReplace ?? []), ...stepBodyReplace];
+  const urlReplaceArr = [...(snapshotOv?.urlReplace ?? []), ...stepUrlReplace];
+  // Coerce step setQuery values to strings (step type allows string | number, snapshot expects string)
+  const stepSetQuery = stepOverrides.setQuery
+    ? Object.fromEntries(Object.entries(stepOverrides.setQuery).map(([k, v]) => [k, String(v)]))
+    : undefined;
+  const setQueryMerged = (snapshotOv?.setQuery || stepSetQuery)
+    ? { ...snapshotOv?.setQuery, ...stepSetQuery }
+    : undefined;
+  const setHeadersMerged = (snapshotOv?.setHeaders || stepOverrides.setHeaders)
+    ? { ...snapshotOv?.setHeaders, ...stepOverrides.setHeaders }
+    : undefined;
+
+  const merged: NonNullable<RequestSnapshot['overrides']> = {
+    // Scalar overrides: step takes precedence
+    url: stepOverrides.url ?? snapshotOv?.url,
+    body: stepOverrides.body ?? snapshotOv?.body,
+    setQuery: setQueryMerged && Object.keys(setQueryMerged).length > 0 ? setQueryMerged : undefined,
+    setHeaders: setHeadersMerged && Object.keys(setHeadersMerged).length > 0 ? setHeadersMerged : undefined,
+    bodyReplace: bodyReplaceArr.length > 0 ? bodyReplaceArr : undefined,
+    urlReplace: urlReplaceArr.length > 0 ? urlReplaceArr : undefined,
+  };
+
+  const hasOverrides = merged.url || merged.body || merged.setQuery || merged.setHeaders || merged.bodyReplace || merged.urlReplace;
+  return { ...snapshot, overrides: hasOverrides ? merged : undefined };
+}
+
+/**
  * Execute a network_replay step in HTTP-only mode using snapshot data.
  */
 async function executeNetworkReplayHttp(
@@ -1001,7 +1061,11 @@ async function executeNetworkReplayHttp(
     throw new Error(`No snapshot found for step "${step.id}"`);
   }
 
-  const result = await replayFromSnapshot(snapshot, ctx.inputs, ctx.vars, {
+  // Merge flow-level overrides (from step.params) with snapshot-level overrides.
+  // This ensures bodyReplace/urlReplace from the flow are applied in HTTP-only mode.
+  const mergedSnapshot = mergeStepOverridesIntoSnapshot(snapshot, step.params.overrides);
+
+  const result = await replayFromSnapshot(mergedSnapshot, ctx.inputs, ctx.vars, {
     secrets: ctx.secrets,
   });
 
