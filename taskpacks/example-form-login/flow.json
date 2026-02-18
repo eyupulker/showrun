@@ -1,0 +1,76 @@
+{
+  "inputs": {
+    "username": {
+      "type": "string",
+      "default": "tomsmith",
+      "description": "Username for login"
+    },
+    "password": {
+      "type": "string",
+      "default": "SuperSecretPassword!",
+      "description": "Password for login"
+    }
+  },
+  "collectibles": [
+    {
+      "name": "login_message",
+      "type": "string",
+      "description": "The confirmation message after login"
+    }
+  ],
+  "flow": [
+    {
+      "id": "navigate_login",
+      "type": "navigate",
+      "label": "Navigate to login page",
+      "params": {
+        "url": "https://the-internet.herokuapp.com/login"
+      }
+    },
+    {
+      "id": "fill_username",
+      "type": "fill",
+      "label": "Fill username",
+      "params": {
+        "target": { "kind": "css", "selector": "#username" },
+        "value": "{{ inputs.username }}"
+      }
+    },
+    {
+      "id": "fill_password",
+      "type": "fill",
+      "label": "Fill password",
+      "params": {
+        "target": { "kind": "css", "selector": "#password" },
+        "value": "{{ inputs.password }}"
+      }
+    },
+    {
+      "id": "click_login",
+      "type": "click",
+      "label": "Submit login form",
+      "params": {
+        "target": { "kind": "css", "selector": "button[type='submit']" }
+      }
+    },
+    {
+      "id": "wait_for_flash",
+      "type": "wait_for",
+      "label": "Wait for confirmation message",
+      "params": {
+        "target": { "kind": "css", "selector": "#flash" }
+      }
+    },
+    {
+      "id": "extract_message",
+      "type": "extract_text",
+      "label": "Extract confirmation message",
+      "params": {
+        "target": { "kind": "css", "selector": "#flash" },
+        "out": "login_message",
+        "first": true,
+        "trim": true
+      }
+    }
+  ]
+}

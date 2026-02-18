@@ -11,6 +11,7 @@
     "prepare": "pnpm build",
     "dev": "pnpm build && pnpm test:example",
     "test:example": "node packages/showrun/dist/cli.js run ./taskpacks/example-json --inputs '{}'",
+    "test:example-form": "node packages/showrun/dist/cli.js run ./taskpacks/example-form-login --inputs '{}'",
     "test:unit": "pnpm -r test",
     "dashboard": "node packages/showrun/dist/cli.js dashboard"
   },

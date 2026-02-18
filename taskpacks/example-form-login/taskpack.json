@@ -1,0 +1,7 @@
+{
+  "id": "example-form-login",
+  "name": "Form Submission Example (Login Flow)",
+  "version": "0.1.0",
+  "description": "Demonstrates form filling, authentication flow, and navigation patterns using the-internet.herokuapp.com",
+  "kind": "json-dsl"
+}
