@@ -1,0 +1,85 @@
+name: 'Run Tests with Coverage'
+description: 'Build the project, run tests with coverage, and upload coverage reports'
+
+runs:
+  using: 'composite'
+  steps:
+    # Step 1: Install pnpm package manager (required for monorepo)
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 9
+      shell: bash
+
+    # Step 2: Setup Node.js with pnpm caching
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+      shell: bash
+
+    # Step 3: Install dependencies from lockfile
+    - name: Install dependencies
+      shell: bash
+      run: |
+        echo "Installing dependencies..." | tee -a coverage-steps.log
+        pnpm install --frozen-lockfile 2>&1 | tee -a coverage-steps.log
+        echo "Dependencies installed successfully" | tee -a coverage-steps.log
+
+    # Step 4: Build all packages in the monorepo
+    # This compiles TypeScript and prepares packages for testing
+    - name: Build packages
+      shell: bash
+      run: |
+        echo "Building all packages..." | tee -a coverage-steps.log
+        pnpm build 2>&1 | tee -a coverage-steps.log
+        echo "Build completed successfully" | tee -a coverage-steps.log
+
+    # Step 5: Run tests with coverage across all packages
+    # Coverage will be generated in the coverage/ directory at the root
+    # Each package runs its tests with Vitest and coverage-v8 provider
+    - name: Run tests with coverage
+      shell: bash
+      run: |
+        echo "Running tests with coverage..." | tee -a coverage-steps.log
+        # Check if coverage script exists, otherwise run tests directly
+        if grep -q '"test:coverage"' package.json; then
+          pnpm test:coverage 2>&1 | tee -a coverage-steps.log
+        else
+          # Fallback: run tests with coverage flag per package
+          echo "No test:coverage script found, running tests per package..." | tee -a coverage-steps.log
+          pnpm -r --filter='@showrun/core' test --coverage 2>&1 | tee -a coverage-steps.log || true
+          pnpm -r --filter='@showrun/dashboard' test --coverage 2>&1 | tee -a coverage-steps.log || true
+          pnpm -r --filter='@showrun/mcp-server' test --coverage 2>&1 | tee -a coverage-steps.log || true
+        fi
+        echo "Tests completed" | tee -a coverage-steps.log
+
+    # Step 6: Display coverage summary
+    - name: Display coverage summary
+      shell: bash
+      run: |
+        echo "Coverage summary:" | tee -a coverage-steps.log
+        if [ -f coverage/coverage-summary.json ]; then
+          cat coverage/coverage-summary.json | tee -a coverage-steps.log
+        elif [ -f packages/core/coverage/coverage-summary.json ]; then
+          echo "Core package coverage:" | tee -a coverage-steps.log
+          cat packages/core/coverage/coverage-summary.json | tee -a coverage-steps.log
+        else
+          echo "No coverage summary found" | tee -a coverage-steps.log
+        fi
+
+    # Step 7: Upload coverage report as artifact
+    # The coverage report will be available in HTML format in coverage/index.html
+    # JSON coverage data is in coverage/coverage-final.json
+    # This artifact will be accessible from the GitHub Actions UI
+    - name: Upload coverage artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage
+        path: |
+          coverage/
+          packages/*/coverage/
+          coverage-steps.log
+        if-no-files-found: warn
+      shell: bash
