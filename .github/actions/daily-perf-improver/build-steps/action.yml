@@ -1,0 +1,53 @@
+name: 'Daily Perf Improver Build Steps'
+description: 'Setup and build ShowRun for performance engineering work'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 9
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'pnpm'
+    
+    - name: Install dependencies
+      shell: bash
+      run: |
+        echo "=== Installing dependencies ===" | tee -a build-steps.log
+        pnpm install --frozen-lockfile 2>&1 | tee -a build-steps.log
+        echo "Dependencies installed successfully" | tee -a build-steps.log
+    
+    - name: Fetch Camoufox browser
+      shell: bash
+      run: |
+        echo "=== Fetching Camoufox browser ===" | tee -a build-steps.log
+        npx camoufox-js fetch 2>&1 | tee -a build-steps.log
+        echo "Camoufox browser fetched successfully" | tee -a build-steps.log
+    
+    - name: Build all packages
+      shell: bash
+      run: |
+        echo "=== Building all packages ===" | tee -a build-steps.log
+        pnpm build 2>&1 | tee -a build-steps.log
+        echo "Build completed successfully" | tee -a build-steps.log
+    
+    - name: Run unit tests
+      shell: bash
+      run: |
+        echo "=== Running unit tests ===" | tee -a build-steps.log
+        pnpm test:unit 2>&1 | tee -a build-steps.log
+        echo "Unit tests completed successfully" | tee -a build-steps.log
+    
+    - name: Verify build
+      shell: bash
+      run: |
+        echo "=== Verifying build ===" | tee -a build-steps.log
+        echo "Checking for built artifacts..." | tee -a build-steps.log
+        ls -la packages/showrun/dist/cli.js 2>&1 | tee -a build-steps.log
+        ls -la packages/core/dist/ 2>&1 | tee -a build-steps.log
+        echo "Build verification completed" | tee -a build-steps.log
