@@ -106,7 +106,7 @@ export async function runTaskPack(
   InputValidator.validate(inputsWithDefaults, taskPack.inputs);
 
   // Load secrets early (needed for both modes)
-  const secrets = providedSecrets ?? (packPath ? TaskPackLoader.loadSecrets(packPath) : {});
+  const secrets = providedSecrets ?? (packPath ? await TaskPackLoader.loadSecretsAsync(packPath) : {});
 
   // ─── HTTP-first execution ───────────────────────────────────────────
   const snapshots = taskPack.snapshots ?? null;
