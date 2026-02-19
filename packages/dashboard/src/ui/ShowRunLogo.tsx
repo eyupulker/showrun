@@ -3,7 +3,7 @@ import React from 'react';
 /**
  * ShowRun brand icon — official logo mark from showrun_logo.svg.
  */
-export function ShowRunIcon({ size = 24 }: { size?: number }) {
+export const ShowRunIcon = React.memo(({ size = 24 }: { size?: number }) => {
   return (
     <svg
       width={size}
@@ -23,19 +23,19 @@ export function ShowRunIcon({ size = 24 }: { size?: number }) {
       />
     </svg>
   );
-}
+});
 
 /**
  * ShowRun full logo — icon + wordmark (horizontal layout).
  * Per brand guidelines: always use icon + text together, never text-only.
  */
-export function ShowRunLogo({
+export const ShowRunLogo = React.memo(({
   size = 'md',
   variant = 'auto',
 }: {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   variant?: 'light' | 'dark' | 'auto';
-}) {
+}) => {
   const sizes = {
     sm: { icon: 18, text: 14, gap: 6 },
     md: { icon: 24, text: 18, gap: 8 },
@@ -73,4 +73,4 @@ export function ShowRunLogo({
       </span>
     </span>
   );
-}
+});

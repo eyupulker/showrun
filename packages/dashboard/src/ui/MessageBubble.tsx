@@ -19,13 +19,13 @@ interface MessageBubbleProps {
   isStreaming?: boolean;
 }
 
-export default function MessageBubble({
+const MessageBubble = React.memo(({
   role,
   content,
   toolCalls,
   thinking,
   isStreaming,
-}: MessageBubbleProps) {
+}: MessageBubbleProps) => {
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [toolsExpanded, setToolsExpanded] = useState(true); // Default expanded
   const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
@@ -260,4 +260,6 @@ export default function MessageBubble({
       )}
     </div>
   );
-}
+});
+
+export default MessageBubble;
