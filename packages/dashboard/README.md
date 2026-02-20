@@ -142,7 +142,7 @@ An AI agent that assists with flow creation. Describe what you want in natural l
 | `browser_network_replay(sessionId, requestId, overrides)` | Replay request with overrides |
 | `browser_network_clear(sessionId)` | Clear network buffer |
 
-## Security
+## Security and Troubleshooting
 
 The dashboard implements several security measures:
 
@@ -152,6 +152,8 @@ The dashboard implements several security measures:
 4. **Input validation**: All inputs are validated against pack schemas
 
 **The dashboard is designed for local development use only.** Do not expose it to untrusted networks. If you need to access from other machines, use `--host` carefully and ensure your network is secure.
+
+**📖 For comprehensive security details, troubleshooting steps, and best practices, see [SECURITY_AND_TROUBLESHOOTING.md](./SECURITY_AND_TROUBLESHOOTING.md)**
 
 ## Architecture
 
