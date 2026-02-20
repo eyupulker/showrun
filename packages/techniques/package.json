@@ -1,6 +1,6 @@
 {
   "name": "@showrun/techniques",
-  "version": "0.1.0b",
+  "version": "0.1.4",
   "description": "Vector-indexed technique knowledge store for ShowRun agents",
   "type": "module",
   "main": "./dist/index.js",
@@ -39,5 +39,8 @@
     "type": "git",
     "url": "git+https://github.com/useshowrun/showrun.git",
     "directory": "packages/techniques"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

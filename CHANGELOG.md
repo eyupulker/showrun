@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [changed] CLI package renamed from `showrun` to `@showrun/cli` — use `npx @showrun/cli` instead of `npx showrun`; the `showrun` binary command remains unchanged after global install
+- [changed] Root package.json marked `private: true` and renamed to `showrun-monorepo` to prevent accidental npm publishing
 - [added] LinkedIn Sales Navigator `pctEncode` seed technique — domain-specific knowledge for correct URL encoding with `()` delimiters in Sales Navigator query syntax
 - [fixed] `urlReplace`/`bodyReplace` array values now pass flow validation (runtime already supported arrays, but `validation.ts` rejected them)
 - [changed] Editor Agent prompt: added complete flow.json example, consolidated override strategies (A/B/C), added common mistakes for missing `id`/`type`/`params` and one-at-a-time appends
@@ -101,7 +103,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## 0.1.1a — 2026-02-12
 
-- [fixed] `npx showrun` from git clone auto-builds if dist is missing (no more manual `pnpm build` required)
+- [fixed] `npx @showrun/cli` from git clone auto-builds if dist is missing (no more manual `pnpm build` required)
 
 ## 0.1.1 — 2026-02-11
 
