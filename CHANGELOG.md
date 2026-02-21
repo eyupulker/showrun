@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+## 0.1.8 — 2026-02-22
+
 - [changed] Dashboard browser launching consolidated to use core's unified `launchBrowser()`, ensuring auto-fetch and consistent engine behavior
 - [added] Camoufox browser binary is auto-downloaded on first use; no manual `npx camoufox-js fetch` needed
 - [fixed] Headful mode now works on macOS/Windows without DISPLAY env var; DISPLAY check is Linux-only
