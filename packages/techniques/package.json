@@ -21,17 +21,17 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "weaviate-client": "^3.11.0",
-    "uuid": "^11.0.0"
+    "uuid": "^11.0.0",
+    "weaviate-client": "^3.11.0"
   },
   "peerDependencies": {
     "@showrun/core": "workspace:*"
   },
   "devDependencies": {
-    "vitest": "^3.0.0",
     "@types/node": "^20.11.0",
     "@types/uuid": "^10.0.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^3.0.0"
   },
   "license": "MIT",
   "author": "ShowRun <developers@showrun.co>",

@@ -229,6 +229,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.12.0
         version: 1.25.3(hono@4.11.7)(zod@3.25.76)
+      '@showrun/techniques':
+        specifier: ^0.1.3
+        version: 0.1.4(@showrun/core@packages+core)
       better-sqlite3:
         specifier: ^12.6.2
         version: 12.6.2
@@ -284,9 +287,6 @@ importers:
       '@showrun/taskpack-editor-mcp':
         specifier: workspace:*
         version: link:../taskpack-editor-mcp
-      '@showrun/techniques':
-        specifier: workspace:*
-        version: link:../techniques
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.30
@@ -1010,6 +1010,11 @@ packages:
     resolution: {integrity: sha512-Zv7v6q6aV+VslnpwzqKAmrk5JdVkLUzok2208ZXGipjb+msxBr/fJPZyeEXiFgH7k62Ak0SLIfxQRZQvTuf7rQ==}
     cpu: [x64]
     os: [win32]
+
+  '@showrun/techniques@0.1.4':
+    resolution: {integrity: sha512-1eUHFiDh+Y/4B4GrplBgYGJe4pWzH6QH3fayvNVN5mJ9fxcKAM2Y3CKZR3PGk9rehuxYOVhnwLMvaC7Qs1ScWA==}
+    peerDependencies:
+      '@showrun/core': 0.1.4
 
   '@sindresorhus/is@4.6.0':
     resolution: {integrity: sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw==}
@@ -3395,6 +3400,14 @@ snapshots:
 
   '@rollup/rollup-win32-x64-msvc@4.57.0':
     optional: true
+
+  '@showrun/techniques@0.1.4(@showrun/core@packages+core)':
+    dependencies:
+      '@showrun/core': link:packages/core
+      uuid: 11.1.0
+      weaviate-client: 3.11.0
+    transitivePeerDependencies:
+      - encoding
 
   '@sindresorhus/is@4.6.0': {}
 

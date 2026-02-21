@@ -20,8 +20,8 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",
     "@showrun/core": "workspace:*",
-    "@showrun/mcp-server": "workspace:*",
     "@showrun/harness": "workspace:*",
+    "@showrun/mcp-server": "workspace:*",
     "zod": "^3.25.0"
   },
   "devDependencies": {
