@@ -2,10 +2,12 @@
  * showrun dashboard - Start web dashboard with Teach Mode
  */
 
-import { resolve, dirname } from 'path';
+import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { cwd } from 'process';
 import { startDashboard } from '@showrun/dashboard';
+import { getGlobalDataDir, ensureDir } from '@showrun/core';
+import { needsSetup, runSetupWizard } from '../setupWizard.js';
 
 /**
  * Find the project root by walking up from current directory
@@ -45,6 +47,7 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
   // Find project root (where pnpm-workspace.yaml or packages/ exists)
   // This handles the case where pnpm --filter changes the working directory
   const projectRoot = findProjectRoot(cwd());
+  const globalDataDir = getGlobalDataDir();
 
   const result: Partial<DashboardCommandOptions> = {
     packs: [],
@@ -52,7 +55,7 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
     headful: false,
     debug: false,
     transcriptLogging: false,
-    baseRunDir: resolve(projectRoot, './runs-dashboard'),
+    baseRunDir: resolve(globalDataDir, 'runs-dashboard'),
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -136,14 +139,16 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
 
   // Default packs directory if not specified
   if (!result.packs || result.packs.length === 0) {
-    const defaultPacksDir = resolve(projectRoot, './taskpacks');
-    if (existsSync(defaultPacksDir)) {
-      result.packs = [defaultPacksDir];
+    // First try local ./taskpacks (project context)
+    const localPacksDir = resolve(projectRoot, './taskpacks');
+    if (existsSync(localPacksDir)) {
+      result.packs = [localPacksDir];
     } else {
-      console.error('Error: No --packs directories specified and ./taskpacks does not exist');
-      console.error(`Searched in: ${defaultPacksDir}`);
-      console.error('Please specify --packs with at least one directory');
-      process.exit(1);
+      // Fall back to system data directory — create if needed
+      const systemPacksDir = resolve(globalDataDir, 'taskpacks');
+      ensureDir(systemPacksDir);
+      result.packs = [systemPacksDir];
+      console.log(`[Dashboard] Using default taskpacks directory: ${systemPacksDir}`);
     }
   }
 
@@ -152,9 +157,31 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
 
 export async function cmdDashboard(args: string[]): Promise<void> {
   try {
+    // Check if first-run setup is needed (no ANTHROPIC_API_KEY found anywhere)
+    if (needsSetup()) {
+      if (process.stdin.isTTY) {
+        const completed = await runSetupWizard();
+        if (!completed) {
+          console.error('Setup cancelled. Dashboard requires an Anthropic API key.');
+          console.error('Set ANTHROPIC_API_KEY in your environment or run setup again.');
+          process.exit(1);
+        }
+      } else {
+        console.error('Error: ANTHROPIC_API_KEY is not set.');
+        console.error('Run `showrun dashboard` in an interactive terminal to complete setup,');
+        console.error('or set ANTHROPIC_API_KEY in your environment / .env file.');
+        process.exit(1);
+      }
+    }
+
     const options = parseDashboardArgs(args);
+
+    // Use system data directory for the database
+    const dataDir = resolve(getGlobalDataDir(), 'data');
+
     await startDashboard({
       ...options,
+      dataDir,
       workspaceDir: options.workspaceDir,
     });
   } catch (error) {
@@ -169,17 +196,29 @@ Usage: showrun dashboard [options]
 
 Start web dashboard with Teach Mode
 
+On first run, an interactive setup wizard will prompt for required
+configuration (API keys, etc.) if not already set.
+
 Options:
   --packs <dir1,dir2>    Comma-separated list of directories to search for task packs
-                         (default: ./taskpacks if exists)
+                         (default: ./taskpacks if exists, otherwise ~/.local/share/showrun/taskpacks)
   --port <n>             Port to bind the server to (default: 3333)
   --host <hostname>      Hostname or IP to bind to (default: 127.0.0.1)
                          WARNING: Only use this if you understand the security implications
   --headful              Run browser in headful mode (default: false)
-  --debug                Enable debug logging (failed tool calls to data/failed-tool-calls.jsonl)
+  --debug                Enable debug logging
   --transcript-logging   Save full agent conversation transcripts to the database
-  --baseRunDir <path>    Base directory for run outputs (default: ./runs-dashboard)
+  --baseRunDir <path>    Base directory for run outputs (default: ~/.local/share/showrun/runs-dashboard)
   --workspace <path>     Writable directory for JSON pack creation/editing (default: first --packs dir)
+
+Data Storage:
+  Database, run logs, and default taskpacks are stored in:
+    Linux/macOS: ~/.local/share/showrun/
+    Windows:     %LOCALAPPDATA%\\showrun\\
+
+  Configuration is stored in:
+    Linux/macOS: ~/.config/showrun/config.json
+    Windows:     %APPDATA%\\showrun\\config.json
 
 Examples:
   showrun dashboard

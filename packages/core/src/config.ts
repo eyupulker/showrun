@@ -220,6 +220,21 @@ function getNestedValue(obj: Record<string, unknown>, path: string[]): unknown {
 }
 
 /**
+ * Set a value at a nested path in an object, creating intermediate objects as needed.
+ */
+function setNestedValue(obj: Record<string, unknown>, path: string[], value: unknown): void {
+  let current = obj;
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i];
+    if (current[key] === undefined || current[key] === null || typeof current[key] !== 'object') {
+      current[key] = {};
+    }
+    current = current[key] as Record<string, unknown>;
+  }
+  current[path[path.length - 1]] = value;
+}
+
+/**
  * Apply config values to `process.env`, only setting vars that are not already present.
  */
 export function applyConfigToEnv(config: ShowRunConfig): void {
@@ -230,6 +245,39 @@ export function applyConfigToEnv(config: ShowRunConfig): void {
       process.env[envVar] = String(value);
     }
   }
+}
+
+/**
+ * Update the global config.json with a set of env-var-name → value pairs.
+ * Creates the config directory and file if they don't exist.
+ * Only writes non-empty string values.
+ */
+export function updateGlobalConfig(values: Record<string, string>): void {
+  const globalDir = getGlobalConfigDir();
+  const configPath = join(globalDir, 'config.json');
+
+  ensureDir(globalDir);
+
+  let config: Record<string, unknown>;
+  if (existsSync(configPath)) {
+    try {
+      config = readJsonFile<Record<string, unknown>>(configPath);
+    } catch {
+      config = JSON.parse(JSON.stringify(DEFAULT_CONFIG_TEMPLATE));
+    }
+  } else {
+    config = JSON.parse(JSON.stringify(DEFAULT_CONFIG_TEMPLATE));
+  }
+
+  for (const [envVar, value] of Object.entries(values)) {
+    if (!value) continue;
+    const mapping = CONFIG_TO_ENV.find(m => m.envVar === envVar);
+    if (mapping) {
+      setNestedValue(config, mapping.path, value);
+    }
+  }
+
+  atomicWrite(configPath, JSON.stringify(config, null, 2) + '\n');
 }
 
 // ── File resolution ────────────────────────────────────────────────────────
@@ -278,6 +326,26 @@ export function getGlobalConfigDir(): string {
   }
   const xdgConfig = process.env.XDG_CONFIG_HOME || join(homedir(), '.config');
   return join(xdgConfig, 'showrun');
+}
+
+/**
+ * Get the global data directory path for the current platform.
+ * Used for databases, run logs, and default taskpacks.
+ *
+ * Linux/macOS: $XDG_DATA_HOME/showrun (default ~/.local/share/showrun)
+ * Windows:     %LOCALAPPDATA%\showrun (fallback %APPDATA%\showrun)
+ */
+export function getGlobalDataDir(): string {
+  const os = platform();
+  if (os === 'win32') {
+    const localAppData = process.env.LOCALAPPDATA;
+    if (localAppData) return join(localAppData, 'showrun');
+    const appData = process.env.APPDATA;
+    if (appData) return join(appData, 'showrun');
+    return join(homedir(), 'AppData', 'Local', 'showrun');
+  }
+  const xdgData = process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share');
+  return join(xdgData, 'showrun');
 }
 
 /**

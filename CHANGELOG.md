@@ -10,6 +10,11 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] First-run setup wizard — interactively prompts for API keys and config when running `showrun dashboard` without prior configuration
+- [changed] Dashboard data (database, run logs, default taskpacks) now stored in system data directory (`~/.local/share/showrun/`) instead of polluting the current working directory
+- [changed] Default taskpacks directory falls back to `~/.local/share/showrun/taskpacks/` when `--packs` is not specified and `./taskpacks` does not exist
+- [added] `getGlobalDataDir()` and `updateGlobalConfig()` helpers in `@showrun/core` for system data directory and config writing
+- [changed] `showrun uninstall` now also cleans up the data directory (`~/.local/share/showrun/`)
 - [changed] CLI package reverted from `@showrun/cli` back to `showrun` — use `npx showrun` again
 - [changed] Root package.json marked `private: true` and renamed to `showrun-monorepo` to prevent accidental npm publishing
 - [added] LinkedIn Sales Navigator `pctEncode` seed technique — domain-specific knowledge for correct URL encoding with `()` delimiters in Sales Navigator query syntax

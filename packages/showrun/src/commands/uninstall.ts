@@ -6,7 +6,7 @@ import { existsSync, rmSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { createInterface } from 'readline';
-import { getGlobalConfigDir } from '@showrun/core';
+import { getGlobalConfigDir, getGlobalDataDir } from '@showrun/core';
 
 export function printUninstallHelp(): void {
   console.log(`
@@ -17,7 +17,8 @@ Remove ShowRun and clean up associated data.
 This will:
   1. Remove the npm global package (npm uninstall -g showrun)
   2. Remove Camoufox browser data
-  3. Optionally remove config directory (prompts if not --all)
+  3. Optionally remove data directory (databases, run logs)
+  4. Optionally remove config directory (prompts if not --all)
 
 Options:
   --all                 Also remove config directory (no prompt)
@@ -48,6 +49,7 @@ export async function cmdUninstall(args: string[]): Promise<void> {
   const keepConfig = args.includes('--keep-config');
 
   const configDir = getGlobalConfigDir();
+  const dataDir = getGlobalDataDir();
   const home = homedir();
 
   // Camoufox stores data in ~/.cache/camoufox or platform equivalent
@@ -74,7 +76,17 @@ export async function cmdUninstall(args: string[]): Promise<void> {
     console.log('  - Camoufox data: (not found)');
   }
 
-  // 3. Config directory
+  // 3. Data directory
+  const dataExists = existsSync(dataDir);
+  if (dataExists) {
+    if (removeAll) {
+      console.log(`  - Data directory: ${dataDir}`);
+    } else {
+      console.log(`  - Data directory: ${dataDir} (will ask)`);
+    }
+  }
+
+  // 4. Config directory
   const configExists = existsSync(configDir);
   if (configExists) {
     if (removeAll) {
@@ -107,6 +119,26 @@ export async function cmdUninstall(args: string[]): Promise<void> {
       console.log(`  Removed ${dir}`);
     } catch (err) {
       console.warn(`  Failed to remove ${dir}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  // Handle data directory
+  if (dataExists) {
+    let shouldRemoveData = removeAll;
+    if (!shouldRemoveData) {
+      shouldRemoveData = await confirm(
+        `Remove data directory at ${dataDir}? This includes databases and run logs. [y/N] `,
+      );
+    }
+    if (shouldRemoveData) {
+      try {
+        rmSync(dataDir, { recursive: true, force: true });
+        console.log(`  Removed ${dataDir}`);
+      } catch (err) {
+        console.warn(`  Failed to remove ${dataDir}: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else {
+      console.log(`  Kept ${dataDir}`);
     }
   }
 
