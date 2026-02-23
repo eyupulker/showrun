@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { isFlowHttpCompatible, replayFromSnapshot } from '../httpReplay.js';
-import type { DslStep, NetworkReplayStep, NetworkFindStep, NavigateStep, SetVarStep, ExtractTextStep, SleepStep, NetworkExtractStep } from '../dsl/types.js';
+import type { DslStep, NetworkReplayStep, NetworkFindStep, NavigateStep, SetVarStep, ExtractTextStep, SleepStep, NetworkExtractStep, ClickStep, FillStep, WaitForStep } from '../dsl/types.js';
 import type { SnapshotFile, RequestSnapshot } from '../requestSnapshot.js';
 
 function makeSnapshotFile(stepIds: string[]): SnapshotFile {
@@ -107,6 +107,73 @@ describe('isFlowHttpCompatible', () => {
       } as NetworkReplayStep,
     ];
     expect(isFlowHttpCompatible(steps, snapshots)).toBe(false);
+  });
+
+  it('returns false when a navigate step has a dynamic template URL', () => {
+    const steps: DslStep[] = [
+      { id: 'nav1', type: 'navigate', params: { url: 'https://example.com/items?batch={{inputs.batch | urlencode}}' } } as NavigateStep,
+      { id: 'find1', type: 'network_find', params: { where: { urlIncludes: '/api/' }, saveAs: 'reqId' } } as NetworkFindStep,
+      {
+        id: 'replay1', type: 'network_replay',
+        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+      } as NetworkReplayStep,
+    ];
+    const snapshots = makeSnapshotFile(['replay1']);
+    expect(isFlowHttpCompatible(steps, snapshots)).toBe(false);
+  });
+
+  it('returns false when a fill step has a dynamic template value', () => {
+    const steps: DslStep[] = [
+      { id: 'nav1', type: 'navigate', params: { url: 'https://example.com' } } as NavigateStep,
+      { id: 'fill1', type: 'fill', params: { target: { kind: 'css', selector: '#search' }, value: '{{inputs.query}}' } } as unknown as FillStep,
+      {
+        id: 'replay1', type: 'network_replay',
+        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+      } as NetworkReplayStep,
+    ];
+    const snapshots = makeSnapshotFile(['replay1']);
+    expect(isFlowHttpCompatible(steps, snapshots)).toBe(false);
+  });
+
+  it('returns false when a click step has a dynamic template target', () => {
+    const steps: DslStep[] = [
+      { id: 'nav1', type: 'navigate', params: { url: 'https://example.com' } } as NavigateStep,
+      { id: 'click1', type: 'click', params: { target: { kind: 'text', text: '{{inputs.category}}' } } } as unknown as ClickStep,
+      {
+        id: 'replay1', type: 'network_replay',
+        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+      } as NetworkReplayStep,
+    ];
+    const snapshots = makeSnapshotFile(['replay1']);
+    expect(isFlowHttpCompatible(steps, snapshots)).toBe(false);
+  });
+
+  it('allows static navigate step (no templates) in HTTP mode', () => {
+    const steps: DslStep[] = [
+      { id: 'nav1', type: 'navigate', params: { url: 'https://example.com/page' } } as NavigateStep,
+      {
+        id: 'replay1', type: 'network_replay',
+        params: { requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data', response: { as: 'json' } },
+      } as NetworkReplayStep,
+    ];
+    const snapshots = makeSnapshotFile(['replay1']);
+    expect(isFlowHttpCompatible(steps, snapshots)).toBe(true);
+  });
+
+  it('templates in network_replay params do NOT block HTTP mode (they are resolved at replay time)', () => {
+    const steps: DslStep[] = [
+      { id: 'nav1', type: 'navigate', params: { url: 'https://example.com' } } as NavigateStep,
+      {
+        id: 'replay1', type: 'network_replay',
+        params: {
+          requestId: '{{vars.reqId}}', auth: 'browser_context', out: 'data',
+          response: { as: 'json' },
+          overrides: { bodyReplace: [{ find: 'W24', replace: '{{inputs.batch}}' }] },
+        },
+      } as NetworkReplayStep,
+    ];
+    const snapshots = makeSnapshotFile(['replay1']);
+    expect(isFlowHttpCompatible(steps, snapshots)).toBe(true);
   });
 
   it('allows sleep, set_var, and network_extract in HTTP mode', () => {

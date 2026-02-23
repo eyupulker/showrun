@@ -867,6 +867,62 @@ export const EDITOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
   t => EDITOR_TOOL_NAMES.has(t.function.name)
 );
 
+/** Validator-only tools (read-only + run — no flow modification) */
+const VALIDATOR_TOOL_NAMES = new Set([
+  'editor_read_pack',
+  'editor_validate_flow',
+  'editor_run_pack',
+]);
+
+/** Validator Agent tools: read + validate + run (no patch, no browser, no conversation) */
+export const VALIDATOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => VALIDATOR_TOOL_NAMES.has(t.function.name)
+);
+
+/** The agent_validate_flow tool — invokes the Validator Agent from the Exploration Agent */
+const AGENT_VALIDATE_FLOW_TOOL: ToolDef = {
+  type: 'function',
+  function: {
+    name: 'agent_validate_flow',
+    description:
+      'Delegate multi-scenario flow validation to the Validator Agent. Call this after agent_build_flow succeeds ' +
+      'to test the flow with multiple inputs and edge cases. The Validator Agent will run the flow with each scenario, ' +
+      'check structural validity, and return a detailed report. It CANNOT modify the flow — only test and report.',
+    parameters: {
+      type: 'object',
+      properties: {
+        flowDescription: {
+          type: 'string',
+          description:
+            'Brief description of what the flow does and what data it extracts. ' +
+            'Helps the Validator Agent understand expected behavior and generate edge cases.',
+        },
+        testScenarios: {
+          type: 'array',
+          description:
+            'Optional array of test scenarios. Each has a name, inputs object, and optional expectedBehavior string. ' +
+            'If fewer than 3 scenarios are provided, the Validator Agent will generate additional edge cases.',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Scenario name (e.g., "normal input", "empty string", "special chars")' },
+              inputs: { type: 'object', description: 'Input values for this scenario' },
+              expectedBehavior: { type: 'string', description: 'What should happen (e.g., "returns non-empty array", "returns error gracefully")' },
+            },
+            required: ['name', 'inputs'],
+          },
+        },
+        explorationContext: {
+          type: 'string',
+          description:
+            'Optional exploration context to help the Validator Agent understand the target site and expected data format.',
+        },
+      },
+      required: ['flowDescription'],
+    },
+  },
+};
+
 /** Exploration Agent tool names — browser + network + context + conversation + read_pack + agent_build_flow */
 const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   // Browser tools
@@ -889,10 +945,11 @@ const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   'techniques_load', 'techniques_search', 'techniques_propose',
 ]);
 
-/** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow + techniques */
+/** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow + agent_validate_flow + techniques */
 export const EXPLORATION_AGENT_TOOLS: ToolDef[] = [
   ...MCP_AGENT_TOOL_DEFINITIONS.filter(t => EXPLORATION_ONLY_TOOL_NAMES.has(t.function.name)),
   AGENT_BUILD_FLOW_TOOL,
+  AGENT_VALIDATE_FLOW_TOOL,
   ...TECHNIQUE_TOOL_DEFINITIONS,
 ];
 

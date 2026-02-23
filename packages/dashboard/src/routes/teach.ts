@@ -19,7 +19,8 @@ import { TaskPackEditorWrapper } from '../mcpWrappers.js';
 import { summarizeIfNeeded, estimateTotalTokens, forceSummarize, type AgentMessage } from '../contextManager.js';
 import { createLlmProvider } from '../llm/index.js';
 import { runEditorAgent } from '../agents/editorAgent.js';
-import type { EditorAgentResult } from '../agents/types.js';
+import { runValidatorAgent } from '../agents/validatorAgent.js';
+import type { EditorAgentResult, ValidatorAgentResult } from '../agents/types.js';
 import { appendFileSync, mkdirSync } from 'fs';
 import { assembleSystemPrompt } from '../promptAssembler.js';
 import { join } from 'path';
@@ -843,6 +844,93 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                 } catch {
                   // ignore
                 }
+              }
+
+              agentMessages.push({ role: 'tool', content: resultStr, tool_call_id: tc.id });
+              continue; // Skip the normal tool execution path below
+            }
+
+            // Special handling: agent_validate_flow invokes the Validator Agent
+            if (tc.name === 'agent_validate_flow') {
+              // Close the Exploration Agent's browser session before the Validator Agent
+              // tries to launch its own via editor_run_pack — they share the same .browser-profile directory
+              if (conversationId) {
+                const browserSessionId = getConversationBrowserSession(conversationId);
+                if (browserSessionId) {
+                  try {
+                    await closeBrowserSession(browserSessionId);
+                  } catch (err) {
+                    console.error(`[Teach] Failed to close exploration browser session before validator: ${err}`);
+                  }
+                  setConversationBrowserSession(conversationId, null);
+                }
+              }
+
+              let validatorResult: ValidatorAgentResult;
+              try {
+                validatorResult = await runValidatorAgent({
+                  flowDescription: (toolArgs.flowDescription as string) || '',
+                  testScenarios: (toolArgs.testScenarios as Array<{ name: string; inputs: Record<string, unknown>; expectedBehavior?: string }>) || undefined,
+                  explorationContext: (toolArgs.explorationContext as string) || undefined,
+                  llmProvider: ctx.llmProvider!,
+                  toolExecutor: (name, args) => executeAgentTool(name, args, toolCtx),
+                  onStreamEvent: (event) => writeStreamLine(event),
+                  onToolError: (toolName, toolErrorArgs, errorMsg, validatorIter, validatorAssistantContent) => {
+                    const lastUserMsg = [...agentMessages].reverse().find(m => m.role === 'user');
+                    const recentUserContent = lastUserMsg
+                      ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
+                      : null;
+                    logFailedToolCall(ctx.debug, {
+                      tool: `validator:${toolName}`,
+                      args: toolErrorArgs,
+                      reason: 'execution_error',
+                      error: errorMsg,
+                      assistantContent: validatorAssistantContent ?? null,
+                      conversationId: conversationId ?? null,
+                      packId: effectivePackId ?? null,
+                      iteration: validatorIter,
+                      recentUserMessage: recentUserContent,
+                    });
+                  },
+                  abortSignal: { get aborted() { return aborted; } },
+                  sessionKey,
+                });
+              } catch (err) {
+                validatorResult = {
+                  success: false,
+                  summary: '',
+                  scenariosRun: 0,
+                  scenariosPassed: 0,
+                  scenariosFailed: 0,
+                  scenarioResults: [],
+                  recommendations: [],
+                  error: err instanceof Error ? err.message : String(err),
+                  iterationsUsed: 0,
+                };
+              }
+
+              const resultStr = JSON.stringify(validatorResult, null, 2);
+              const resultParsed = validatorResult;
+              const success = validatorResult.success;
+              toolTrace.push({ tool: tc.name, args: toolArgs, result: resultParsed, success });
+              writeStreamLine({ type: 'tool_result', tool: tc.name, args: toolArgs, result: resultParsed, success });
+
+              if (!success) {
+                const lastUserMsg = [...agentMessages].reverse().find(m => m.role === 'user');
+                const recentUserContent = lastUserMsg
+                  ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
+                  : null;
+                logFailedToolCall(ctx.debug, {
+                  tool: tc.name,
+                  args: toolArgs,
+                  reason: 'error_result',
+                  error: validatorResult.error || validatorResult.summary || 'Validator agent failed',
+                  assistantContent: (result.content ?? '').slice(0, 5000),
+                  conversationId: conversationId ?? null,
+                  packId: effectivePackId ?? null,
+                  iteration: iter,
+                  recentUserMessage: recentUserContent,
+                });
               }
 
               agentMessages.push({ role: 'tool', content: resultStr, tool_call_id: tc.id });

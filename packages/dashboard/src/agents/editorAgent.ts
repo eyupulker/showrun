@@ -114,9 +114,9 @@ Call 1: editor_read_pack
 Call 2: editor_apply_flow_patch({ op: "update_inputs", inputs: { "batch": { "type": "string", "required": true } } })
 Call 3: editor_apply_flow_patch({ op: "update_collectibles", collectibles: [{ "name": "items", "type": "array", "description": "..." }] })
 Call 4: editor_apply_flow_patch({ op: "batch_append", steps: [
-  { "id": "nav", "type": "navigate", "params": { "url": "https://example.com/items?filter={{inputs.batch | urlencode}}" } },
+  { "id": "nav", "type": "navigate", "params": { "url": "https://example.com/items?filter=test+value" } },
   { "id": "find_api", "type": "network_find", "params": { "where": { "urlIncludes": "api.example", "method": "POST" }, "pick": "last", "saveAs": "reqId", "waitForMs": 10000 } },
-  { "id": "replay", "type": "network_replay", "params": { "requestId": "{{vars.reqId}}", "auth": "browser_context", "saveAs": "rawResp", "response": { "as": "json" } } },
+  { "id": "replay", "type": "network_replay", "params": { "requestId": "{{vars.reqId}}", "auth": "browser_context", "overrides": { "bodyReplace": { "find": "test%20value", "replace": "{{inputs.batch | urlencode}}" } }, "saveAs": "rawResp", "response": { "as": "json" } } },
   { "id": "extract", "type": "network_extract", "params": { "fromVar": "rawResp", "as": "json", "path": "results[0].hits[*].{name: name, id: id}", "out": "items" } }
 ] })
 Call 5: editor_run_pack({ inputs: { "batch": "test value" } })
@@ -137,7 +137,7 @@ This is what the final flow.json structure looks like. Use it as a template:
     { "name": "companies", "type": "array", "description": "List of companies" }
   ],
   "flow": [
-    { "id": "nav", "type": "navigate", "params": { "url": "https://example.com/companies?batch={{ inputs.batch | urlencode }}" } },
+    { "id": "nav", "type": "navigate", "params": { "url": "https://example.com/companies?batch=Winter+2024" } },
     { "id": "find_api", "type": "network_find", "params": { "where": { "urlIncludes": "/api/search", "method": "POST" }, "pick": "last", "saveAs": "reqId", "waitForMs": 10000 } },
     { "id": "replay", "type": "network_replay", "params": { "requestId": "{{vars.reqId}}", "auth": "browser_context", "overrides": { "bodyReplace": { "find": "batch%3A[^%\\\\"]+", "replace": "batch%3A{{ inputs.batch | pctEncode }}" } }, "saveAs": "rawResp", "out": "companies", "response": { "as": "json", "path": "results[0].hits[*].{name: name, id: id}" } } }
   ]
@@ -146,7 +146,7 @@ This is what the final flow.json structure looks like. Use it as a template:
 
 Every step object MUST have \`id\`, \`type\`, and \`params\`. Missing any of these causes a validation error.
 
-**DYNAMIC URL + bodyReplace:** When the exploration context says "URL-based filtering is supported" (e.g., \`/items?filter=X\` triggers the API with that filter), use a Nunjucks-templated URL in the navigate step. In browser mode, the API request will have the correct filter. But you MUST ALSO add a \`bodyReplace\` override on the \`network_replay\` step — because in HTTP-only mode (cached snapshots), the navigate step is skipped and the snapshot body is replayed as-is. Without bodyReplace, the snapshot always returns data from when it was first captured, regardless of input values.
+**HARDCODED URL + bodyReplace:** When the exploration context says "URL-based filtering is supported" (e.g., \`/items?filter=X\` triggers the API with that filter), use a HARDCODED URL with the actual test value in the navigate step (NOT a Nunjucks template). For example: \`https://example.com/items?filter=test+value\`. Then add a \`bodyReplace\` override on the \`network_replay\` step to swap the test value for the input template. The hardcoded URL ensures the correct API request is captured in browser mode. The bodyReplace ensures parameterization works in HTTP-only mode (where the navigate step is skipped and the cached snapshot body is replayed as-is).
 
 **KEY PATTERN:** Use \`saveAs\` on \`network_replay\` to store the raw response in **vars** (internal). Then use \`network_extract\` with \`fromVar\` to read from vars and \`out\` to write the final extracted data to **collectibles**. This way you only need to declare ONE collectible — the final output. Do NOT declare intermediate vars as collectibles.
 
@@ -201,28 +201,28 @@ All override values support Nunjucks templates: \`{{inputs.x}}\`, \`{{vars.x}}\`
 
 **CHOOSE THE RIGHT STRATEGY — this is the most common source of wasted iterations.**
 
-#### Strategy A: Dynamic URL + bodyReplace (PREFERRED when URL-based filtering works)
+#### Strategy A: Hardcoded URL + bodyReplace (PREFERRED when URL-based filtering works)
 
-When the exploration context says "the site supports URL-based filtering" (e.g., \`/companies?batch=X\` triggers the API with that filter), use a Nunjucks-templated URL AND a bodyReplace override. The dynamic URL ensures the correct API request is captured in browser mode. The bodyReplace ensures the snapshot body is parameterized in HTTP-only mode (where the navigate step is skipped and the cached snapshot is replayed as-is).
+When the exploration context says "the site supports URL-based filtering" (e.g., \`/companies?batch=X\` triggers the API with that filter), use a HARDCODED URL with the actual test value (NOT a Nunjucks template) AND a bodyReplace override. The hardcoded URL ensures the correct API request is captured in browser mode. The bodyReplace regex swaps the test value for the input template, which works in both browser and HTTP-only mode.
 
 \`\`\`json
-// Step 1: Navigate with DYNAMIC URL (Nunjucks template)
-{ "id": "nav", "type": "navigate", "params": { "url": "https://example.com/companies?batch={{ inputs.batch | urlencode }}" } }
+// Step 1: Navigate with HARDCODED test value URL (no templates!)
+{ "id": "nav", "type": "navigate", "params": { "url": "https://example.com/companies?batch=Winter+2024" } }
 
 // Step 2: Find the API request — it contains the correct filter from the URL
 { "id": "find", "type": "network_find", "params": { "where": { "urlIncludes": "api.example.com", "method": "POST" }, "pick": "last", "saveAs": "reqId", "waitForMs": 10000 } }
 
-// Step 3: Replay WITH bodyReplace — swap the filter value for HTTP-only mode compatibility
+// Step 3: Replay WITH bodyReplace — swap the hardcoded test value for the input template
 { "id": "replay", "type": "network_replay", "params": {
   "requestId": "{{vars.reqId}}",
   "auth": "browser_context",
-  "overrides": { "bodyReplace": { "find": "batch%3A[^%\\"]+(%20[^%\\"]+)*", "replace": "batch%3A{{ inputs.batch | replace(' ', '%20') }}" } },
+  "overrides": { "bodyReplace": { "find": "batch%3AWinter%202024", "replace": "batch%3A{{ inputs.batch | urlencode }}" } },
   "out": "companies",
   "response": { "as": "json", "path": "results[0].hits" }
 } }
 \`\`\`
 
-**Why this is best:** Dynamic URL handles browser mode naturally. The bodyReplace regex matches any batch value in the cached snapshot body and swaps it with the user's input. This works correctly in both browser and HTTP-only modes.
+**Why this is best:** The hardcoded URL loads the page with the correct filter → the API request body contains the test value. The bodyReplace regex swaps that test value for the user's input. This works in both browser mode (live request) and HTTP-only mode (cached snapshot). Because the navigate URL has no Nunjucks templates, \`isFlowHttpCompatible\` passes.
 
 #### Strategy B: \`bodyReplace\` with regex (for targeted swaps)
 
@@ -244,7 +244,7 @@ When no URL-based filtering is available, use bodyReplace to swap specific value
 
 | Scenario | Best strategy |
 |----------|---------------|
-| URL query params trigger the correct API filter (e.g., \`?batch=X\`) | **Strategy A** (dynamic URL + bodyReplace for HTTP-only mode) |
+| URL query params trigger the correct API filter (e.g., \`?batch=X\`) | **Strategy A** (hardcoded URL + bodyReplace for HTTP-only mode) |
 | POST body with identifiable filter values (complex or simple) | **Strategy B** (bodyReplace regex — targeted swap) |
 | GET request with query parameters | **Strategy C** (setQuery) |
 

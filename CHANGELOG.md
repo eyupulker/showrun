@@ -10,6 +10,14 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] Collapsible right panel in ChatView — click active tab to collapse, chevron button to re-open, auto-collapses on viewports < 900px
+- [added] Run tab in right panel with auto-generated input form based on flow's `inputs` schema (string/number/boolean fields, required validation, default pre-fill)
+- [removed] Run button from conversation header (replaced by Run tab in side panel)
+- [changed] `handleRunPack` now accepts user-provided inputs instead of hardcoded `{}`
+- [changed] Exploration agent now recommends hardcoded URL + bodyReplace strategy for HTTP-only compatible flows (replaces dynamic Nunjucks URL approach)
+- [changed] Editor agent Strategy A updated: hardcoded test-value URL + bodyReplace regex replaces dynamic URL template for HTTP-only mode compatibility
+- [fixed] HTTP-only mode now correctly rejects flows where skipped steps (navigate, click, fill, etc.) contain dynamic Nunjucks templates — prevents stale snapshot replays when input-dependent browser actions drive the API response
+- [added] Validator Agent: three-agent architecture with `agent_validate_flow` for multi-scenario flow testing
 - [fixed] Agent-triggered `editor_run_pack` now skips HTTP-only replay mode, always using fresh browser execution to avoid stale snapshot loops
 - [fixed] Stop button no longer clears conversation from screen (was caused by premature DB reload racing with backend save)
 - [added] Agent now preserves rich tool call context across turns — tool_calls and tool results are saved to DB and reconstructed on follow-up messages
