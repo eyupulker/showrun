@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [changed] Browser actions (click, type, goto) now auto-attach a post-action screenshot after a 5s settle delay, giving the AI agent visual feedback
+- [added] `dom_scrape` DSL step type for structured data extraction from repeating DOM elements
 - [added] Collapsible right panel in ChatView — click active tab to collapse, chevron button to re-open, auto-collapses on viewports < 900px
 - [added] Run tab in right panel with auto-generated input form based on flow's `inputs` schema (string/number/boolean fields, required validation, default pre-fill)
 - [removed] Run button from conversation header (replaced by Run tab in side panel)

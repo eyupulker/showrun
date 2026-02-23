@@ -270,3 +270,202 @@ describe('validateFlow — unknown params rejection', () => {
     expect(errors[0]).toContain('Unknown step type: custom_magic');
   });
 });
+
+describe('validateFlow — dom_scrape step', () => {
+  const validDomScrape = {
+    id: 'scrape_results',
+    type: 'dom_scrape',
+    params: {
+      target: { kind: 'css', selector: '.search-result' },
+      collect: [
+        { key: 'title', target: { kind: 'css', selector: 'h3' } },
+        { key: 'url', target: { kind: 'css', selector: 'a' }, extract: 'attribute', attribute: 'href' },
+        { key: 'description', target: { kind: 'css', selector: '.snippet' } },
+      ],
+      skip_empty: true,
+      out: 'results',
+    },
+  };
+
+  it('accepts a valid dom_scrape step', () => {
+    const errors: string[] = [];
+    validateFlow([validDomScrape], errors);
+    expect(errors).toEqual([]);
+  });
+
+  it('accepts dom_scrape with legacy selector', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_legacy',
+      type: 'dom_scrape',
+      params: {
+        selector: '.item',
+        collect: [{ key: 'name', target: { kind: 'css', selector: 'span' } }],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors).toEqual([]);
+  });
+
+  it('errors when missing target and selector', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_no_target',
+      type: 'dom_scrape',
+      params: {
+        collect: [{ key: 'name', target: { kind: 'css', selector: 'span' } }],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('must have either "selector" or "target"'))).toBe(true);
+  });
+
+  it('errors when missing out', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_no_out',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        collect: [{ key: 'name', target: { kind: 'css', selector: 'span' } }],
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('non-empty string "out"'))).toBe(true);
+  });
+
+  it('errors when collect is empty', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_empty_collect',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        collect: [],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('non-empty "collect" array'))).toBe(true);
+  });
+
+  it('errors when collect is missing', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_missing_collect',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        out: 'items',
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('non-empty "collect" array'))).toBe(true);
+  });
+
+  it('errors on duplicate collect keys', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_dup_keys',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        collect: [
+          { key: 'name', target: { kind: 'css', selector: 'h3' } },
+          { key: 'name', target: { kind: 'css', selector: 'h4' } },
+        ],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('duplicate key "name"'))).toBe(true);
+  });
+
+  it('errors when collect field missing key', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_no_key',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        collect: [{ target: { kind: 'css', selector: 'span' } }],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('collect[0] must have a non-empty string "key"'))).toBe(true);
+  });
+
+  it('errors when collect field missing target', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_no_field_target',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        collect: [{ key: 'name' }],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('collect[0] must have a "target"'))).toBe(true);
+  });
+
+  it('errors when extract is "attribute" but attribute is missing', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_attr_missing',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        collect: [
+          { key: 'url', target: { kind: 'css', selector: 'a' }, extract: 'attribute' },
+        ],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('requires "attribute" when extract is "attribute"'))).toBe(true);
+  });
+
+  it('errors on invalid extract value', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_bad_extract',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        collect: [
+          { key: 'val', target: { kind: 'css', selector: 'span' }, extract: 'innerText' },
+        ],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('"extract" must be "text", "attribute", or "html"'))).toBe(true);
+  });
+
+  it('errors on unknown fields in collect entry', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_unknown_field',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        collect: [
+          { key: 'name', target: { kind: 'css', selector: 'span' }, trim: true },
+        ],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors.some(e => e.includes('unknown field(s): "trim"'))).toBe(true);
+  });
+
+  it('accepts dom_scrape with html extract', () => {
+    const errors: string[] = [];
+    validateFlow([{
+      id: 'scrape_html',
+      type: 'dom_scrape',
+      params: {
+        target: { kind: 'css', selector: '.item' },
+        collect: [
+          { key: 'content', target: { kind: 'css', selector: '.body' }, extract: 'html' },
+        ],
+        out: 'items',
+      },
+    }], errors);
+    expect(errors).toEqual([]);
+  });
+});

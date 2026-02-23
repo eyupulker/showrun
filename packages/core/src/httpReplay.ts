@@ -39,7 +39,7 @@ export interface HttpReplayResult {
 // ---------------------------------------------------------------------------
 
 /** Step types that require DOM access for data extraction (force browser mode). */
-const DOM_EXTRACTION_STEPS = new Set(['extract_text', 'extract_title', 'extract_attribute']);
+const DOM_EXTRACTION_STEPS = new Set(['extract_text', 'extract_title', 'extract_attribute', 'dom_scrape']);
 
 /**
  * Step types that are silently skipped in HTTP mode.
@@ -48,7 +48,7 @@ const DOM_EXTRACTION_STEPS = new Set(['extract_text', 'extract_title', 'extract_
 const HTTP_SKIPPED_STEPS = new Set([
   'navigate', 'click', 'fill', 'select_option', 'press_key',
   'upload_file', 'wait_for', 'assert', 'frame', 'new_tab',
-  'switch_tab', 'network_find',
+  'switch_tab', 'network_find', 'dom_scrape',
 ]);
 
 /** Check if a value contains Nunjucks template expressions. */

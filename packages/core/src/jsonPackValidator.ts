@@ -5,7 +5,7 @@ import { validateFlow, ValidationError } from './dsl/validation.js';
 /** Step types that produce collectible output via an "out" parameter */
 const STEPS_WITH_OUT = new Set([
   'extract_title', 'extract_text', 'extract_attribute',
-  'network_replay', 'network_extract',
+  'network_replay', 'network_extract', 'dom_scrape',
 ]);
 
 /**
