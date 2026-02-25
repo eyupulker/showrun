@@ -6,6 +6,8 @@ import { InputValidator, RunContextFactory, runFlow, attachNetworkCapture, TaskP
 import type { Logger } from './types.js';
 import { launchBrowser, type BrowserSession } from './browserLauncher.js';
 import { isFlowHttpCompatible } from './httpReplay.js';
+import { resolveProxy } from './proxy/proxyService.js';
+import type { ResolvedProxy } from './proxy/types.js';
 import type { SnapshotFile, RequestSnapshot } from './requestSnapshot.js';
 import {
   writeSnapshots,
@@ -110,6 +112,12 @@ export async function runTaskPack(
   // Load secrets early (needed for both modes)
   const secrets = providedSecrets ?? (packPath ? TaskPackLoader.loadSecrets(packPath) : {});
 
+  // ─── Resolve proxy ──────────────────────────────────────────────────
+  const resolvedProxy: ResolvedProxy | null = resolveProxy(taskPack.browser?.proxy);
+  if (taskPack.browser?.proxy?.enabled && !resolvedProxy) {
+    console.log('[runner] Proxy enabled in pack but credentials not configured, running without proxy');
+  }
+
   // ─── HTTP-first execution ───────────────────────────────────────────
   const snapshots = taskPack.snapshots ?? null;
   if (isFlowHttpCompatible(taskPack.flow, snapshots)) {
@@ -130,6 +138,7 @@ export async function runTaskPack(
         secrets,
         logger,
         options,
+        resolvedProxy,
       );
 
       const durationMs = Date.now() - startTime;
@@ -166,6 +175,7 @@ export async function runTaskPack(
       headless,
       sessionId: options.sessionId,
       packPath: options.packPath ?? options.cacheDir,
+      proxy: resolvedProxy ?? undefined,
     });
     page = browserSession.page;
 
@@ -357,6 +367,7 @@ async function runHttpOnly(
   secrets: Record<string, string>,
   logger: Logger,
   options: RunTaskPackOptions,
+  proxy: ResolvedProxy | null,
 ): Promise<RunResult> {
   console.log(`[runner] Running in HTTP-only mode (${Object.keys(snapshots.snapshots).length} snapshots)`);
 
@@ -384,6 +395,7 @@ async function runHttpOnly(
     secrets,
     httpMode: true,
     snapshots,
+    proxy: proxy ?? undefined,
   });
 
   // Validate responses: re-check each network_replay step's snapshot validation.

@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] Proxy support: modular proxy service (OxyLabs provider), `set_proxy` agent tool, session/random modes, covers browser + HTTP replays
+
 ## 0.1.8 — 2026-02-22
 
 - [changed] Dashboard browser launching consolidated to use core's unified `launchBrowser()`, ensuring auto-fetch and consistent engine behavior

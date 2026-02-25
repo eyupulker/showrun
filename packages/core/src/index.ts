@@ -14,6 +14,9 @@ export * from './config.js';
 export * from './requestSnapshot.js';
 export * from './httpReplay.js';
 
+// Proxy exports
+export * from './proxy/index.js';
+
 // Storage exports
 export * from './storage/index.js';
 

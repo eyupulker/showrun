@@ -7,14 +7,15 @@ import type { TaskPackEditorWrapper } from './mcpWrappers.js';
 import * as browserInspector from './browserInspector.js';
 import { isSessionAlive, startBrowserSession, closeSession } from './browserInspector.js';
 import { getSecretNamesWithValues } from './secretsUtils.js';
-import { resolveTemplates, TaskPackLoader, saveVersion } from '@showrun/core';
+import { resolveTemplates, TaskPackLoader, saveVersion, resolveProxy } from '@showrun/core';
+import type { ProxyConfig } from '@showrun/core';
 import { executePlanTool } from './contextManager.js';
 import {
   updateConversation,
   type Conversation,
 } from './db.js';
 import { join } from 'path';
-import { mkdirSync } from 'fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 
 /**
  * Redact common sensitive patterns (tokens, passwords, credentials) from error messages.
@@ -435,6 +436,33 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
         type: 'object',
         properties: {},
         required: [],
+      },
+    },
+  },
+  // Proxy tool
+  {
+    type: 'function',
+    function: {
+      name: 'set_proxy',
+      description: 'Enable or disable proxy for the current flow. Affects both browser sessions and HTTP-only request replays. Use when: IP ban detected (403/429/CAPTCHAs), user requests proxy, or technique instructs. Closes current browser session; it will restart with proxy on next browser tool call. Persistent profile (cookies) is preserved.',
+      parameters: {
+        type: 'object',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            description: 'Whether to enable (true) or disable (false) the proxy',
+          },
+          mode: {
+            type: 'string',
+            enum: ['session', 'random'],
+            description: 'Proxy mode: "session" for sticky IP (default), "random" for rotating IP per request',
+          },
+          country: {
+            type: 'string',
+            description: 'Two-letter ISO country code for geo-targeting (e.g., "US", "GB")',
+          },
+        },
+        required: ['enabled'],
       },
     },
   },
@@ -883,6 +911,8 @@ const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   'conversation_update_title', 'conversation_update_description', 'conversation_set_status',
   // Secrets
   'request_secrets',
+  // Proxy
+  'set_proxy',
   // Read-only pack inspection
   'editor_read_pack',
   // Techniques DB
@@ -958,8 +988,9 @@ async function ensureBrowserSession(ctx: AgentToolContext): Promise<string> {
       const headful = ctx.headful !== false; // Default true for dashboard
       const engine = 'camoufox' as const;
 
-      // Determine persistent context directory based on linked pack
+      // Determine persistent context directory and proxy based on linked pack
       let persistentContextDir: string | undefined;
+      let resolvedProxy: import('@showrun/core').ResolvedProxy | undefined;
 
       if (ctx.packId) {
         const packs = await ctx.taskPackEditor.listPacks();
@@ -968,13 +999,27 @@ async function ensureBrowserSession(ctx: AgentToolContext): Promise<string> {
           persistentContextDir = join(pack.path, '.browser-profile');
           mkdirSync(persistentContextDir, { recursive: true });
           console.log(`[BrowserAuto] Using persistent profile for pack ${ctx.packId}: ${persistentContextDir}`);
+
+          // Resolve proxy from pack's browser.proxy config
+          try {
+            const manifestJson = readFileSync(join(pack.path, 'taskpack.json'), 'utf-8');
+            const manifest = JSON.parse(manifestJson);
+            const proxyResult = resolveProxy(manifest.browser?.proxy);
+            if (proxyResult) {
+              resolvedProxy = proxyResult;
+              console.log(`[BrowserAuto] Proxy enabled for pack ${ctx.packId}`);
+            }
+          } catch {
+            // Ignore errors reading manifest for proxy
+          }
         }
       }
 
-      console.log(`[BrowserAuto] Starting camoufox session for conversation ${convId}${persistentContextDir ? ' (persistent)' : ''}`);
+      console.log(`[BrowserAuto] Starting camoufox session for conversation ${convId}${persistentContextDir ? ' (persistent)' : ''}${resolvedProxy ? ' (proxied)' : ''}`);
       const sessionId = await startBrowserSession(headful, engine, {
         persistentContextDir,
         packId: ctx.packId ?? undefined,
+        proxy: resolvedProxy,
       });
 
       // Store session in memory map
@@ -1112,6 +1157,60 @@ export async function executeAgentTool(
         return wrap(truncateToolOutput(fullJson, 'run_pack result'));
       }
       // Browser tools - sessionId is auto-injected via effectiveArgs
+      case 'set_proxy': {
+        // Verify proxy env vars are configured
+        const proxyUsername = process.env.SHOWRUN_PROXY_USERNAME;
+        const proxyPassword = process.env.SHOWRUN_PROXY_PASSWORD;
+        const proxyEnabled = args.enabled as boolean;
+
+        if (proxyEnabled && (!proxyUsername || !proxyPassword)) {
+          return wrap(JSON.stringify({
+            error: 'Proxy credentials not configured. Set SHOWRUN_PROXY_USERNAME and SHOWRUN_PROXY_PASSWORD environment variables.',
+            hint: 'Ask the system administrator to configure proxy credentials.',
+          }, null, 2));
+        }
+
+        // Build ProxyConfig
+        const proxyConfig: ProxyConfig = {
+          enabled: proxyEnabled,
+          mode: (args.mode as 'session' | 'random') ?? 'session',
+        };
+        if (args.country) {
+          proxyConfig.country = (args.country as string).toUpperCase();
+        }
+
+        // Persist to taskpack.json
+        const packId = ctx.packId;
+        if (!packId) throw new Error('No pack linked to this conversation');
+        const packs = await ctx.taskPackEditor.listPacks();
+        const pack = packs.find((p: { id: string; path?: string }) => p.id === packId);
+        if (!pack?.path) throw new Error(`Pack ${packId} not found or path not available`);
+
+        const manifestPath = join(pack.path, 'taskpack.json');
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+        if (!manifest.browser) manifest.browser = {};
+        if (proxyEnabled) {
+          manifest.browser.proxy = proxyConfig;
+        } else {
+          delete manifest.browser.proxy;
+        }
+        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+
+        // Close existing browser session if open
+        if (ctx.conversationId) {
+          const existingSessionId = getConversationBrowserSession(ctx.conversationId);
+          if (existingSessionId && isSessionAlive(existingSessionId)) {
+            await closeSession(existingSessionId);
+            setConversationBrowserSession(ctx.conversationId, null);
+          }
+        }
+
+        const statusMsg = proxyEnabled
+          ? `Proxy enabled (mode: ${proxyConfig.mode}${proxyConfig.country ? `, country: ${proxyConfig.country}` : ''}). Browser session closed and will restart with proxy on next browser tool call. Persistent profile (cookies) preserved.`
+          : 'Proxy disabled. Browser session closed and will restart without proxy on next browser tool call.';
+
+        return wrap(JSON.stringify({ success: true, message: statusMsg }, null, 2));
+      }
       case 'close_session': {
         const sessionId = effectiveArgs.sessionId as string;
         await closeSession(sessionId);

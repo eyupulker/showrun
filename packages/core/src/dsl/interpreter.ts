@@ -16,6 +16,7 @@ import {
 import type { NetworkCaptureApi, NetworkEntrySerializable } from '../networkCapture.js';
 import { evaluateCondition, conditionToString } from './conditions.js';
 import type { SnapshotFile } from '../requestSnapshot.js';
+import type { ResolvedProxy } from '../proxy/types.js';
 
 /**
  * Capture the delta of vars and collectibles produced by a step,
@@ -86,6 +87,10 @@ export interface RunFlowOptionsWithAuth extends RunFlowOptions {
    * Request snapshots for HTTP-first execution
    */
   snapshots?: SnapshotFile;
+  /**
+   * Resolved proxy for HTTP-only replay requests
+   */
+  proxy?: ResolvedProxy;
 }
 
 /**
@@ -165,6 +170,7 @@ export async function runFlow(
     httpMode,
     snapshots: snapshots ?? undefined,
     secrets,
+    proxy: options?.proxy,
   };
 
   if (authConfig?.authPolicy) {
