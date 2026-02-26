@@ -8,7 +8,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ---
 
-## Unreleased
+## 0.1.9 - 2026-02-26
 
 - [fixed] `npx showrun` no longer triggers a full rebuild on every invocation — removed root `prepare` hook that ran `pnpm build` on every npm lifecycle event
 - [changed] Browser actions (click, type, goto) now auto-attach a post-action screenshot after a 5s settle delay, giving the AI agent visual feedback
