@@ -9,7 +9,6 @@
   },
   "scripts": {
     "build": "pnpm -r --filter=!showrun build && pnpm --filter=showrun build",
-    "prepare": "pnpm build",
     "dev": "pnpm build && pnpm test:example",
     "test:example": "node packages/showrun/dist/cli.js run ./taskpacks/example-json --inputs '{}'",
     "test:unit": "pnpm -r test",

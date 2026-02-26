@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [fixed] `npx showrun` no longer triggers a full rebuild on every invocation — removed root `prepare` hook that ran `pnpm build` on every npm lifecycle event
+
 ## 0.1.8 — 2026-02-22
 
 - [changed] Dashboard browser launching consolidated to use core's unified `launchBrowser()`, ensuring auto-fetch and consistent engine behavior
