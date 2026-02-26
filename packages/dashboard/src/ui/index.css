@@ -351,6 +351,12 @@ code, pre {
   color: #94a3b8;
   font-size: 13px;
   font-weight: 500;
+  /* Button reset */
+  background: none;
+  border: none;
+  padding: 0;
+  width: 100%;
+  text-align: left;
 }
 
 .thinking-content {
@@ -381,6 +387,12 @@ code, pre {
   color: var(--accent-orange);
   font-size: 13px;
   font-weight: 500;
+  /* Button reset */
+  background: none;
+  border: none;
+  padding: 0;
+  width: 100%;
+  text-align: left;
 }
 
 .tool-call-name {

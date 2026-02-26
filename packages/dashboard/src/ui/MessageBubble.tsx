@@ -29,6 +29,7 @@ export default function MessageBubble({
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [toolsExpanded, setToolsExpanded] = useState(true); // Default expanded
   const [expandedTools, setExpandedTools] = useState<Set<number>>(new Set());
+  const id = React.useId();
 
   const formatPayload = (data: unknown): string => {
     try {
@@ -78,9 +79,12 @@ export default function MessageBubble({
       {/* Thinking section for assistant */}
       {role === 'assistant' && thinking && (
         <div className="thinking-section">
-          <div
+          <button
+            type="button"
             className="thinking-header"
             onClick={() => setThinkingExpanded(!thinkingExpanded)}
+            aria-expanded={thinkingExpanded}
+            aria-controls={`thinking-${id}`}
           >
             <svg
               width="14"
@@ -90,13 +94,14 @@ export default function MessageBubble({
               stroke="currentColor"
               strokeWidth="2"
               className={`collapsible-arrow ${thinkingExpanded ? 'expanded' : ''}`}
+              aria-hidden="true"
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
             <span>Thinking</span>
-          </div>
+          </button>
           {thinkingExpanded && (
-            <div className="thinking-content">{thinking}</div>
+            <div className="thinking-content" id={`thinking-${id}`}>{thinking}</div>
           )}
         </div>
       )}
@@ -104,10 +109,13 @@ export default function MessageBubble({
       {/* Tool calls section BEFORE content (since tools execute first) */}
       {role === 'assistant' && toolCalls && toolCalls.length > 0 && (
         <div className="tool-call-section" style={{ marginBottom: content ? '12px' : 0 }}>
-          <div
+          <button
+            type="button"
             className="tool-call-header"
             onClick={() => setToolsExpanded(!toolsExpanded)}
             style={{ cursor: 'pointer' }}
+            aria-expanded={toolsExpanded}
+            aria-controls={`tools-${id}`}
           >
             <svg
               width="14"
@@ -117,13 +125,14 @@ export default function MessageBubble({
               stroke="currentColor"
               strokeWidth="2"
               className={`collapsible-arrow ${toolsExpanded ? 'expanded' : ''}`}
+              aria-hidden="true"
             >
               <polyline points="9 18 15 12 9 6" />
             </svg>
             <span>Tools ({toolCalls.length})</span>
-          </div>
+          </button>
           {toolsExpanded && (
-            <div style={{ marginTop: '10px' }}>
+            <div style={{ marginTop: '10px' }} id={`tools-${id}`}>
               {toolCalls.map((tc, idx) => {
                 const isExpanded = expandedTools.has(idx);
                 const success = tc.success !== false;
