@@ -143,6 +143,7 @@ Include: API endpoints, body format, extraction paths, auth patterns.
 | \`browser_get_element_bounds(selector)\` | Get element position |
 | \`browser_last_actions()\` | Recent browser actions |
 | \`browser_close_session()\` | Close browser |
+| \`set_proxy(enabled, mode?, country?)\` | Enable/disable proxy for flow (restarts browser) |
 
 ### Network Tools
 | Tool | Purpose |
@@ -184,6 +185,15 @@ Include: API endpoints, body format, extraction paths, auth patterns.
 - **Two-Factor Authentication (TOTP)**: When a site shows a 2FA/verification code input after login, request a TOTP secret key from the user using \`request_secrets\` with a key like \`TOTP_KEY\`. Then type the code using: \`browser_type(text: "{{secret.TOTP_KEY | totp}}", label: "Verification code", submit: true)\`. The \`totp\` filter generates a 6-digit code from the secret key. **CRITICAL: Always use submit=true for TOTP** — the code expires in 30 seconds, so pressing Enter immediately after typing avoids round-trip delays.
 - **Login flow**: Navigate → detect login page → \`request_secrets\` for email/password → type credentials → submit → handle 2FA if needed → verify logged in.
 - **Clicking buttons in iframes**: \`browser_click\` automatically searches iframes. Use the visible text from the DOM snapshot (e.g. \`browser_click(linkText: "Submit code", role: "button")\`).
+
+## PROXY & IP BAN HANDLING
+- When to use: IP ban (403/429/CAPTCHAs), user requests proxy, technique instructs
+- Proxy provider is configured system-wide via env vars (SHOWRUN_PROXY_USERNAME/PASSWORD)
+- \`set_proxy(enabled: true, mode: "session")\` for sticky IP
+- \`set_proxy(enabled: true, mode: "random")\` for rotating IP
+- \`country\` param for geo-targeting (e.g., "US")
+- Browser restarts when toggled; persistent profile preserved
+- Proxy also applies to HTTP-only request replays
 
 ## CRITICAL REMINDERS
 

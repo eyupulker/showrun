@@ -9,6 +9,7 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 import { existsSync } from 'fs';
 import { join } from 'path';
 import type { BrowserEngine, BrowserSettings, BrowserPersistence } from './types.js';
+import type { ResolvedProxy } from './proxy/types.js';
 import { resolveBrowserDataDir } from './browserPersistence.js';
 
 /**
@@ -40,6 +41,10 @@ export interface BrowserSession {
    */
   userDataDir?: string;
   /**
+   * Resolved proxy used for this session (if any)
+   */
+  proxy?: ResolvedProxy;
+  /**
    * Close the browser session
    */
   close(): Promise<void>;
@@ -70,6 +75,11 @@ export interface LaunchBrowserConfig {
    * When set, bypasses persistence resolution (sessionId/packPath).
    */
   userDataDir?: string;
+  /**
+   * Resolved proxy to route traffic through.
+   * Passed directly to Playwright/Camoufox launch options.
+   */
+  proxy?: ResolvedProxy;
 }
 
 /**
@@ -111,6 +121,7 @@ export async function launchBrowser(config: LaunchBrowserConfig): Promise<Browse
       headless,
       userDataDir,
       persistence,
+      proxy: config.proxy,
     });
   }
 
@@ -119,6 +130,7 @@ export async function launchBrowser(config: LaunchBrowserConfig): Promise<Browse
     headless,
     userDataDir,
     persistence,
+    proxy: config.proxy,
   });
 }
 
@@ -129,8 +141,13 @@ async function launchChromium(config: {
   headless: boolean;
   userDataDir?: string;
   persistence: BrowserPersistence;
+  proxy?: ResolvedProxy;
 }): Promise<BrowserSession> {
-  const { headless, userDataDir, persistence } = config;
+  const { headless, userDataDir, persistence, proxy } = config;
+
+  const proxyOption = proxy
+    ? { server: proxy.server, username: proxy.username, password: proxy.password }
+    : undefined;
 
   let browser: Browser;
   let context: BrowserContext;
@@ -140,12 +157,13 @@ async function launchChromium(config: {
     // Use persistent context when user data dir is specified
     context = await chromium.launchPersistentContext(userDataDir, {
       headless,
+      proxy: proxyOption,
     });
     browser = null as unknown as Browser; // Persistent context doesn't expose browser
     page = context.pages()[0] || await context.newPage();
   } else {
     // Ephemeral browser
-    browser = await chromium.launch({ headless });
+    browser = await chromium.launch({ headless, proxy: proxyOption });
     context = await browser.newContext();
     page = await context.newPage();
   }
@@ -157,6 +175,7 @@ async function launchChromium(config: {
     engine: 'chromium',
     persistence,
     userDataDir,
+    proxy,
     async close() {
       if (browser) {
         await browser.close().catch(() => {});
@@ -207,8 +226,9 @@ async function launchCamoufox(config: {
   headless: boolean;
   userDataDir?: string;
   persistence: BrowserPersistence;
+  proxy?: ResolvedProxy;
 }): Promise<BrowserSession> {
-  const { headless, userDataDir, persistence } = config;
+  const { headless, userDataDir, persistence, proxy } = config;
 
   // Desktop-only screen constraints to prevent mobile fingerprints
   const screen = { minWidth: 1024, minHeight: 768 };
@@ -217,7 +237,7 @@ async function launchCamoufox(config: {
   await ensureCamoufoxBrowser();
 
   // Dynamic import to avoid loading Camoufox when not needed
-  let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean; screen?: { minWidth?: number; maxWidth?: number; minHeight?: number; maxHeight?: number } }) => Promise<Browser | BrowserContext>;
+  let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean; screen?: { minWidth?: number; maxWidth?: number; minHeight?: number; maxHeight?: number }; proxy?: { server: string; username: string; password: string }; geoip?: boolean }) => Promise<Browser | BrowserContext>;
   try {
     const camoufoxModule = await import('camoufox-js');
     Camoufox = camoufoxModule.Camoufox;
@@ -228,6 +248,10 @@ async function launchCamoufox(config: {
     );
   }
 
+  const proxyOption = proxy
+    ? { server: proxy.server, username: proxy.username, password: proxy.password }
+    : undefined;
+
   if (userDataDir) {
     // With user_data_dir, Camoufox returns BrowserContext directly (persistent context)
     // humanize: adds human-like cursor movement delays (up to 2 seconds)
@@ -236,6 +260,7 @@ async function launchCamoufox(config: {
       humanize: 2.0,
       screen,
       user_data_dir: userDataDir,
+      ...(proxyOption && { proxy: proxyOption, geoip: true }),
     }) as unknown as BrowserContext;
 
     const page = context.pages()[0] || await context.newPage();
@@ -247,6 +272,7 @@ async function launchCamoufox(config: {
       engine: 'camoufox',
       persistence,
       userDataDir,
+      proxy,
       async close() {
         await context.close().catch(() => {});
       },
@@ -259,6 +285,7 @@ async function launchCamoufox(config: {
     headless,
     humanize: 2.0,
     screen,
+    ...(proxyOption && { proxy: proxyOption, geoip: true }),
   }) as Browser;
 
   const context = await browser.newContext();
@@ -271,6 +298,7 @@ async function launchCamoufox(config: {
     engine: 'camoufox',
     persistence,
     userDataDir,
+    proxy,
     async close() {
       await browser.close().catch(() => {});
     },

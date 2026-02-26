@@ -5,6 +5,7 @@
 
 import { type Browser, type BrowserContext, type Page } from 'playwright';
 import { launchBrowser, type BrowserEngine } from '@showrun/core';
+import type { ResolvedProxy } from '@showrun/core';
 import type { Target } from '@showrun/core';
 
 export type { BrowserEngine };
@@ -162,6 +163,8 @@ export interface StartSessionOptions {
   persistentContextDir?: string;
   /** Pack ID this session is linked to */
   packId?: string;
+  /** Resolved proxy for routing traffic */
+  proxy?: ResolvedProxy;
 }
 
 const POST_DATA_REPLAY_CAP = 64 * 1024; // 64KB for replay
@@ -262,13 +265,14 @@ export async function startBrowserSession(
   engine: BrowserEngine = 'camoufox',
   options?: StartSessionOptions
 ): Promise<string> {
-  const { persistentContextDir, packId } = options ?? {};
+  const { persistentContextDir, packId, proxy } = options ?? {};
 
   // Delegate browser launching to core's unified launcher
   const coreSession = await launchBrowser({
     browserSettings: { engine },
     headless: !headful,
     userDataDir: persistentContextDir,
+    proxy,
   });
 
   const browser = coreSession.browser;

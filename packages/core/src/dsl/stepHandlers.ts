@@ -31,6 +31,7 @@ import { search as jmesSearch, type JSONValue } from '@jmespath-community/jmespa
 import type { SnapshotFile, RequestSnapshot } from '../requestSnapshot.js';
 import { replayFromSnapshot } from '../httpReplay.js';
 import { validateResponse } from '../requestSnapshot.js';
+import type { ResolvedProxy } from '../proxy/types.js';
 
 /**
  * Step execution context
@@ -60,6 +61,8 @@ export interface StepContext {
   snapshots?: SnapshotFile;
   /** Secrets for template resolution in HTTP mode */
   secrets?: Record<string, string>;
+  /** Resolved proxy for HTTP-only replay requests */
+  proxy?: ResolvedProxy;
 }
 
 /**
@@ -1068,6 +1071,7 @@ async function executeNetworkReplayHttp(
 
   const result = await replayFromSnapshot(mergedSnapshot, ctx.inputs, ctx.vars, {
     secrets: ctx.secrets,
+    proxy: ctx.proxy,
   });
 
   // Validate the response — throw to trigger browser fallback if stale

@@ -15,6 +15,7 @@ import {
   applyOverrides,
   type ValidationResult,
 } from './requestSnapshot.js';
+import type { ResolvedProxy } from './proxy/types.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -115,7 +116,7 @@ export async function replayFromSnapshot(
   snapshot: RequestSnapshot,
   inputs: Record<string, unknown>,
   vars: Record<string, unknown>,
-  options?: { secrets?: Record<string, string>; timeoutMs?: number },
+  options?: { secrets?: Record<string, string>; timeoutMs?: number; proxy?: ResolvedProxy },
 ): Promise<HttpReplayResult> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const { url, method, headers, body } = applyOverrides(snapshot, inputs, vars, options?.secrets);
@@ -137,6 +138,25 @@ export async function replayFromSnapshot(
 
   if (body && method !== 'GET' && method !== 'HEAD') {
     fetchOptions.body = body;
+  }
+
+  // When proxy is provided, create a ProxyAgent dispatcher for undici-backed fetch.
+  // undici is bundled with Node but may not have separate type declarations.
+  if (options?.proxy) {
+    try {
+      // @ts-expect-error undici types may not be installed; runtime import is fine
+      const undiciModule = await import('undici');
+      const ProxyAgentClass = (undiciModule as any).ProxyAgent;
+      if (ProxyAgentClass) {
+        const proxyUrl = options.proxy.server.replace(
+          '://',
+          `://${encodeURIComponent(options.proxy.username)}:${encodeURIComponent(options.proxy.password)}@`,
+        );
+        (fetchOptions as any).dispatcher = new ProxyAgentClass(proxyUrl);
+      }
+    } catch {
+      console.warn('[httpReplay] Failed to load undici ProxyAgent, making direct request');
+    }
   }
 
   try {
@@ -168,7 +188,7 @@ export async function replayAndValidate(
   snapshot: RequestSnapshot,
   inputs: Record<string, unknown>,
   vars: Record<string, unknown>,
-  options?: { secrets?: Record<string, string>; timeoutMs?: number },
+  options?: { secrets?: Record<string, string>; timeoutMs?: number; proxy?: ResolvedProxy },
 ): Promise<{ result: HttpReplayResult; validation: ValidationResult }> {
   const result = await replayFromSnapshot(snapshot, inputs, vars, options);
   const validation = validateResponse(snapshot, result);
