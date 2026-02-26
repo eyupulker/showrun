@@ -90,7 +90,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     function: {
       name: 'editor_apply_flow_patch',
       description:
-        'Apply ONE patch to the linked pack\'s flow.json. Pass flat params: op, and for the op: index?, step?, steps?, collectibles?, inputs? at top level (no nested patch object). append: op + step. batch_append: op + steps (array) — preferred for adding multiple steps at once. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. update_inputs: op + inputs. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID; response.path uses JMESPath), network_extract (fromVar, as, path (JMESPath expression, e.g. "results[*].{id: id, name: name}"), out), select_option (target, value: string|{label}|{index}|array), press_key (key, target?, times?, delayMs?), upload_file (target, files: string|array), frame (frame: string|{name}|{url}, action: enter|exit), new_tab (url?, saveTabIndexAs?), switch_tab (tab: number|last|previous, closeCurrentTab?).',
+        'Apply ONE patch to the linked pack\'s flow.json. Pass flat params: op, and for the op: index?, step?, steps?, collectibles?, inputs? at top level (no nested patch object). append: op + step. batch_append: op + steps (array) — preferred for adding multiple steps at once. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. update_inputs: op + inputs. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID; response.path uses JMESPath), network_extract (fromVar, as, path (JMESPath expression, e.g. "results[*].{id: id, name: name}"), out), select_option (target, value: string|{label}|{index}|array), press_key (key, target?, times?, delayMs?), upload_file (target, files: string|array), frame (frame: string|{name}|{url}, action: enter|exit), new_tab (url?, saveTabIndexAs?), switch_tab (tab: number|last|previous, closeCurrentTab?), dom_scrape (target for repeating elements, collect: [{key, target, extract?: text|attribute|html, attribute?}], skip_empty?, out).',
       parameters: {
         type: 'object',
         properties: {
@@ -791,6 +791,27 @@ function truncateToolOutput(output: string, label?: string): string {
   return JSON.stringify(result, null, 2);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Execute a browser action, wait for the page to settle, take a screenshot,
+ * and return both the JSON result and the snapshot for visual feedback.
+ */
+async function actionWithScreenshot(
+  sessionId: string,
+  actionResult: unknown,
+  delayMs = 5000
+): Promise<{ resultJson: string; snapshot: { screenshotBase64: string; mimeType: string; url: string } }> {
+  await sleep(delayMs);
+  const screenshot = await browserInspector.takeScreenshot(sessionId);
+  return {
+    resultJson: JSON.stringify(actionResult, null, 2),
+    snapshot: { screenshotBase64: screenshot.imageBase64, mimeType: screenshot.mimeType, url: screenshot.url },
+  };
+}
+
 /** Result of executing a tool: string for LLM, optional browser snapshot for HTTP response */
 export interface ExecuteToolResult {
   stringForLlm: string;
@@ -867,6 +888,62 @@ export const EDITOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
   t => EDITOR_TOOL_NAMES.has(t.function.name)
 );
 
+/** Validator-only tools (read-only + run — no flow modification) */
+const VALIDATOR_TOOL_NAMES = new Set([
+  'editor_read_pack',
+  'editor_validate_flow',
+  'editor_run_pack',
+]);
+
+/** Validator Agent tools: read + validate + run (no patch, no browser, no conversation) */
+export const VALIDATOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => VALIDATOR_TOOL_NAMES.has(t.function.name)
+);
+
+/** The agent_validate_flow tool — invokes the Validator Agent from the Exploration Agent */
+const AGENT_VALIDATE_FLOW_TOOL: ToolDef = {
+  type: 'function',
+  function: {
+    name: 'agent_validate_flow',
+    description:
+      'Delegate multi-scenario flow validation to the Validator Agent. Call this after agent_build_flow succeeds ' +
+      'to test the flow with multiple inputs and edge cases. The Validator Agent will run the flow with each scenario, ' +
+      'check structural validity, and return a detailed report. It CANNOT modify the flow — only test and report.',
+    parameters: {
+      type: 'object',
+      properties: {
+        flowDescription: {
+          type: 'string',
+          description:
+            'Brief description of what the flow does and what data it extracts. ' +
+            'Helps the Validator Agent understand expected behavior and generate edge cases.',
+        },
+        testScenarios: {
+          type: 'array',
+          description:
+            'Optional array of test scenarios. Each has a name, inputs object, and optional expectedBehavior string. ' +
+            'If fewer than 3 scenarios are provided, the Validator Agent will generate additional edge cases.',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Scenario name (e.g., "normal input", "empty string", "special chars")' },
+              inputs: { type: 'object', description: 'Input values for this scenario' },
+              expectedBehavior: { type: 'string', description: 'What should happen (e.g., "returns non-empty array", "returns error gracefully")' },
+            },
+            required: ['name', 'inputs'],
+          },
+        },
+        explorationContext: {
+          type: 'string',
+          description:
+            'Optional exploration context to help the Validator Agent understand the target site and expected data format.',
+        },
+      },
+      required: ['flowDescription'],
+    },
+  },
+};
+
 /** Exploration Agent tool names — browser + network + context + conversation + read_pack + agent_build_flow */
 const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   // Browser tools
@@ -889,10 +966,11 @@ const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   'techniques_load', 'techniques_search', 'techniques_propose',
 ]);
 
-/** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow + techniques */
+/** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow + agent_validate_flow + techniques */
 export const EXPLORATION_AGENT_TOOLS: ToolDef[] = [
   ...MCP_AGENT_TOOL_DEFINITIONS.filter(t => EXPLORATION_ONLY_TOOL_NAMES.has(t.function.name)),
   AGENT_BUILD_FLOW_TOOL,
+  AGENT_VALIDATE_FLOW_TOOL,
   ...TECHNIQUE_TOOL_DEFINITIONS,
 ];
 
@@ -1128,7 +1206,8 @@ export async function executeAgentTool(
         // Resolve templates in URL (e.g., {{secret.BASE_URL}})
         const resolvedUrl = await resolveTemplateValue(url, ctx);
         const result = await browserInspector.gotoUrl(sessionId, resolvedUrl);
-        return wrap(JSON.stringify(result, null, 2));
+        const { resultJson, snapshot } = await actionWithScreenshot(sessionId, result);
+        return wrap(resultJson, snapshot);
       }
       case 'go_back': {
         const sessionId = effectiveArgs.sessionId as string;
@@ -1151,7 +1230,8 @@ export async function executeAgentTool(
           clear: args.clear !== false,
           submit: args.submit === true,
         });
-        return wrap(JSON.stringify(result, null, 2));
+        const { resultJson, snapshot } = await actionWithScreenshot(sessionId, result);
+        return wrap(resultJson, snapshot);
       }
       case 'click': {
         const sessionId = effectiveArgs.sessionId as string;
@@ -1160,7 +1240,8 @@ export async function executeAgentTool(
         const role = (args.role as 'link' | 'button' | 'text') || 'link';
         if (!linkText && !selector) throw new Error('linkText or selector required');
         const result = await browserInspector.clickElement(sessionId, { linkText, selector, role });
-        return wrap(JSON.stringify(result, null, 2));
+        const { resultJson, snapshot } = await actionWithScreenshot(sessionId, result);
+        return wrap(resultJson, snapshot);
       }
       case 'click_coordinates': {
         const sessionId = effectiveArgs.sessionId as string;

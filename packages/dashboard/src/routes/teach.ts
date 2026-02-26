@@ -4,7 +4,7 @@ import { createTokenChecker } from '../helpers/auth.js';
 import { TaskPackLoader } from '@showrun/core';
 import { discoverPacks } from '@showrun/mcp-server';
 import { proposeStep, type ProposeStepRequest } from '../teachMode.js';
-import { updateConversation, getConversation, getAllConversations, getMessagesForConversation, createConversationTranscript } from '../db.js';
+import { updateConversation, getConversation, getAllConversations, getMessagesForConversation, createConversationTranscript, addMessage } from '../db.js';
 import type { ChatMessage, ToolCall, StreamEvent, ChatWithToolsResult, ToolDef } from '../llm/provider.js';
 import {
   MAIN_AGENT_TOOL_DEFINITIONS,
@@ -19,7 +19,8 @@ import { TaskPackEditorWrapper } from '../mcpWrappers.js';
 import { summarizeIfNeeded, estimateTotalTokens, forceSummarize, type AgentMessage } from '../contextManager.js';
 import { createLlmProvider } from '../llm/index.js';
 import { runEditorAgent } from '../agents/editorAgent.js';
-import type { EditorAgentResult } from '../agents/types.js';
+import { runValidatorAgent } from '../agents/validatorAgent.js';
+import type { EditorAgentResult, ValidatorAgentResult } from '../agents/types.js';
 import { appendFileSync, mkdirSync } from 'fs';
 import { assembleSystemPrompt } from '../promptAssembler.js';
 import { join } from 'path';
@@ -185,6 +186,83 @@ async function runPackInitializer(
   console.log(`[PackInit] Created pack "${packId}" for conversation ${convId}`);
 
   return { id: packId, path: packResult.path, name: packName };
+}
+
+// ============================================================================
+// Agent context persistence helpers
+// ============================================================================
+
+type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } };
+
+type AgentMsg =
+  | { role: 'user'; content: string | ContentPart[] }
+  | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[]; thinking?: string }
+  | { role: 'tool'; content: string; tool_call_id: string };
+
+/**
+ * Strip base64 images and truncate large tool results for storage.
+ * Keeps the structure intact so it can be replayed into the LLM context.
+ */
+function sanitizeForStorage(messages: AgentMsg[]): AgentMsg[] {
+  const MAX_TOOL_RESULT_CHARS = 4000;
+
+  return messages.map((msg) => {
+    if (msg.role === 'user' && Array.isArray(msg.content)) {
+      // Replace base64 image data with placeholder
+      return {
+        ...msg,
+        content: msg.content.map((part): ContentPart => {
+          if (part.type === 'image_url' && part.image_url?.url?.startsWith('data:')) {
+            return { type: 'text', text: '[screenshot was attached]' };
+          }
+          return part;
+        }),
+      } as AgentMsg;
+    }
+    if (msg.role === 'tool' && msg.content.length > MAX_TOOL_RESULT_CHARS) {
+      return {
+        ...msg,
+        content: msg.content.slice(0, MAX_TOOL_RESULT_CHARS) + '\n...[truncated for storage]',
+      };
+    }
+    return msg;
+  });
+}
+
+/**
+ * Reconstruct the full LLM-format agent message history from DB messages.
+ * Messages with agentContext get their rich intermediate messages (tool_calls + tool results) expanded.
+ * Messages without agentContext (legacy) use flat text.
+ */
+function reconstructAgentMessages(conversationId: string): AgentMsg[] {
+  const dbMessages = getMessagesForConversation(conversationId);
+  const result: AgentMsg[] = [];
+
+  for (const msg of dbMessages) {
+    if (msg.role === 'system') continue; // Skip system messages
+
+    if (msg.role === 'user') {
+      result.push({ role: 'user', content: msg.content });
+    } else if (msg.role === 'assistant') {
+      if (msg.agentContext) {
+        // Rich context: insert the full agent turn (assistant with tool_calls + tool results)
+        try {
+          const turnMessages = JSON.parse(msg.agentContext) as AgentMsg[];
+          result.push(...turnMessages);
+        } catch {
+          // Fallback to flat text if JSON is corrupted
+          result.push({ role: 'assistant', content: msg.content });
+        }
+      } else {
+        // Legacy message without agentContext: flat text
+        result.push({ role: 'assistant', content: msg.content });
+      }
+    }
+  }
+
+  return result;
 }
 
 export function createTeachRouter(ctx: DashboardContext): Router {
@@ -386,17 +464,28 @@ export function createTeachRouter(ctx: DashboardContext): Router {
     // Note: Browser sessions are now managed automatically per-conversation.
     // No need to inform the AI about session management.
 
-    type ContentPart =
-      | { type: 'text'; text: string }
-      | { type: 'image_url'; image_url: { url: string } };
-    type AgentMsg =
-      | { role: 'user'; content: string | ContentPart[] }
-      | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[]; thinking?: string }
-      | { role: 'tool'; content: string; tool_call_id: string };
-
-    let agentMessages: AgentMsg[] = messages
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    // Build agent context: use rich reconstruction from DB when possible, fallback to flat text
+    let agentMessages: AgentMsg[];
+    if (conversationId) {
+      agentMessages = reconstructAgentMessages(conversationId);
+      // Append the new user message from this request (not yet in DB at this point -
+      // it was saved by the frontend before calling this endpoint)
+      const lastRequestUserMsg = messages.filter(m => m.role === 'user').pop();
+      if (lastRequestUserMsg) {
+        const lastReconstructedMsg = agentMessages[agentMessages.length - 1];
+        // Only append if the last reconstructed message isn't already this user message
+        const alreadyPresent = lastReconstructedMsg?.role === 'user' &&
+          typeof lastReconstructedMsg.content === 'string' &&
+          lastReconstructedMsg.content === lastRequestUserMsg.content;
+        if (!alreadyPresent) {
+          agentMessages.push({ role: 'user', content: lastRequestUserMsg.content });
+        }
+      }
+    } else {
+      agentMessages = messages
+        .filter((m) => m.role === 'user' || m.role === 'assistant')
+        .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }));
+    }
     const toolTrace: Array<{ tool: string; args: Record<string, unknown>; result: unknown; success: boolean }> = [];
     let updatedFlow: unknown = undefined;
     let validation: { ok: boolean; errors: string[]; warnings: string[] } | undefined = undefined;
@@ -473,6 +562,30 @@ export function createTeachRouter(ctx: DashboardContext): Router {
       }
     }
 
+    // Track where the current turn starts so we can extract just this turn's messages for agentContext
+    const initialMessageCount = agentMessages.length;
+
+    /** Save the assistant message (with rich agentContext) to the DB */
+    const saveAssistantToDb = (content: string, thinkingContent?: string | null) => {
+      if (!conversationId) return;
+      try {
+        const turnMessages = agentMessages.slice(initialMessageCount);
+        const agentContextJson = turnMessages.length > 0
+          ? JSON.stringify(sanitizeForStorage(turnMessages))
+          : null;
+        addMessage(
+          conversationId,
+          'assistant',
+          content,
+          toolTrace.length > 0 ? toolTrace : null,
+          thinkingContent ?? null,
+          agentContextJson
+        );
+      } catch (err) {
+        console.error('[Agent] Failed to save assistant message to DB:', err);
+      }
+    };
+
     // Transcript logging helper — saves the full conversation to DB when enabled
     let totalIterations = 0;
     const saveTranscript = async () => {
@@ -507,9 +620,16 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         // Check if client aborted (stop button pressed)
         if (aborted) {
           console.log('[Agent] Stopping agent loop - client aborted');
+          // Save partial agent state to DB
+          const lastAssistant = [...agentMessages].reverse().find(m => m.role === 'assistant');
+          const abortContent = (lastAssistant && typeof lastAssistant.content === 'string' && lastAssistant.content)
+            ? lastAssistant.content
+            : '(Stopped by user)';
+          saveAssistantToDb(abortContent);
+          await saveTranscript();
           if (streamFlow) {
-            writeStreamLine({ type: 'done', error: 'Stopped by user' });
-            res.end();
+            try { res.write(JSON.stringify({ type: 'done', error: 'Stopped by user' }) + '\n'); } catch { /* ignore */ }
+            try { res.end(); } catch { /* ignore */ }
           }
           return;
         }
@@ -730,6 +850,93 @@ export function createTeachRouter(ctx: DashboardContext): Router {
               continue; // Skip the normal tool execution path below
             }
 
+            // Special handling: agent_validate_flow invokes the Validator Agent
+            if (tc.name === 'agent_validate_flow') {
+              // Close the Exploration Agent's browser session before the Validator Agent
+              // tries to launch its own via editor_run_pack — they share the same .browser-profile directory
+              if (conversationId) {
+                const browserSessionId = getConversationBrowserSession(conversationId);
+                if (browserSessionId) {
+                  try {
+                    await closeBrowserSession(browserSessionId);
+                  } catch (err) {
+                    console.error(`[Teach] Failed to close exploration browser session before validator: ${err}`);
+                  }
+                  setConversationBrowserSession(conversationId, null);
+                }
+              }
+
+              let validatorResult: ValidatorAgentResult;
+              try {
+                validatorResult = await runValidatorAgent({
+                  flowDescription: (toolArgs.flowDescription as string) || '',
+                  testScenarios: (toolArgs.testScenarios as Array<{ name: string; inputs: Record<string, unknown>; expectedBehavior?: string }>) || undefined,
+                  explorationContext: (toolArgs.explorationContext as string) || undefined,
+                  llmProvider: ctx.llmProvider!,
+                  toolExecutor: (name, args) => executeAgentTool(name, args, toolCtx),
+                  onStreamEvent: (event) => writeStreamLine(event),
+                  onToolError: (toolName, toolErrorArgs, errorMsg, validatorIter, validatorAssistantContent) => {
+                    const lastUserMsg = [...agentMessages].reverse().find(m => m.role === 'user');
+                    const recentUserContent = lastUserMsg
+                      ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
+                      : null;
+                    logFailedToolCall(ctx.debug, {
+                      tool: `validator:${toolName}`,
+                      args: toolErrorArgs,
+                      reason: 'execution_error',
+                      error: errorMsg,
+                      assistantContent: validatorAssistantContent ?? null,
+                      conversationId: conversationId ?? null,
+                      packId: effectivePackId ?? null,
+                      iteration: validatorIter,
+                      recentUserMessage: recentUserContent,
+                    });
+                  },
+                  abortSignal: { get aborted() { return aborted; } },
+                  sessionKey,
+                });
+              } catch (err) {
+                validatorResult = {
+                  success: false,
+                  summary: '',
+                  scenariosRun: 0,
+                  scenariosPassed: 0,
+                  scenariosFailed: 0,
+                  scenarioResults: [],
+                  recommendations: [],
+                  error: err instanceof Error ? err.message : String(err),
+                  iterationsUsed: 0,
+                };
+              }
+
+              const resultStr = JSON.stringify(validatorResult, null, 2);
+              const resultParsed = validatorResult;
+              const success = validatorResult.success;
+              toolTrace.push({ tool: tc.name, args: toolArgs, result: resultParsed, success });
+              writeStreamLine({ type: 'tool_result', tool: tc.name, args: toolArgs, result: resultParsed, success });
+
+              if (!success) {
+                const lastUserMsg = [...agentMessages].reverse().find(m => m.role === 'user');
+                const recentUserContent = lastUserMsg
+                  ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
+                  : null;
+                logFailedToolCall(ctx.debug, {
+                  tool: tc.name,
+                  args: toolArgs,
+                  reason: 'error_result',
+                  error: validatorResult.error || validatorResult.summary || 'Validator agent failed',
+                  assistantContent: (result.content ?? '').slice(0, 5000),
+                  conversationId: conversationId ?? null,
+                  packId: effectivePackId ?? null,
+                  iteration: iter,
+                  recentUserMessage: recentUserContent,
+                });
+              }
+
+              agentMessages.push({ role: 'tool', content: resultStr, tool_call_id: tc.id });
+              continue; // Skip the normal tool execution path below
+            }
+
             const execResult = await executeAgentTool(tc.name, toolArgs, toolCtx);
             let resultStr = execResult.stringForLlm;
             let resultParsed: unknown;
@@ -785,9 +992,16 @@ export function createTeachRouter(ctx: DashboardContext): Router {
             // Check for abort after each tool execution
             if (aborted) {
               console.log('[Agent] Stopping mid-tool-loop - client aborted');
+              // Save partial agent state to DB
+              const lastAssistant = [...agentMessages].reverse().find(m => m.role === 'assistant');
+              const abortContent = (lastAssistant && typeof lastAssistant.content === 'string' && lastAssistant.content)
+                ? lastAssistant.content
+                : '(Stopped by user)';
+              saveAssistantToDb(abortContent);
+              await saveTranscript();
               if (streamFlow) {
-                writeStreamLine({ type: 'done', error: 'Stopped by user' });
-                res.end();
+                try { res.write(JSON.stringify({ type: 'done', error: 'Stopped by user' }) + '\n'); } catch { /* ignore */ }
+                try { res.end(); } catch { /* ignore */ }
               }
               return;
             }
@@ -886,6 +1100,8 @@ export function createTeachRouter(ctx: DashboardContext): Router {
           continue;
         }
 
+        // Save assistant message to DB with rich agent context
+        saveAssistantToDb(result.content ?? '', result.thinking ?? null);
         await saveTranscript();
         if (streamFlow) {
           writeStreamLine({
@@ -909,6 +1125,8 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         return;
       }
 
+      // Max iterations exceeded — save partial state
+      saveAssistantToDb('(Agent exceeded max iterations)');
       await saveTranscript();
       if (streamFlow) {
         writeStreamLine({ type: 'done', error: 'Agent exceeded max iterations' });
@@ -917,14 +1135,15 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         res.status(500).json({ error: 'Agent exceeded max iterations' });
       }
     } catch (error) {
+      // Save partial agent state on error
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      saveAssistantToDb(`Error: ${errorMsg}`);
       await saveTranscript();
       if (streamFlow) {
-        writeStreamLine({ type: 'done', error: error instanceof Error ? error.message : String(error) });
+        writeStreamLine({ type: 'done', error: errorMsg });
         res.end();
       } else {
-        res.status(500).json({
-          error: error instanceof Error ? error.message : String(error),
-        });
+        res.status(500).json({ error: errorMsg });
       }
     }
   });

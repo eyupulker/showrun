@@ -1,5 +1,5 @@
 /**
- * Shared types for the two-agent architecture (Exploration + Editor)
+ * Shared types for the three-agent architecture (Exploration + Editor + Validator)
  */
 
 import type { ToolDef, ToolCall, StreamEvent, ChatWithToolsResult, LlmProvider } from '../llm/provider.js';
@@ -93,6 +93,62 @@ export interface EditorAgentResult {
     error?: string;
   };
   /** Error message if failed */
+  error?: string;
+  /** How many loop iterations were used */
+  iterationsUsed: number;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Validator Agent Types
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export interface ValidatorAgentOptions {
+  /** Description of what the flow does (for context) */
+  flowDescription: string;
+  /** Test scenarios to run (optional — validator will generate edge cases if fewer than 3) */
+  testScenarios?: Array<{ name: string; inputs: Record<string, unknown>; expectedBehavior?: string }>;
+  /** Exploration context from the Exploration Agent (optional extra context) */
+  explorationContext?: string;
+  /** LLM provider */
+  llmProvider: LlmProvider;
+  /** Tool executor scoped to validator tools */
+  toolExecutor: (name: string, args: Record<string, unknown>) => Promise<ExecuteToolResult>;
+  /** Callback for streaming events (optional, tagged with agent: 'validator') */
+  onStreamEvent?: (event: StreamEvent | Record<string, unknown>) => void;
+  /** Callback when a validator tool call fails — for centralized error logging */
+  onToolError?: (toolName: string, args: Record<string, unknown>, error: string, iteration: number, assistantContent: string | null) => void;
+  /** AbortSignal */
+  abortSignal?: { aborted: boolean };
+  /** Session key for plan storage */
+  sessionKey?: string;
+}
+
+export interface ValidatorAgentResult {
+  /** Whether all test scenarios passed */
+  success: boolean;
+  /** Human-readable summary of validation results */
+  summary: string;
+  /** Number of scenarios run */
+  scenariosRun: number;
+  /** Number of scenarios that passed */
+  scenariosPassed: number;
+  /** Number of scenarios that failed */
+  scenariosFailed: number;
+  /** Detailed results per scenario */
+  scenarioResults: Array<{
+    name: string;
+    inputs: Record<string, unknown>;
+    passed: boolean;
+    expectedBehavior?: string;
+    actualBehavior: string;
+    collectiblesPreview?: string;
+    error?: string;
+  }>;
+  /** Structural validation result (from editor_validate_flow) */
+  structuralValidation?: { ok: boolean; errors: string[]; warnings: string[] };
+  /** Recommendations for improvement */
+  recommendations: string[];
+  /** Error message if the validator agent itself failed */
   error?: string;
   /** How many loop iterations were used */
   iterationsUsed: number;

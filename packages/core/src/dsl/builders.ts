@@ -15,6 +15,8 @@ import type {
   FrameStep,
   NewTabStep,
   SwitchTabStep,
+  DomScrapeStep,
+  DomScrapeCollectField,
   Target,
   TargetOrAnyOf,
   PlaywrightRole,
@@ -679,6 +681,46 @@ export function switchTab(
     params: {
       tab: params.tab,
       closeCurrentTab: params.closeCurrentTab ?? false,
+    },
+  };
+}
+
+/**
+ * Creates a dom_scrape step
+ */
+export function domScrape(
+  id: string,
+  params: {
+    selector?: string;
+    target?: TargetOrAnyOf;
+    collect: DomScrapeCollectField[];
+    skip_empty?: boolean;
+    out: string;
+    label?: string;
+    timeoutMs?: number;
+    optional?: boolean;
+    onError?: 'stop' | 'continue';
+    hint?: string;
+    scope?: Target;
+    near?: { kind: 'text'; text: string; exact?: boolean };
+  }
+): DomScrapeStep {
+  return {
+    id,
+    type: 'dom_scrape',
+    label: params.label,
+    timeoutMs: params.timeoutMs,
+    optional: params.optional,
+    onError: params.onError,
+    params: {
+      selector: params.selector,
+      target: params.target,
+      collect: params.collect,
+      skip_empty: params.skip_empty ?? true,
+      out: params.out,
+      hint: params.hint,
+      scope: params.scope,
+      near: params.near,
     },
   };
 }

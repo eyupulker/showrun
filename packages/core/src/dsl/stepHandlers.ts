@@ -20,11 +20,12 @@ import type {
   FrameStep,
   NewTabStep,
   SwitchTabStep,
+  DomScrapeStep,
   VariableContext,
 } from './types.js';
 import type { NetworkCaptureApi, NetworkFindWhere, NetworkReplayOverrides } from '../networkCapture.js';
 import { resolveTemplate } from './templating.js';
-import { resolveTargetWithFallback, selectorToTarget } from './target.js';
+import { resolveTarget, resolveTargetWithFallback, selectorToTarget } from './target.js';
 import type { AuthFailureMonitor } from '../authResilience.js';
 import { search as jmesSearch, type JSONValue } from '@jmespath-community/jmespath';
 import type { SnapshotFile, RequestSnapshot } from '../requestSnapshot.js';
@@ -994,7 +995,7 @@ async function executeSwitchTab(
 const HTTP_MODE_SKIP_STEPS = new Set([
   'navigate', 'click', 'fill', 'select_option', 'press_key',
   'upload_file', 'wait_for', 'assert', 'frame', 'new_tab',
-  'switch_tab', 'network_find',
+  'switch_tab', 'network_find', 'dom_scrape',
 ]);
 
 /**
@@ -1119,6 +1120,83 @@ async function executeNetworkReplayHttp(
 }
 
 /**
+ * Executes a dom_scrape step — extracts structured data from repeating DOM elements
+ */
+async function executeDomScrape(
+  ctx: StepContext,
+  step: DomScrapeStep
+): Promise<void> {
+  // Support both legacy selector and new target
+  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+
+  if (!targetOrAnyOf) {
+    throw new Error('DomScrape step must have either "target" or "selector"');
+  }
+
+  // Resolve base elements with fallback and scope
+  const { locator: baseLocator, matchedTarget, matchedCount } = await resolveTargetWithFallback(
+    ctx.currentFrame ?? ctx.page,
+    targetOrAnyOf,
+    step.params.scope
+  );
+
+  if (step.params.hint) {
+    console.log(`[DomScrape:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+  }
+
+  const skipEmpty = step.params.skip_empty ?? true;
+  const results: Record<string, unknown>[] = [];
+
+  for (let i = 0; i < matchedCount; i++) {
+    const baseElement = baseLocator.nth(i);
+    const item: Record<string, unknown> = {};
+
+    for (const field of step.params.collect) {
+      const childLocator = resolveTarget(baseElement, field.target);
+      const childCount = await childLocator.count();
+
+      if (childCount === 0) {
+        item[field.key] = null;
+        continue;
+      }
+
+      const child = childLocator.first();
+      const extractMode = field.extract ?? 'text';
+
+      switch (extractMode) {
+        case 'text': {
+          const text = await child.textContent();
+          item[field.key] = text?.trim() ?? null;
+          break;
+        }
+        case 'attribute': {
+          const value = await child.getAttribute(field.attribute!);
+          item[field.key] = value ?? null;
+          break;
+        }
+        case 'html': {
+          const html = await child.innerHTML();
+          item[field.key] = html ?? null;
+          break;
+        }
+      }
+    }
+
+    // skip_empty: drop items where ALL fields are null/empty/whitespace
+    if (skipEmpty) {
+      const allEmpty = Object.values(item).every(
+        v => v === null || v === undefined || (typeof v === 'string' && v.trim() === '')
+      );
+      if (allEmpty) continue;
+    }
+
+    results.push(item);
+  }
+
+  ctx.collectibles[step.params.out] = results;
+}
+
+/**
  * Executes a single DSL step
  */
 export async function executeStep(
@@ -1194,6 +1272,9 @@ export async function executeStep(
       break;
     case 'switch_tab':
       await executeSwitchTab(ctx, step);
+      break;
+    case 'dom_scrape':
+      await executeDomScrape(ctx, step);
       break;
     default:
       // TypeScript exhaustiveness check

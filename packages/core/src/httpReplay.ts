@@ -39,7 +39,27 @@ export interface HttpReplayResult {
 // ---------------------------------------------------------------------------
 
 /** Step types that require DOM access for data extraction (force browser mode). */
-const DOM_EXTRACTION_STEPS = new Set(['extract_text', 'extract_title', 'extract_attribute']);
+const DOM_EXTRACTION_STEPS = new Set(['extract_text', 'extract_title', 'extract_attribute', 'dom_scrape']);
+
+/**
+ * Step types that are silently skipped in HTTP mode.
+ * Must match HTTP_MODE_SKIP_STEPS in stepHandlers.ts.
+ */
+const HTTP_SKIPPED_STEPS = new Set([
+  'navigate', 'click', 'fill', 'select_option', 'press_key',
+  'upload_file', 'wait_for', 'assert', 'frame', 'new_tab',
+  'switch_tab', 'network_find', 'dom_scrape',
+]);
+
+/** Check if a value contains Nunjucks template expressions. */
+function containsTemplate(value: unknown): boolean {
+  if (typeof value === 'string') return value.includes('{{');
+  if (Array.isArray(value)) return value.some(containsTemplate);
+  if (value && typeof value === 'object') {
+    return Object.values(value).some(containsTemplate);
+  }
+  return false;
+}
 
 /**
  * Check whether a flow can run in HTTP-only mode.
@@ -47,6 +67,8 @@ const DOM_EXTRACTION_STEPS = new Set(['extract_text', 'extract_title', 'extract_
  * Requirements:
  * 1. Every `network_replay` step has a corresponding, non-stale snapshot.
  * 2. No DOM extraction steps exist in the flow.
+ * 3. No skipped steps contain dynamic templates — templates in skipped steps
+ *    would never be evaluated, so the snapshot replays stale data.
  */
 export function isFlowHttpCompatible(
   steps: DslStep[],
@@ -54,9 +76,16 @@ export function isFlowHttpCompatible(
 ): boolean {
   if (!snapshots) return false;
 
-  // Check for DOM extraction steps
   for (const step of steps) {
+    // DOM extraction steps force browser mode
     if (DOM_EXTRACTION_STEPS.has(step.type)) {
+      return false;
+    }
+
+    // Steps skipped in HTTP mode must not contain templates — those templates
+    // affect what data the API returns but would never be evaluated, causing
+    // the snapshot to replay stale/wrong data regardless of input values.
+    if (HTTP_SKIPPED_STEPS.has(step.type) && containsTemplate(step.params)) {
       return false;
     }
   }
