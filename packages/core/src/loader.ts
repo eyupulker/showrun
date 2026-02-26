@@ -1,8 +1,9 @@
 import { readFileSync, existsSync } from 'fs';
+import { readFile } from 'fs/promises';
 import { join } from 'path';
 import type { TaskPack, TaskPackManifest, InputSchema, CollectibleDefinition, SecretDefinition } from './types.js';
 import type { DslStep } from './dsl/types.js';
-import { loadSnapshots } from './requestSnapshot.js';
+import { loadSnapshots, loadSnapshotsAsync } from './requestSnapshot.js';
 
 /**
  * Structure of the .secrets.json file
@@ -21,6 +22,21 @@ export interface SecretsFile {
  */
 export class TaskPackLoader {
   /**
+   * Helper to validate manifest structure
+   */
+  private static validateManifest(manifest: any): asserts manifest is TaskPackManifest {
+    // Validate required fields
+    if (!manifest.id || !manifest.name || !manifest.version) {
+      throw new Error('taskpack.json missing required fields: id, name, version');
+    }
+
+    // Only json-dsl format is supported
+    if (manifest.kind !== 'json-dsl') {
+      throw new Error('taskpack.json must have "kind": "json-dsl". Other formats are no longer supported.');
+    }
+  }
+
+  /**
    * Load task pack manifest from directory
    */
   static loadManifest(packPath: string): TaskPackManifest {
@@ -38,30 +54,36 @@ export class TaskPackLoader {
       throw new Error(`Failed to parse taskpack.json: ${error instanceof Error ? error.message : String(error)}`);
     }
 
-    // Validate required fields
-    if (!manifest.id || !manifest.name || !manifest.version) {
-      throw new Error('taskpack.json missing required fields: id, name, version');
-    }
-
-    // Only json-dsl format is supported
-    if (manifest.kind !== 'json-dsl') {
-      throw new Error('taskpack.json must have "kind": "json-dsl". Other formats are no longer supported.');
-    }
-
+    this.validateManifest(manifest);
     return manifest;
+  }
+
+  /**
+   * Async version of loadManifest
+   */
+  static async loadManifestAsync(packPath: string): Promise<TaskPackManifest> {
+    const manifestPath = join(packPath, 'taskpack.json');
+
+    try {
+      const content = await readFile(manifestPath, 'utf-8');
+      const manifest = JSON.parse(content);
+      this.validateManifest(manifest);
+      return manifest;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(`Task pack manifest not found: ${manifestPath}`);
+      }
+      throw new Error(`Failed to parse taskpack.json: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /**
    * Load task pack from directory (json-dsl format only)
    */
   static async loadTaskPack(packPath: string): Promise<TaskPack> {
-    const manifest = this.loadManifest(packPath);
+    const manifest = await this.loadManifestAsync(packPath);
 
     const flowPath = join(packPath, 'flow.json');
-    if (!existsSync(flowPath)) {
-      throw new Error(`flow.json not found for json-dsl pack: ${flowPath}`);
-    }
-
     let flowData: {
       inputs?: InputSchema;
       collectibles?: CollectibleDefinition[];
@@ -69,9 +91,12 @@ export class TaskPackLoader {
     };
 
     try {
-      const content = readFileSync(flowPath, 'utf-8');
+      const content = await readFile(flowPath, 'utf-8');
       flowData = JSON.parse(content);
     } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new Error(`flow.json not found for json-dsl pack: ${flowPath}`);
+      }
       throw new Error(`Failed to parse flow.json: ${error instanceof Error ? error.message : String(error)}`);
     }
 
@@ -80,7 +105,7 @@ export class TaskPackLoader {
     }
 
     // Optionally load snapshots.json (not an error if missing)
-    const snapshots = loadSnapshots(packPath);
+    const snapshots = await loadSnapshotsAsync(packPath);
 
     return {
       metadata: {
