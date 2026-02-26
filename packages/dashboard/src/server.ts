@@ -236,9 +236,20 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   // from system-prompt seed techniques at request time (in teach.ts).
   const systemPrompt = loadSystemPrompt();
 
+  // Configure trusted origins
+  // Allow localhost/127.0.0.1 on the specific port, plus the default Vite dev port (5173)
+  const allowedOrigins = [
+    `http://${host}:${port}`,
+    `http://127.0.0.1:${port}`,
+    `http://localhost:${port}`,
+    // In development, allow the Vite dev server
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ];
+
   // Create Express app
   const app = express();
-  app.use(cors());
+  app.use(cors({ origin: allowedOrigins }));
   app.use(express.json());
 
   // Serve static UI files (built by Vite)
@@ -251,7 +262,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   // Create Socket.IO server with CORS
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: '*', // In production, restrict this
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
     },
   });
