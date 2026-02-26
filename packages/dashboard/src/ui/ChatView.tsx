@@ -86,7 +86,13 @@ export default function ChatView({
 
   // UI state
   const [showNetwork, setShowNetwork] = useState(true);
-  const [rightPanelTab, setRightPanelTab] = useState<'network' | 'secrets' | 'versions'>('network');
+  const [rightPanelTab, setRightPanelTab] = useState<'network' | 'secrets' | 'versions' | 'run'>('network');
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [panelAutoCollapsed, setPanelAutoCollapsed] = useState(false);
+
+  // Flow input schema + run form state
+  const [flowInputSchema, setFlowInputSchema] = useState<Record<string, { type: string; required?: boolean; description?: string; default?: unknown }> | null>(null);
+  const [runInputValues, setRunInputValues] = useState<Record<string, string | number | boolean>>({});
 
   // Secrets request modal state (AI-triggered)
   const [secretsRequest, setSecretsRequest] = useState<{
@@ -131,6 +137,49 @@ export default function ChatView({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
+
+  // Fetch flow input schema when pack changes
+  useEffect(() => {
+    if (!conversation?.packId) { setFlowInputSchema(null); return; }
+    fetch(`/api/packs/${conversation.packId}/files`, {
+      headers: { 'Content-Type': 'application/json', 'x-showrun-token': token },
+    })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        const inputs = data?.flowJson?.inputs ?? null;
+        setFlowInputSchema(inputs);
+        // Pre-fill default values
+        if (inputs) {
+          const defaults: Record<string, string | number | boolean> = {};
+          for (const [key, schema] of Object.entries(inputs) as [string, { type: string; default?: unknown }][]) {
+            if (schema.default !== undefined) {
+              defaults[key] = schema.default as string | number | boolean;
+            }
+          }
+          setRunInputValues(defaults);
+        } else {
+          setRunInputValues({});
+        }
+      })
+      .catch(() => setFlowInputSchema(null));
+  }, [conversation?.packId]);
+
+  // Auto-collapse right panel on small screens
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 900px)');
+    const handler = (e: MediaQueryListEvent | MediaQueryList) => {
+      if (e.matches) {
+        setPanelAutoCollapsed(true);
+        setRightPanelOpen(false);
+      } else if (panelAutoCollapsed) {
+        setPanelAutoCollapsed(false);
+        setRightPanelOpen(true);
+      }
+    };
+    handler(mql);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, [panelAutoCollapsed]);
 
   // Load network requests when session changes
   useEffect(() => {
@@ -445,7 +494,7 @@ export default function ChatView({
       }
       for (const line of buffer.split('\n')) processLine(line);
 
-      // Add assistant message with tool calls
+      // Add assistant message to local state for immediate display
       const assistantContent = result.assistantMessage?.content ?? result.error ?? '';
       const finalToolTrace = toolTrace.length > 0 ? toolTrace : result.toolTrace;
       const assistantMessage: Message = {
@@ -458,20 +507,8 @@ export default function ChatView({
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Save assistant message to database
-      try {
-        await apiCall(`/api/conversations/${conversation.id}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({
-            role: 'assistant',
-            content: assistantContent,
-            toolCalls: finalToolTrace,
-            thinkingContent: streamingThinking || null,
-          }),
-        });
-      } catch (err) {
-        console.error('Failed to save assistant message:', err);
-      }
+      // Backend saves assistant message with rich agentContext — reload from DB for canonical state
+      await loadMessages(conversation.id);
 
       // Update browser state
       if (result.browser?.screenshotBase64) {
@@ -495,7 +532,7 @@ export default function ChatView({
         ? '(Stopped by user)'
         : `Error: ${err instanceof Error ? err.message : String(err)}`;
 
-      // Build message with captured data
+      // Build message with captured data for immediate display
       const finalContent = capturedContent || errorContent;
       const assistantMessage: Message = {
         id: `temp-${Date.now()}`,
@@ -507,22 +544,9 @@ export default function ChatView({
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Persist the partial message to database
-      if (conversation) {
-        try {
-          await apiCall(`/api/conversations/${conversation.id}/messages`, {
-            method: 'POST',
-            body: JSON.stringify({
-              role: 'assistant',
-              content: finalContent,
-              toolCalls: capturedToolTrace.length > 0 ? capturedToolTrace : null,
-              thinkingContent: capturedThinking || null,
-            }),
-          });
-        } catch (saveErr) {
-          console.error('Failed to save partial assistant message:', saveErr);
-        }
-      }
+      // On abort: do NOT reload from DB — the backend save is async and races with us.
+      // The locally-constructed partial message above is the best state we have.
+      // On non-abort errors: also keep local state since backend may not have saved.
 
       if (!isAbort) {
         setError(err instanceof Error ? err.message : String(err));
@@ -588,7 +612,7 @@ export default function ChatView({
     }
   };
 
-  const handleRunPack = async () => {
+  const handleRunPack = async (inputs: Record<string, unknown> = {}) => {
     if (!conversation?.packId) return;
     try {
       setError(null);
@@ -596,7 +620,7 @@ export default function ChatView({
         method: 'POST',
         body: JSON.stringify({
           packId: conversation.packId,
-          inputs: {},
+          inputs,
           conversationId: conversation.id,
           source: 'dashboard',
         }),
@@ -665,16 +689,6 @@ export default function ChatView({
           }}>
             {conversation.status}
           </span>
-          {conversation.packId && conversation.status === 'ready' && (
-            <button
-              className="btn-primary"
-              onClick={handleRunPack}
-              title="Run this pack"
-              style={{ padding: '4px 10px', fontSize: '12px' }}
-            >
-              Run
-            </button>
-          )}
           <button
             className="btn-secondary"
             onClick={handleExportConversation}
@@ -693,6 +707,14 @@ export default function ChatView({
               MCP Usage
             </button>
           )}
+          <button
+            className="btn-secondary"
+            onClick={() => { setRightPanelOpen(!rightPanelOpen); setPanelAutoCollapsed(false); }}
+            title={rightPanelOpen ? 'Collapse panel' : 'Open side panel'}
+            style={{ padding: '4px 8px', fontSize: '14px', lineHeight: 1 }}
+          >
+            {rightPanelOpen ? '\u25B6' : '\u25C0'}
+          </button>
         </div>
       </div>
 
@@ -804,9 +826,11 @@ export default function ChatView({
           />
         </div>
 
-        {/* Right side panel (network / secrets) */}
+        {/* Right side panel (network / secrets / versions / run) */}
+        {rightPanelOpen && (
         <div style={{
           width: '400px',
+          minWidth: '400px',
           borderLeft: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'column',
@@ -908,55 +932,132 @@ export default function ChatView({
             </div>
           )}
 
+          {/* Run tab */}
+          {rightPanelTab === 'run' && (
+            <div style={{ margin: '12px', flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '12px' }}>Run Pack</div>
+              {!conversation?.packId ? (
+                <div style={{ color: 'var(--text-muted)', fontSize: '13px', textAlign: 'center', marginTop: '24px' }}>
+                  No pack linked to this conversation.
+                </div>
+              ) : !flowInputSchema || Object.keys(flowInputSchema).length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+                    No inputs defined — click Run to execute with defaults.
+                  </div>
+                  <button
+                    className="btn-primary"
+                    onClick={() => handleRunPack({})}
+                    style={{ padding: '8px 16px', fontSize: '13px' }}
+                  >
+                    Run
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {Object.entries(flowInputSchema).map(([key, schema]) => (
+                    <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-primary)' }}>
+                        {key}{schema.required ? ' *' : ''}
+                      </label>
+                      {schema.type === 'boolean' ? (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!runInputValues[key]}
+                            onChange={(e) => setRunInputValues(prev => ({ ...prev, [key]: e.target.checked }))}
+                          />
+                          {runInputValues[key] ? 'true' : 'false'}
+                        </label>
+                      ) : (
+                        <input
+                          type={schema.type === 'number' ? 'number' : 'text'}
+                          value={runInputValues[key] !== undefined ? String(runInputValues[key]) : ''}
+                          placeholder={schema.default !== undefined ? String(schema.default) : ''}
+                          onChange={(e) => setRunInputValues(prev => ({
+                            ...prev,
+                            [key]: schema.type === 'number' ? (e.target.value === '' ? '' as unknown as number : Number(e.target.value)) : e.target.value,
+                          }))}
+                          style={{
+                            padding: '6px 10px',
+                            fontSize: '13px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-subtle)',
+                            backgroundColor: 'var(--bg-primary)',
+                            color: 'var(--text-primary)',
+                            outline: 'none',
+                          }}
+                        />
+                      )}
+                      {schema.description && (
+                        <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                          {schema.description}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    className="btn-primary"
+                    onClick={() => {
+                      const inputs: Record<string, unknown> = {};
+                      for (const [key, schema] of Object.entries(flowInputSchema)) {
+                        const val = runInputValues[key];
+                        if (val !== undefined && val !== '') {
+                          inputs[key] = schema.type === 'number' ? Number(val) : val;
+                        }
+                      }
+                      handleRunPack(inputs);
+                    }}
+                    disabled={Object.entries(flowInputSchema).some(([key, schema]) =>
+                      schema.required && (runInputValues[key] === undefined || runInputValues[key] === '')
+                    )}
+                    style={{ padding: '8px 16px', fontSize: '13px', marginTop: '4px' }}
+                  >
+                    Run
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Tab buttons */}
           <div style={{
             display: 'flex',
-            gap: '8px',
-            padding: '12px',
+            gap: '4px',
+            padding: '8px 12px',
             borderTop: '1px solid var(--border-subtle)',
+            alignItems: 'center',
           }}>
-            <button
-              className="btn-secondary"
-              style={{
-                flex: 1,
-                padding: '8px',
-                fontSize: '12px',
-                backgroundColor: rightPanelTab === 'network' ? 'var(--bg-card-active)' : undefined,
-              }}
-              onClick={() => setRightPanelTab('network')}
-            >
-              Network
-            </button>
-            {conversation?.packId && (
+            {([
+              { key: 'network' as const, label: 'Network', show: true },
+              { key: 'secrets' as const, label: 'Secrets', show: !!conversation?.packId },
+              { key: 'versions' as const, label: 'Versions', show: !!conversation?.packId },
+              { key: 'run' as const, label: 'Run', show: !!conversation?.packId && conversation.status === 'ready' },
+            ]).filter(t => t.show).map(tab => (
               <button
+                key={tab.key}
                 className="btn-secondary"
                 style={{
                   flex: 1,
                   padding: '8px',
                   fontSize: '12px',
-                  backgroundColor: rightPanelTab === 'secrets' ? 'var(--bg-card-active)' : undefined,
+                  backgroundColor: rightPanelTab === tab.key ? 'var(--bg-card-active)' : undefined,
                 }}
-                onClick={() => setRightPanelTab('secrets')}
-              >
-                Secrets
-              </button>
-            )}
-            {conversation?.packId && (
-              <button
-                className="btn-secondary"
-                style={{
-                  flex: 1,
-                  padding: '8px',
-                  fontSize: '12px',
-                  backgroundColor: rightPanelTab === 'versions' ? 'var(--bg-card-active)' : undefined,
+                onClick={() => {
+                  if (rightPanelTab === tab.key) {
+                    setRightPanelOpen(false);
+                    setPanelAutoCollapsed(false);
+                  } else {
+                    setRightPanelTab(tab.key);
+                  }
                 }}
-                onClick={() => setRightPanelTab('versions')}
               >
-                Versions
+                {tab.label}
               </button>
-            )}
+            ))}
           </div>
         </div>
+        )}
       </div>
 
       {/* Secrets Request Modal (AI-triggered) */}

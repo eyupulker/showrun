@@ -2,6 +2,7 @@ import type { Browser, Page } from 'playwright';
 import type { DslStep } from './dsl/types.js';
 import type { NetworkCaptureApi } from './networkCapture.js';
 import type { SnapshotFile } from './requestSnapshot.js';
+import type { ProxyConfig } from './proxy/types.js';
 
 /**
  * Primitive types supported in input/collectible schemas
@@ -45,6 +46,11 @@ export interface BrowserSettings {
    * - 'profile': Persist in pack's .browser-profile/ directory
    */
   persistence?: BrowserPersistence;
+  /**
+   * Proxy configuration for routing traffic through a proxy provider.
+   * Set by the agent's `set_proxy` tool or manually in taskpack.json.
+   */
+  proxy?: ProxyConfig;
 }
 
 /**

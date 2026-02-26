@@ -265,6 +265,7 @@ const ALLOWED_PARAMS: Record<string, string[]> = {
   frame: ['frame', 'action'],
   new_tab: ['url', 'saveTabIndexAs'],
   switch_tab: ['tab', 'closeCurrentTab'],
+  dom_scrape: ['selector', 'target', 'collect', 'skip_empty', 'out', 'hint', 'scope', 'near'],
 };
 
 /**
@@ -950,9 +951,94 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       }
       break;
 
+    case 'dom_scrape': {
+      // Must have either selector (legacy) or target (new)
+      if (!params.selector && !params.target) {
+        errors.push(`${prefix}: DomScrape step must have either "selector" or "target" in params`);
+      }
+      if (params.selector !== undefined && typeof params.selector !== 'string') {
+        errors.push(`${prefix}: DomScrape step "selector" must be a string`);
+      }
+      if (params.target !== undefined) {
+        validateTargetOrAnyOf(params.target, errors, prefix);
+      }
+      if (typeof params.out !== 'string' || !params.out) {
+        errors.push(`${prefix}: DomScrape step must have a non-empty string "out" in params`);
+      }
+      if (!Array.isArray(params.collect) || params.collect.length === 0) {
+        errors.push(`${prefix}: DomScrape step must have a non-empty "collect" array in params`);
+      } else {
+        const seenKeys = new Set<string>();
+        const ALLOWED_COLLECT_FIELDS = new Set(['key', 'target', 'extract', 'attribute']);
+        for (let ci = 0; ci < (params.collect as unknown[]).length; ci++) {
+          const field = (params.collect as unknown[])[ci];
+          if (!field || typeof field !== 'object') {
+            errors.push(`${prefix}: DomScrape collect[${ci}] must be an object`);
+            continue;
+          }
+          const f = field as Record<string, unknown>;
+          // Check for unknown fields
+          const unknownFields = Object.keys(f).filter(k => !ALLOWED_COLLECT_FIELDS.has(k));
+          if (unknownFields.length > 0) {
+            errors.push(`${prefix}: DomScrape collect[${ci}] has unknown field(s): ${unknownFields.map(k => `"${k}"`).join(', ')}. Allowed: key, target, extract, attribute`);
+          }
+          // key
+          if (typeof f.key !== 'string' || !f.key) {
+            errors.push(`${prefix}: DomScrape collect[${ci}] must have a non-empty string "key"`);
+          } else {
+            if (seenKeys.has(f.key)) {
+              errors.push(`${prefix}: DomScrape collect has duplicate key "${f.key}"`);
+            }
+            seenKeys.add(f.key);
+          }
+          // target
+          if (!f.target) {
+            errors.push(`${prefix}: DomScrape collect[${ci}] must have a "target"`);
+          } else {
+            validateTarget(f.target, errors, `${prefix} collect[${ci}]`);
+          }
+          // extract
+          if (f.extract !== undefined) {
+            if (f.extract !== 'text' && f.extract !== 'attribute' && f.extract !== 'html') {
+              errors.push(`${prefix}: DomScrape collect[${ci}] "extract" must be "text", "attribute", or "html"`);
+            }
+          }
+          // attribute required when extract === 'attribute'
+          if (f.extract === 'attribute') {
+            if (typeof f.attribute !== 'string' || !f.attribute) {
+              errors.push(`${prefix}: DomScrape collect[${ci}] requires "attribute" when extract is "attribute"`);
+            }
+          }
+        }
+      }
+      if (params.skip_empty !== undefined && typeof params.skip_empty !== 'boolean') {
+        errors.push(`${prefix}: DomScrape step "skip_empty" must be a boolean`);
+      }
+      if (params.hint !== undefined && typeof params.hint !== 'string') {
+        errors.push(`${prefix}: DomScrape step "hint" must be a string`);
+      }
+      if (params.scope !== undefined) {
+        validateTarget(params.scope, errors, prefix);
+      }
+      if (params.near !== undefined && params.near !== null) {
+        const near = params.near as Record<string, unknown>;
+        if (typeof near !== 'object' || near.kind !== 'text') {
+          errors.push(`${prefix}: DomScrape step "near" must be an object with kind: "text"`);
+        } else {
+          if (typeof near.text !== 'string') {
+            errors.push(`${prefix}: DomScrape step "near.text" must be a string`);
+          }
+          if (near.exact !== undefined && typeof near.exact !== 'boolean') {
+            errors.push(`${prefix}: DomScrape step "near.exact" must be a boolean`);
+          }
+        }
+      }
+      break;
+    }
+
     default:
       errors.push(
-        `${prefix}: Unknown step type: ${s.type}. Supported types: navigate, extract_title, extract_text, extract_attribute, sleep, wait_for, click, fill, assert, set_var, network_find, network_replay, network_extract, select_option, press_key, upload_file, frame, new_tab, switch_tab`
+        `${prefix}: Unknown step type: ${s.type}. Supported types: navigate, extract_title, extract_text, extract_attribute, sleep, wait_for, click, fill, assert, set_var, network_find, network_replay, network_extract, select_option, press_key, upload_file, frame, new_tab, switch_tab, dom_scrape`
       );
   }
 

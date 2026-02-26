@@ -7,14 +7,15 @@ import type { TaskPackEditorWrapper } from './mcpWrappers.js';
 import * as browserInspector from './browserInspector.js';
 import { isSessionAlive, startBrowserSession, closeSession } from './browserInspector.js';
 import { getSecretNamesWithValues } from './secretsUtils.js';
-import { resolveTemplates, TaskPackLoader, saveVersion } from '@showrun/core';
+import { resolveTemplates, TaskPackLoader, saveVersion, resolveProxy } from '@showrun/core';
+import type { ProxyConfig } from '@showrun/core';
 import { executePlanTool } from './contextManager.js';
 import {
   updateConversation,
   type Conversation,
 } from './db.js';
 import { join } from 'path';
-import { mkdirSync } from 'fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 
 /**
  * Redact common sensitive patterns (tokens, passwords, credentials) from error messages.
@@ -90,7 +91,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     function: {
       name: 'editor_apply_flow_patch',
       description:
-        'Apply ONE patch to the linked pack\'s flow.json. Pass flat params: op, and for the op: index?, step?, steps?, collectibles?, inputs? at top level (no nested patch object). append: op + step. batch_append: op + steps (array) — preferred for adding multiple steps at once. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. update_inputs: op + inputs. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID; response.path uses JMESPath), network_extract (fromVar, as, path (JMESPath expression, e.g. "results[*].{id: id, name: name}"), out), select_option (target, value: string|{label}|{index}|array), press_key (key, target?, times?, delayMs?), upload_file (target, files: string|array), frame (frame: string|{name}|{url}, action: enter|exit), new_tab (url?, saveTabIndexAs?), switch_tab (tab: number|last|previous, closeCurrentTab?).',
+        'Apply ONE patch to the linked pack\'s flow.json. Pass flat params: op, and for the op: index?, step?, steps?, collectibles?, inputs? at top level (no nested patch object). append: op + step. batch_append: op + steps (array) — preferred for adding multiple steps at once. insert: op + index + step. replace: op + index + step. delete: op + index. update_collectibles: op + collectibles. update_inputs: op + inputs. Step = { id, type, params }. Templating: Nunjucks ({{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Supported types: navigate, wait_for, click, fill, extract_text, extract_attribute, extract_title, sleep, assert, set_var, network_find (where, pick, saveAs; waitForMs), network_replay (requestId MUST be a template like {{vars.<saveAs>}} where <saveAs> is the variable from the preceding network_find step—never use a literal request ID; response.path uses JMESPath), network_extract (fromVar, as, path (JMESPath expression, e.g. "results[*].{id: id, name: name}"), out), select_option (target, value: string|{label}|{index}|array), press_key (key, target?, times?, delayMs?), upload_file (target, files: string|array), frame (frame: string|{name}|{url}, action: enter|exit), new_tab (url?, saveTabIndexAs?), switch_tab (tab: number|last|previous, closeCurrentTab?), dom_scrape (target for repeating elements, collect: [{key, target, extract?: text|attribute|html, attribute?}], skip_empty?, out).',
       parameters: {
         type: 'object',
         properties: {
@@ -435,6 +436,33 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
         type: 'object',
         properties: {},
         required: [],
+      },
+    },
+  },
+  // Proxy tool
+  {
+    type: 'function',
+    function: {
+      name: 'set_proxy',
+      description: 'Enable or disable proxy for the current flow. Affects both browser sessions and HTTP-only request replays. Use when: IP ban detected (403/429/CAPTCHAs), user requests proxy, or technique instructs. Closes current browser session; it will restart with proxy on next browser tool call. Persistent profile (cookies) is preserved.',
+      parameters: {
+        type: 'object',
+        properties: {
+          enabled: {
+            type: 'boolean',
+            description: 'Whether to enable (true) or disable (false) the proxy',
+          },
+          mode: {
+            type: 'string',
+            enum: ['session', 'random'],
+            description: 'Proxy mode: "session" for sticky IP (default), "random" for rotating IP per request',
+          },
+          country: {
+            type: 'string',
+            description: 'Two-letter ISO country code for geo-targeting (e.g., "US", "GB")',
+          },
+        },
+        required: ['enabled'],
       },
     },
   },
@@ -791,6 +819,27 @@ function truncateToolOutput(output: string, label?: string): string {
   return JSON.stringify(result, null, 2);
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * Execute a browser action, wait for the page to settle, take a screenshot,
+ * and return both the JSON result and the snapshot for visual feedback.
+ */
+async function actionWithScreenshot(
+  sessionId: string,
+  actionResult: unknown,
+  delayMs = 5000
+): Promise<{ resultJson: string; snapshot: { screenshotBase64: string; mimeType: string; url: string } }> {
+  await sleep(delayMs);
+  const screenshot = await browserInspector.takeScreenshot(sessionId);
+  return {
+    resultJson: JSON.stringify(actionResult, null, 2),
+    snapshot: { screenshotBase64: screenshot.imageBase64, mimeType: screenshot.mimeType, url: screenshot.url },
+  };
+}
+
 /** Result of executing a tool: string for LLM, optional browser snapshot for HTTP response */
 export interface ExecuteToolResult {
   stringForLlm: string;
@@ -867,6 +916,62 @@ export const EDITOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
   t => EDITOR_TOOL_NAMES.has(t.function.name)
 );
 
+/** Validator-only tools (read-only + run — no flow modification) */
+const VALIDATOR_TOOL_NAMES = new Set([
+  'editor_read_pack',
+  'editor_validate_flow',
+  'editor_run_pack',
+]);
+
+/** Validator Agent tools: read + validate + run (no patch, no browser, no conversation) */
+export const VALIDATOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => VALIDATOR_TOOL_NAMES.has(t.function.name)
+);
+
+/** The agent_validate_flow tool — invokes the Validator Agent from the Exploration Agent */
+const AGENT_VALIDATE_FLOW_TOOL: ToolDef = {
+  type: 'function',
+  function: {
+    name: 'agent_validate_flow',
+    description:
+      'Delegate multi-scenario flow validation to the Validator Agent. Call this after agent_build_flow succeeds ' +
+      'to test the flow with multiple inputs and edge cases. The Validator Agent will run the flow with each scenario, ' +
+      'check structural validity, and return a detailed report. It CANNOT modify the flow — only test and report.',
+    parameters: {
+      type: 'object',
+      properties: {
+        flowDescription: {
+          type: 'string',
+          description:
+            'Brief description of what the flow does and what data it extracts. ' +
+            'Helps the Validator Agent understand expected behavior and generate edge cases.',
+        },
+        testScenarios: {
+          type: 'array',
+          description:
+            'Optional array of test scenarios. Each has a name, inputs object, and optional expectedBehavior string. ' +
+            'If fewer than 3 scenarios are provided, the Validator Agent will generate additional edge cases.',
+          items: {
+            type: 'object',
+            properties: {
+              name: { type: 'string', description: 'Scenario name (e.g., "normal input", "empty string", "special chars")' },
+              inputs: { type: 'object', description: 'Input values for this scenario' },
+              expectedBehavior: { type: 'string', description: 'What should happen (e.g., "returns non-empty array", "returns error gracefully")' },
+            },
+            required: ['name', 'inputs'],
+          },
+        },
+        explorationContext: {
+          type: 'string',
+          description:
+            'Optional exploration context to help the Validator Agent understand the target site and expected data format.',
+        },
+      },
+      required: ['flowDescription'],
+    },
+  },
+};
+
 /** Exploration Agent tool names — browser + network + context + conversation + read_pack + agent_build_flow */
 const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   // Browser tools
@@ -883,16 +988,19 @@ const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   'conversation_update_title', 'conversation_update_description', 'conversation_set_status',
   // Secrets
   'request_secrets',
+  // Proxy
+  'set_proxy',
   // Read-only pack inspection
   'editor_read_pack',
   // Techniques DB
   'techniques_load', 'techniques_search', 'techniques_propose',
 ]);
 
-/** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow + techniques */
+/** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow + agent_validate_flow + techniques */
 export const EXPLORATION_AGENT_TOOLS: ToolDef[] = [
   ...MCP_AGENT_TOOL_DEFINITIONS.filter(t => EXPLORATION_ONLY_TOOL_NAMES.has(t.function.name)),
   AGENT_BUILD_FLOW_TOOL,
+  AGENT_VALIDATE_FLOW_TOOL,
   ...TECHNIQUE_TOOL_DEFINITIONS,
 ];
 
@@ -958,8 +1066,9 @@ async function ensureBrowserSession(ctx: AgentToolContext): Promise<string> {
       const headful = ctx.headful !== false; // Default true for dashboard
       const engine = 'camoufox' as const;
 
-      // Determine persistent context directory based on linked pack
+      // Determine persistent context directory and proxy based on linked pack
       let persistentContextDir: string | undefined;
+      let resolvedProxy: import('@showrun/core').ResolvedProxy | undefined;
 
       if (ctx.packId) {
         const packs = await ctx.taskPackEditor.listPacks();
@@ -968,13 +1077,27 @@ async function ensureBrowserSession(ctx: AgentToolContext): Promise<string> {
           persistentContextDir = join(pack.path, '.browser-profile');
           mkdirSync(persistentContextDir, { recursive: true });
           console.log(`[BrowserAuto] Using persistent profile for pack ${ctx.packId}: ${persistentContextDir}`);
+
+          // Resolve proxy from pack's browser.proxy config
+          try {
+            const manifestJson = readFileSync(join(pack.path, 'taskpack.json'), 'utf-8');
+            const manifest = JSON.parse(manifestJson);
+            const proxyResult = resolveProxy(manifest.browser?.proxy);
+            if (proxyResult) {
+              resolvedProxy = proxyResult;
+              console.log(`[BrowserAuto] Proxy enabled for pack ${ctx.packId}`);
+            }
+          } catch {
+            // Ignore errors reading manifest for proxy
+          }
         }
       }
 
-      console.log(`[BrowserAuto] Starting camoufox session for conversation ${convId}${persistentContextDir ? ' (persistent)' : ''}`);
+      console.log(`[BrowserAuto] Starting camoufox session for conversation ${convId}${persistentContextDir ? ' (persistent)' : ''}${resolvedProxy ? ' (proxied)' : ''}`);
       const sessionId = await startBrowserSession(headful, engine, {
         persistentContextDir,
         packId: ctx.packId ?? undefined,
+        proxy: resolvedProxy,
       });
 
       // Store session in memory map
@@ -1112,6 +1235,60 @@ export async function executeAgentTool(
         return wrap(truncateToolOutput(fullJson, 'run_pack result'));
       }
       // Browser tools - sessionId is auto-injected via effectiveArgs
+      case 'set_proxy': {
+        // Verify proxy env vars are configured
+        const proxyUsername = process.env.SHOWRUN_PROXY_USERNAME;
+        const proxyPassword = process.env.SHOWRUN_PROXY_PASSWORD;
+        const proxyEnabled = args.enabled as boolean;
+
+        if (proxyEnabled && (!proxyUsername || !proxyPassword)) {
+          return wrap(JSON.stringify({
+            error: 'Proxy credentials not configured. Set SHOWRUN_PROXY_USERNAME and SHOWRUN_PROXY_PASSWORD environment variables.',
+            hint: 'Ask the system administrator to configure proxy credentials.',
+          }, null, 2));
+        }
+
+        // Build ProxyConfig
+        const proxyConfig: ProxyConfig = {
+          enabled: proxyEnabled,
+          mode: (args.mode as 'session' | 'random') ?? 'session',
+        };
+        if (args.country) {
+          proxyConfig.country = (args.country as string).toUpperCase();
+        }
+
+        // Persist to taskpack.json
+        const packId = ctx.packId;
+        if (!packId) throw new Error('No pack linked to this conversation');
+        const packs = await ctx.taskPackEditor.listPacks();
+        const pack = packs.find((p: { id: string; path?: string }) => p.id === packId);
+        if (!pack?.path) throw new Error(`Pack ${packId} not found or path not available`);
+
+        const manifestPath = join(pack.path, 'taskpack.json');
+        const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+        if (!manifest.browser) manifest.browser = {};
+        if (proxyEnabled) {
+          manifest.browser.proxy = proxyConfig;
+        } else {
+          delete manifest.browser.proxy;
+        }
+        writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+
+        // Close existing browser session if open
+        if (ctx.conversationId) {
+          const existingSessionId = getConversationBrowserSession(ctx.conversationId);
+          if (existingSessionId && isSessionAlive(existingSessionId)) {
+            await closeSession(existingSessionId);
+            setConversationBrowserSession(ctx.conversationId, null);
+          }
+        }
+
+        const statusMsg = proxyEnabled
+          ? `Proxy enabled (mode: ${proxyConfig.mode}${proxyConfig.country ? `, country: ${proxyConfig.country}` : ''}). Browser session closed and will restart with proxy on next browser tool call. Persistent profile (cookies) preserved.`
+          : 'Proxy disabled. Browser session closed and will restart without proxy on next browser tool call.';
+
+        return wrap(JSON.stringify({ success: true, message: statusMsg }, null, 2));
+      }
       case 'close_session': {
         const sessionId = effectiveArgs.sessionId as string;
         await closeSession(sessionId);
@@ -1128,7 +1305,8 @@ export async function executeAgentTool(
         // Resolve templates in URL (e.g., {{secret.BASE_URL}})
         const resolvedUrl = await resolveTemplateValue(url, ctx);
         const result = await browserInspector.gotoUrl(sessionId, resolvedUrl);
-        return wrap(JSON.stringify(result, null, 2));
+        const { resultJson, snapshot } = await actionWithScreenshot(sessionId, result);
+        return wrap(resultJson, snapshot);
       }
       case 'go_back': {
         const sessionId = effectiveArgs.sessionId as string;
@@ -1151,7 +1329,8 @@ export async function executeAgentTool(
           clear: args.clear !== false,
           submit: args.submit === true,
         });
-        return wrap(JSON.stringify(result, null, 2));
+        const { resultJson, snapshot } = await actionWithScreenshot(sessionId, result);
+        return wrap(resultJson, snapshot);
       }
       case 'click': {
         const sessionId = effectiveArgs.sessionId as string;
@@ -1160,7 +1339,8 @@ export async function executeAgentTool(
         const role = (args.role as 'link' | 'button' | 'text') || 'link';
         if (!linkText && !selector) throw new Error('linkText or selector required');
         const result = await browserInspector.clickElement(sessionId, { linkText, selector, role });
-        return wrap(JSON.stringify(result, null, 2));
+        const { resultJson, snapshot } = await actionWithScreenshot(sessionId, result);
+        return wrap(resultJson, snapshot);
       }
       case 'click_coordinates': {
         const sessionId = effectiveArgs.sessionId as string;

@@ -616,6 +616,56 @@ export interface SwitchTabStep extends BaseDslStep {
 }
 
 /**
+ * A single field to extract from each base element in a dom_scrape step
+ */
+export interface DomScrapeCollectField {
+  /** Key name in the resulting object */
+  key: string;
+  /** Child element selector (single target, no anyOf) */
+  target: Target;
+  /** What to extract: "text" (default), "attribute", or "html" */
+  extract?: 'text' | 'attribute' | 'html';
+  /** Required when extract is "attribute" — the attribute name to read */
+  attribute?: string;
+}
+
+/**
+ * Dom scrape step - extracts structured data from repeating DOM elements
+ */
+export interface DomScrapeStep extends BaseDslStep {
+  type: 'dom_scrape';
+  params: {
+    /**
+     * Target for element selection (supports selector for backward compatibility)
+     * @deprecated Use target instead of selector
+     */
+    selector?: string;
+    /**
+     * Target for base repeating elements (human-stable selectors)
+     */
+    target?: TargetOrAnyOf;
+    /**
+     * Fields to extract from each base element
+     */
+    collect: DomScrapeCollectField[];
+    /**
+     * If true (default), drop items where ALL fields are null/empty/whitespace
+     */
+    skip_empty?: boolean;
+    /**
+     * Collectible key to store the result array
+     */
+    out: string;
+    /**
+     * Optional metadata for Teach Mode
+     */
+    hint?: string;
+    scope?: Target;
+    near?: { kind: 'text'; text: string; exact?: boolean };
+  };
+}
+
+/**
  * Union type of all supported DSL steps
  */
 export type DslStep =
@@ -637,7 +687,8 @@ export type DslStep =
   | UploadFileStep
   | FrameStep
   | NewTabStep
-  | SwitchTabStep;
+  | SwitchTabStep
+  | DomScrapeStep;
 
 /**
  * Options for running a flow

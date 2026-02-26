@@ -18,6 +18,24 @@ Tags: `added`, `fixed`, `changed`, `removed`
 - [added] Token persistence in `~/.config/showrun/auth.json` with automatic access token refresh
 - [added] `registry.url` config option and `SHOWRUN_REGISTRY_URL` env var for registry server URL
 
+## 0.1.9 - 2026-02-26
+
+- [fixed] `npx showrun` no longer triggers a full rebuild on every invocation — removed root `prepare` hook that ran `pnpm build` on every npm lifecycle event
+- [changed] Browser actions (click, type, goto) now auto-attach a post-action screenshot after a 5s settle delay, giving the AI agent visual feedback
+- [added] `dom_scrape` DSL step type for structured data extraction from repeating DOM elements
+- [added] Collapsible right panel in ChatView — click active tab to collapse, chevron button to re-open, auto-collapses on viewports < 900px
+- [added] Run tab in right panel with auto-generated input form based on flow's `inputs` schema (string/number/boolean fields, required validation, default pre-fill)
+- [removed] Run button from conversation header (replaced by Run tab in side panel)
+- [changed] `handleRunPack` now accepts user-provided inputs instead of hardcoded `{}`
+- [changed] Exploration agent now recommends hardcoded URL + bodyReplace strategy for HTTP-only compatible flows (replaces dynamic Nunjucks URL approach)
+- [changed] Editor agent Strategy A updated: hardcoded test-value URL + bodyReplace regex replaces dynamic URL template for HTTP-only mode compatibility
+- [fixed] HTTP-only mode now correctly rejects flows where skipped steps (navigate, click, fill, etc.) contain dynamic Nunjucks templates — prevents stale snapshot replays when input-dependent browser actions drive the API response
+- [added] Validator Agent: three-agent architecture with `agent_validate_flow` for multi-scenario flow testing
+- [fixed] Agent-triggered `editor_run_pack` now skips HTTP-only replay mode, always using fresh browser execution to avoid stale snapshot loops
+- [fixed] Stop button no longer clears conversation from screen (was caused by premature DB reload racing with backend save)
+- [added] Agent now preserves rich tool call context across turns — tool_calls and tool results are saved to DB and reconstructed on follow-up messages
+- [added] Proxy support: modular proxy service (OxyLabs provider), `set_proxy` agent tool, session/random modes, covers browser + HTTP replays
+
 ## 0.1.8 — 2026-02-22
 
 - [changed] Dashboard browser launching consolidated to use core's unified `launchBrowser()`, ensuring auto-fetch and consistent engine behavior

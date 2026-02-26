@@ -17,6 +17,9 @@ export * from './httpReplay.js';
 // Registry exports
 export * from './registry/index.js';
 
+// Proxy exports
+export * from './proxy/index.js';
+
 // Storage exports
 export * from './storage/index.js';
 
