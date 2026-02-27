@@ -403,6 +403,7 @@ function App() {
               className="header-back"
               onClick={() => setActiveView('chat')}
               title="Back to Chat"
+              aria-label="Back to Chat"
             >
               <svg
                 width="20"

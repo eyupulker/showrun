@@ -154,6 +154,7 @@ export default function Sidebar({
                     onClick={(e) => handleDelete(conv, e)}
                     className="delete-btn"
                     title="Delete conversation"
+                    aria-label="Delete conversation"
                     style={{
                       marginLeft: '8px',
                       padding: '2px 4px',
