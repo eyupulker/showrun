@@ -236,9 +236,26 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   // from system-prompt seed techniques at request time (in teach.ts).
   const systemPrompt = loadSystemPrompt();
 
+  // Configure CORS to only allow specific origins
+  // The dashboard relies entirely on CORS to protect the /api/config endpoint
+  // which returns the sessionToken used to authenticate all other endpoints.
+  const allowedOrigins = [
+    `http://${host}:${port}`,
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+    'http://localhost:5173', // Vite dev server
+    'http://127.0.0.1:5173',
+  ];
+
+  const corsOptions = {
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    credentials: true,
+  };
+
   // Create Express app
   const app = express();
-  app.use(cors());
+  app.use(cors(corsOptions));
   app.use(express.json());
 
   // Serve static UI files (built by Vite)
@@ -250,10 +267,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
 
   // Create Socket.IO server with CORS
   const io = new SocketIOServer(httpServer, {
-    cors: {
-      origin: '*', // In production, restrict this
-      methods: ['GET', 'POST'],
-    },
+    cors: corsOptions,
   });
 
   // Socket authentication middleware
