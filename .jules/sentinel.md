@@ -1,0 +1,4 @@
+## 2024-05-18 - [Overly Permissive CORS Config]
+**Vulnerability:** The dashboard server used a wildcard (`*`) CORS configuration for Socket.IO and a default allow-all configuration for Express. This allowed any website to make cross-origin requests to the API.
+**Learning:** The application's architecture exposes the `sessionToken` (used to authenticate all other endpoints) via an unauthenticated `/api/config` endpoint. Thus, the system relies entirely on CORS for protection against malicious websites. A permissive CORS configuration in this architecture is critical and immediately compromises the entire app.
+**Prevention:** Always restrict CORS origins strictly to trusted domains, especially when the application relies on it as a primary defense mechanism for sensitive configuration endpoints.
