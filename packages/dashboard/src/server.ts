@@ -236,9 +236,23 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   // from system-prompt seed techniques at request time (in teach.ts).
   const systemPrompt = loadSystemPrompt();
 
+  // Configure CORS to be strict, as the unauthenticated /api/config endpoint
+  // must not be accessible to malicious cross-origin sites (which could steal the sessionToken).
+  const allowedOrigins = [
+    `http://${host}:${port}`,
+    `http://localhost:${port}`,
+    `http://127.0.0.1:${port}`,
+    `http://localhost:5173`, // Vite dev server
+    `http://127.0.0.1:5173`,
+  ];
+
   // Create Express app
   const app = express();
-  app.use(cors());
+  app.use(cors({
+    origin: allowedOrigins,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    credentials: true,
+  }));
   app.use(express.json());
 
   // Serve static UI files (built by Vite)
@@ -248,11 +262,12 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   // Create HTTP server
   const httpServer = createServer(app);
 
-  // Create Socket.IO server with CORS
+  // Create Socket.IO server with strict CORS
   const io = new SocketIOServer(httpServer, {
     cors: {
-      origin: '*', // In production, restrict this
+      origin: allowedOrigins,
       methods: ['GET', 'POST'],
+      credentials: true,
     },
   });
 
